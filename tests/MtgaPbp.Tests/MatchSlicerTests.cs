@@ -90,4 +90,58 @@ public class MatchSlicerTests
         var slices = MatchSlicer.Slice([Env(1, 100, """{ "timestamp": "1", "Courses": [] }""")]);
         Assert.That(slices, Is.Empty);
     }
+
+    /// <summary>
+    /// Only GameStateType_Full carries gameInfo.matchID. In the real log that is 74
+    /// lines out of 4,774 — every Diff, which is where the annotations live, has no
+    /// match id at all and must inherit the match already in progress.
+    /// </summary>
+    [Test]
+    public void Slice_attributes_diff_states_to_the_match_already_in_progress()
+    {
+        const string diff = """
+            { "timestamp": "2", "greToClientEvent": { "greToClientMessages": [
+              { "type": "GREMessageType_GameStateMessage",
+                "gameStateMessage": { "type": "GameStateType_Diff", "annotations": [] } } ] } }
+            """;
+
+        var slices = MatchSlicer.Slice([
+            Env(1, 100, GreWithMatch("aaa")),
+            Env(2, 200, diff),
+            Env(3, 300, diff),
+        ]);
+
+        Assert.That(slices.Single().RawLines, Has.Count.EqualTo(3));
+    }
+
+    [Test]
+    public void Slice_switches_context_when_a_new_match_id_appears()
+    {
+        const string diff = """
+            { "timestamp": "2", "greToClientEvent": { "greToClientMessages": [
+              { "type": "GREMessageType_GameStateMessage",
+                "gameStateMessage": { "type": "GameStateType_Diff" } } ] } }
+            """;
+
+        var slices = MatchSlicer.Slice([
+            Env(1, 100, GreWithMatch("aaa")),
+            Env(2, 200, diff),
+            Env(3, 300, GreWithMatch("bbb")),
+            Env(4, 400, diff),
+        ]);
+
+        Assert.That(slices.Single(s => s.MatchId == "aaa").RawLines, Has.Count.EqualTo(2));
+        Assert.That(slices.Single(s => s.MatchId == "bbb").RawLines, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void Slice_ignores_orphan_diff_states_seen_before_any_match_starts()
+    {
+        const string diff = """
+            { "timestamp": "2", "greToClientEvent": { "greToClientMessages": [
+              { "type": "GREMessageType_GameStateMessage",
+                "gameStateMessage": { "type": "GameStateType_Diff" } } ] } }
+            """;
+        Assert.That(MatchSlicer.Slice([Env(1, 100, diff)]), Is.Empty);
+    }
 }

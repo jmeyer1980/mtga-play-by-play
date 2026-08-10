@@ -207,6 +207,68 @@ public class EventExtractorTests
     }
 
     [Test]
+    public void Extract_emits_an_attack_when_a_creature_is_declared()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full", "turnInfo": { "turnNumber": 5, "activePlayer": 2 },
+          "gameObjects": [ { "instanceId": 377, "grpId": 9, "name": 1001,
+            "controllerSeatId": 2, "attackState": "AttackState_Declared",
+            "attackInfo": { "targetId": 1 } } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Attack);
+        Assert.That(e.SourceName, Is.EqualTo("Llanowar Elves"));
+        Assert.That(e.ActorSeat, Is.EqualTo(2));
+        Assert.That(e.TargetSeat, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Extract_emits_a_block_naming_the_attacker()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full", "turnInfo": { "turnNumber": 5, "activePlayer": 1 },
+          "gameObjects": [
+            { "instanceId": 388, "grpId": 8, "name": 1000, "controllerSeatId": 1 },
+            { "instanceId": 448, "grpId": 9, "name": 1001, "controllerSeatId": 2,
+              "blockState": "BlockState_Declared",
+              "blockInfo": { "attackerIds": [ 388 ] } } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Block);
+        Assert.That(e.SourceName, Is.EqualTo("Llanowar Elves"));
+        Assert.That(e.TargetName, Is.EqualTo("Lightning Bolt"));
+    }
+
+    [Test]
+    public void Extract_attributes_a_hidden_draw_to_the_active_player()
+    {
+        // The opponent's drawn card has no gameObject, so the controller is unknown;
+        // the drawer is whoever's turn it is.
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full", "turnInfo": { "turnNumber": 3, "activePlayer": 2 },
+          "annotations": [ { "id": 1, "affectedIds": [ 9999 ],
+            "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+              { "key": "category", "valueString": [ "Draw" ] } ] } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Drew);
+        Assert.That(e.ActorSeat, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void Extract_numbers_the_first_turn_as_one_not_zero()
+    {
+        // NewTurnStarted for turn 1 arrives before turnInfo carries a turnNumber.
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full", "turnInfo": { "activePlayer": 1 },
+          "annotations": [ { "id": 1, "affectorId": 1, "affectedIds": [ 1 ],
+            "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+        """));
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.TurnStart).Turn, Is.EqualTo(1));
+    }
+
+    [Test]
     public void Extract_never_throws_on_malformed_annotations()
     {
         Assert.DoesNotThrow(() => Run(RoomLine, Gre("""

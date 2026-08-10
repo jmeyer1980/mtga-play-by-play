@@ -12,14 +12,30 @@ public static class MatchSlicer
         public readonly List<string> Lines = [];
     }
 
+    /// <summary>
+    /// Groups log envelopes into matches.
+    /// <para>
+    /// Only <c>GameStateType_Full</c> carries <c>gameInfo.matchID</c> — in a real log
+    /// that is 74 lines out of 4,774. Every <c>GameStateType_Diff</c>, which is where
+    /// the annotations live, has no match id at all. So the match id is sticky:
+    /// once a match is identified, subsequent game-engine traffic belongs to it until
+    /// a different match id appears. Engine traffic seen before any match id is
+    /// dropped rather than guessed at.
+    /// </para>
+    /// </summary>
     public static IReadOnlyList<MatchSlice> Slice(IEnumerable<LogEnvelope> envelopes)
     {
         var builders = new Dictionary<string, Builder>(StringComparer.Ordinal);
         var order = new List<string>();
+        string? current = null;
 
         foreach (var env in envelopes)
         {
-            var matchId = ExtractMatchId(env.Root);
+            var explicitId = ExtractMatchId(env.Root);
+            if (explicitId is not null) current = explicitId;
+
+            // Attribute unlabelled engine traffic to the match in progress.
+            var matchId = explicitId ?? (IsEngineTraffic(env.Root) ? current : null);
             if (matchId is null) continue;
 
             if (!builders.TryGetValue(matchId, out var b))
@@ -35,7 +51,12 @@ public static class MatchSlicer
                 if (env.TimestampMs < b.Start) b.Start = env.TimestampMs;
                 if (env.TimestampMs > b.End) b.End = env.TimestampMs;
             }
-            if (HasFinalResult(env.Root)) b.SawFinalResult = true;
+
+            if (HasFinalResult(env.Root))
+            {
+                b.SawFinalResult = true;
+                current = null;   // the match is over; stop absorbing later traffic
+            }
         }
 
         return order.Select(id =>
@@ -50,33 +71,33 @@ public static class MatchSlicer
         }).ToList();
     }
 
+    /// <summary>Game-engine traffic, which belongs to whichever match is in progress.</summary>
+    private static bool IsEngineTraffic(JsonElement root) =>
+        root.ValueKind == JsonValueKind.Object && root.TryGetProperty("greToClientEvent", out _);
+
     private static string? ExtractMatchId(JsonElement root)
     {
-        if (root.TryGetProperty("matchGameRoomStateChangedEvent", out var room) &&
-            room.TryGetProperty("gameRoomInfo", out var info) &&
-            info.TryGetProperty("gameRoomConfig", out var cfg) &&
-            cfg.TryGetProperty("matchId", out var mid) &&
-            mid.ValueKind == JsonValueKind.String)
-            return mid.GetString();
+        if (Json.Obj(root, "matchGameRoomStateChangedEvent") is { } room &&
+            Json.Obj(room, "gameRoomInfo") is { } info &&
+            Json.Obj(info, "gameRoomConfig") is { } cfg &&
+            Json.Str(cfg, "matchId") is { } mid)
+            return mid;
 
-        if (root.TryGetProperty("greToClientEvent", out var gre) &&
-            gre.TryGetProperty("greToClientMessages", out var msgs) &&
-            msgs.ValueKind == JsonValueKind.Array)
+        if (Json.Obj(root, "greToClientEvent") is { } gre)
         {
-            foreach (var m in msgs.EnumerateArray())
+            foreach (var m in Json.Array(gre, "greToClientMessages"))
             {
-                if (m.TryGetProperty("gameStateMessage", out var gsm) &&
-                    gsm.TryGetProperty("gameInfo", out var gi) &&
-                    gi.TryGetProperty("matchID", out var id) &&
-                    id.ValueKind == JsonValueKind.String)
-                    return id.GetString();
+                if (Json.Obj(m, "gameStateMessage") is { } gsm &&
+                    Json.Obj(gsm, "gameInfo") is { } gi &&
+                    Json.Str(gi, "matchID") is { } id)
+                    return id;
             }
         }
         return null;
     }
 
     private static bool HasFinalResult(JsonElement root) =>
-        root.TryGetProperty("matchGameRoomStateChangedEvent", out var room) &&
-        room.TryGetProperty("gameRoomInfo", out var info) &&
+        Json.Obj(root, "matchGameRoomStateChangedEvent") is { } room &&
+        Json.Obj(room, "gameRoomInfo") is { } info &&
         info.TryGetProperty("finalMatchResult", out _);
 }

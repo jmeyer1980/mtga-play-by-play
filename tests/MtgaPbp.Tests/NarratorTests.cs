@@ -112,6 +112,37 @@ public class NarratorTests
     }
 
     [Test]
+    public void Attack_names_the_creature_and_who_it_is_swinging_at()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Attack) with
+            { SourceName = "Gloryheath Lynx", ActorSeat = 2, TargetSeat = 1 }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Opponent attacks with Gloryheath Lynx"));
+    }
+
+    [Test]
+    public void Attack_on_a_planeswalker_names_the_permanent_attacked()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Attack) with
+            { SourceName = "Gloryheath Lynx", ActorSeat = 2, TargetName = "Teferi" }), Density.Beats);
+
+        Assert.That(lines.Single().Text,
+            Is.EqualTo("Opponent attacks Teferi with Gloryheath Lynx"));
+    }
+
+    [Test]
+    public void Block_reads_as_blocker_blocks_attacker()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Block) with
+            { SourceName = "Toy", ActorSeat = 1, TargetName = "Gloryheath Lynx" }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Toy blocks Gloryheath Lynx"));
+    }
+
+    [Test]
     public void Narrate_drops_events_it_cannot_phrase_rather_than_emitting_blanks()
     {
         var lines = Narrator.Narrate(

@@ -180,6 +180,93 @@ public class GameStateTrackerTests
         Assert.That(o.ControllerSeat, Is.EqualTo(2));
     }
 
+    /// <summary>
+    /// JsonElement.TryGetInt32 THROWS when the value is not a number — it returns
+    /// false only for numeric overflow. Arena sends some of these fields as strings,
+    /// so every numeric read must check ValueKind first.
+    /// </summary>
+    [Test]
+    public void Apply_survives_numeric_fields_arriving_as_strings_or_bools()
+    {
+        var t = NewTracker();
+        Assert.DoesNotThrow(() => t.Apply(Msg("""
+        { "type": "GameStateType_Diff",
+          "gameInfo": { "gameNumber": "2" },
+          "players": [ { "systemSeatNumber": "1", "lifeTotal": "18" },
+                       { "systemSeatNumber": 2, "lifeTotal": 15 } ],
+          "turnInfo": { "turnNumber": "4", "activePlayer": true, "phase": null },
+          "zones": [ { "zoneId": "28", "type": "ZoneType_Battlefield" } ],
+          "gameObjects": [ { "instanceId": "50", "grpId": "96179", "damage": "3" },
+                           { "instanceId": 51, "grpId": 96179, "name": 648 } ],
+          "annotations": [ { "id": 1, "type": [ "AnnotationType_ObjectIdChanged" ],
+            "details": [ { "key": "orig_id", "valueInt32": [ "9" ] },
+                         { "key": "new_id",  "valueInt32": [ 10 ] } ] } ] }
+        """)));
+
+        // The well-formed entries still land.
+        Assert.That(t.Life[2], Is.EqualTo(15));
+        Assert.That(t.NameOf(51), Is.EqualTo("Plains"));
+    }
+
+    [Test]
+    public void Apply_reports_creatures_that_just_declared_an_attack()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 377, "grpId": 94816, "name": 648, "controllerSeatId": 2,
+            "attackState": "AttackState_Declared", "attackInfo": { "targetId": 1 } } ] }
+        """));
+
+        Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 377 }));
+        Assert.That(t.Get(377)!.AttackTargetId, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Apply_does_not_re_report_an_attacker_that_merely_stays_attacking()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 377, "grpId": 1, "controllerSeatId": 2,
+            "attackState": "AttackState_Declared", "attackInfo": { "targetId": 1 } } ] }
+        """));
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 377, "grpId": 1, "controllerSeatId": 2,
+            "attackState": "AttackState_Attacking", "attackInfo": { "targetId": 1 } } ] }
+        """));
+
+        Assert.That(t.NewAttackers, Is.Empty, "attackers are reported once, at declaration");
+    }
+
+    [Test]
+    public void Apply_reports_creatures_that_just_declared_a_block()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 448, "grpId": 105186, "controllerSeatId": 2,
+            "blockState": "BlockState_Declared",
+            "blockInfo": { "attackerIds": [ 388 ] } } ] }
+        """));
+
+        Assert.That(t.NewBlockers, Is.EquivalentTo(new[] { 448 }));
+        Assert.That(t.Get(448)!.BlockedAttackerIds, Is.EquivalentTo(new[] { 388 }));
+    }
+
+    [Test]
+    public void Combat_reports_are_cleared_between_messages()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 1, "grpId": 1, "attackState": "AttackState_Declared" } ] }
+        """));
+        t.Apply(Msg("""{ "type": "GameStateType_Diff" }"""));
+        Assert.That(t.NewAttackers, Is.Empty);
+    }
+
     [Test]
     public void Apply_records_zone_types_by_id()
     {

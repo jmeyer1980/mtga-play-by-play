@@ -85,6 +85,7 @@ public sealed class EventExtractor(ICardDb cards)
         int gamesForTeam1 = 0, gamesForTeam2 = 0;
         var sawFinal = false;
         var seq = 0;
+        var lastTurn = 0;
 
         foreach (var raw in rawLines)
         {
@@ -95,40 +96,34 @@ public sealed class EventExtractor(ICardDb cards)
             var ts = ReadTimestamp(root);
             if (ts > 0) { if (started == 0) started = ts; ended = ts; }
 
-            if (root.TryGetProperty("matchGameRoomStateChangedEvent", out var room) &&
-                room.TryGetProperty("gameRoomInfo", out var info))
+            if (Json.Obj(root, "matchGameRoomStateChangedEvent") is { } room &&
+                Json.Obj(room, "gameRoomInfo") is { } info)
             {
                 ReadRoom(info, seatMeta, ref eventName);
-                if (info.TryGetProperty("finalMatchResult", out var fmr))
+                if (Json.Obj(info, "finalMatchResult") is { } fmr)
                 {
                     sawFinal = true;
                     ReadResults(fmr, ref winningTeam, ref gamesForTeam1, ref gamesForTeam2);
                 }
             }
 
-            if (!root.TryGetProperty("greToClientEvent", out var gre) ||
-                !gre.TryGetProperty("greToClientMessages", out var msgs) ||
-                msgs.ValueKind != JsonValueKind.Array)
-                continue;
+            if (Json.Obj(root, "greToClientEvent") is not { } gre) continue;
 
-            foreach (var m in msgs.EnumerateArray())
+            foreach (var m in Json.Array(gre, "greToClientMessages"))
             {
-                var type = m.TryGetProperty("type", out var t) ? t.GetString() : null;
+                var type = Json.Str(m, "type");
 
                 if (type is "GREMessageType_MulliganReq" && localSeat is null)
                     localSeat = FirstSeat(m);
                 else if (type is "GREMessageType_ActionsAvailableReq" && fallbackSeat is null)
                     fallbackSeat = FirstSeat(m);
 
-                if (!m.TryGetProperty("gameStateMessage", out var gsm)) continue;
+                if (Json.Obj(m, "gameStateMessage") is not { } gsm) continue;
 
                 tracker.Apply(gsm);
-                if (gsm.TryGetProperty("annotations", out var anns) &&
-                    anns.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var a in anns.EnumerateArray())
-                        EmitFor(a, tracker, ts, ref seq, events, unknown, cardsSeen);
-                }
+                EmitCombat(tracker, ts, ref seq, events, cardsSeen);
+                foreach (var a in Json.Array(gsm, "annotations"))
+                    EmitFor(a, tracker, ts, ref seq, ref lastTurn, events, unknown, cardsSeen);
             }
         }
 
@@ -160,15 +155,60 @@ public sealed class EventExtractor(ICardDb cards)
             events, unknown, cardsSeen);
     }
 
+    /// <summary>
+    /// Emits attack and block events. Combat has no annotation of its own — it appears
+    /// only as a state change on the creature — so it is read from the tracker's
+    /// transition reports rather than from the annotation stream.
+    /// </summary>
+    private static void EmitCombat(
+        GameStateTracker tracker, long ts, ref int seq,
+        List<GameEvent> events, HashSet<string> cardsSeen)
+    {
+        foreach (var id in tracker.NewAttackers)
+        {
+            var obj = tracker.Get(id);
+            var name = tracker.NameOf(id);
+            if (!name.StartsWith('#')) cardsSeen.Add(name);
+
+            var target = obj?.AttackTargetId;
+            events.Add(Base(tracker, ts, EventKind.Attack) with
+            {
+                Seq = seq++,
+                ActorSeat = obj?.ControllerSeat is > 0 ? obj.ControllerSeat : tracker.ActiveSeat,
+                SourceInstanceId = id,
+                SourceName = name,
+                TargetSeat = target is <= 2 and > 0 ? target : null,
+                TargetInstanceId = target is > 2 ? target : null,
+                TargetName = target is > 2 ? tracker.NameOf(target.Value) : null
+            });
+        }
+
+        foreach (var id in tracker.NewBlockers)
+        {
+            var obj = tracker.Get(id);
+            var name = tracker.NameOf(id);
+            if (!name.StartsWith('#')) cardsSeen.Add(name);
+
+            var attacker = obj?.BlockedAttackerIds.FirstOrDefault();
+            events.Add(Base(tracker, ts, EventKind.Block) with
+            {
+                Seq = seq++,
+                ActorSeat = obj?.ControllerSeat,
+                SourceInstanceId = id,
+                SourceName = name,
+                TargetInstanceId = attacker is > 0 ? attacker : null,
+                TargetName = attacker is > 0 ? tracker.NameOf(attacker.Value) : null
+            });
+        }
+    }
+
     private void EmitFor(
-        JsonElement a, GameStateTracker tracker, long ts, ref int seq,
+        JsonElement a, GameStateTracker tracker, long ts, ref int seq, ref int lastTurn,
         List<GameEvent> events, Dictionary<string, int> unknown, HashSet<string> cardsSeen)
     {
-        if (!a.TryGetProperty("type", out var types) || types.ValueKind != JsonValueKind.Array)
-            return;
-
-        foreach (var typeEl in types.EnumerateArray())
+        foreach (var typeEl in Json.Array(a, "type"))
         {
+            if (typeEl.ValueKind != JsonValueKind.String) continue;
             var type = typeEl.GetString();
             if (type is null || Ignored.Contains(type)) continue;
 
@@ -186,26 +226,39 @@ public sealed class EventExtractor(ICardDb cards)
                 var name = objId is { } oid ? tracker.NameOf(oid) : null;
                 if (name is not null && !name.StartsWith('#')) cardsSeen.Add(name);
 
+                // A card the opponent draws has no game object, so its controller is
+                // unknown; whoever's turn it is did it.
+                var controller = objId is { } id2 ? tracker.Get(id2)?.ControllerSeat : null;
+
                 ev = Base(tracker, ts, kind) with
                 {
                     SourceInstanceId = objId,
                     SourceName = name,
-                    ActorSeat = objId is { } id2 ? tracker.Get(id2)?.ControllerSeat : null,
+                    ActorSeat = controller is > 0 ? controller : tracker.ActiveSeat,
                     Detail = category
                 };
             }
             else if (SimpleAnnotationKinds.TryGetValue(type, out var simple))
             {
-                var affector = a.TryGetProperty("affectorId", out var af) && af.TryGetInt32(out var afv)
-                    ? afv : (int?)null;
+                var affector = Json.Int(a, "affectorId");
                 var affected = FirstAffected(a);
 
                 var sourceName = affector is { } s && s > 2 ? tracker.NameOf(s) : null;
                 if (sourceName is not null && !sourceName.StartsWith('#')) cardsSeen.Add(sourceName);
 
+                // affectorId is a seat for player actions and an object id otherwise;
+                // for an object, credit its controller, else the active player.
+                var actor = affector switch
+                {
+                    <= 2 and > 0 => affector,
+                    > 2 => tracker.Get(affector.Value)?.ControllerSeat is > 0 and var c
+                        ? c : tracker.ActiveSeat,
+                    _ => tracker.ActiveSeat
+                };
+
                 ev = Base(tracker, ts, simple) with
                 {
-                    ActorSeat = affector is { } s2 && s2 <= 2 ? s2 : null,
+                    ActorSeat = actor,
                     SourceInstanceId = affector,
                     SourceName = sourceName,
                     // Seats 1 and 2 are players; anything larger is an object instance id.
@@ -221,7 +274,12 @@ public sealed class EventExtractor(ICardDb cards)
                 ev = Base(tracker, ts, EventKind.Unknown) with { RawType = type };
             }
 
-            events.Add(ev with { Seq = seq++ });
+            // turnInfo carries no turnNumber until the first turn is under way, so the
+            // opening NewTurnStarted would otherwise land on "Turn 0".
+            var turn = tracker.Turn > 0 ? tracker.Turn : Math.Max(lastTurn, 1);
+            lastTurn = turn;
+
+            events.Add(ev with { Seq = seq++, Turn = turn });
         }
     }
 
@@ -247,54 +305,43 @@ public sealed class EventExtractor(ICardDb cards)
 
     private static int? FirstAffected(JsonElement a)
     {
-        if (!a.TryGetProperty("affectedIds", out var ids) || ids.ValueKind != JsonValueKind.Array)
-            return null;
-        foreach (var v in ids.EnumerateArray())
-            if (v.TryGetInt32(out var iv)) return iv;
+        foreach (var v in Json.Array(a, "affectedIds"))
+            if (Json.Int(v) is { } iv) return iv;
         return null;
     }
 
     private static int? FirstSeat(JsonElement message)
     {
-        if (!message.TryGetProperty("systemSeatIds", out var ids) ||
-            ids.ValueKind != JsonValueKind.Array) return null;
-        foreach (var v in ids.EnumerateArray())
-            if (v.TryGetInt32(out var iv)) return iv;
+        foreach (var v in Json.Array(message, "systemSeatIds"))
+            if (Json.Int(v) is { } iv) return iv;
         return null;
     }
 
     private static void ReadRoom(
         JsonElement info, Dictionary<int, PlayerInfo> seats, ref string eventName)
     {
-        if (!info.TryGetProperty("gameRoomConfig", out var cfg) ||
-            !cfg.TryGetProperty("reservedPlayers", out var players) ||
-            players.ValueKind != JsonValueKind.Array) return;
+        if (Json.Obj(info, "gameRoomConfig") is not { } cfg) return;
 
-        foreach (var p in players.EnumerateArray())
+        foreach (var p in Json.Array(cfg, "reservedPlayers"))
         {
-            if (!p.TryGetProperty("systemSeatId", out var s) || !s.TryGetInt32(out var seat))
-                continue;
+            if (Json.Int(p, "systemSeatId") is not { } seat) continue;
             seats[seat] = new PlayerInfo(
                 seat,
-                p.TryGetProperty("userId", out var u) ? u.GetString() ?? "" : "",
-                p.TryGetProperty("playerName", out var n) ? n.GetString() ?? "" : "",
-                p.TryGetProperty("platformId", out var pl) ? pl.GetString() ?? "" : "");
-            if (eventName.Length == 0 && p.TryGetProperty("eventId", out var e))
-                eventName = e.GetString() ?? "";
+                Json.Str(p, "userId") ?? "",
+                Json.Str(p, "playerName") ?? "",
+                Json.Str(p, "platformId") ?? "");
+            if (eventName.Length == 0 && Json.Str(p, "eventId") is { } ev)
+                eventName = ev;
         }
     }
 
     private static void ReadResults(
         JsonElement fmr, ref int? winningTeam, ref int team1Games, ref int team2Games)
     {
-        if (!fmr.TryGetProperty("resultList", out var list) ||
-            list.ValueKind != JsonValueKind.Array) return;
-
-        foreach (var r in list.EnumerateArray())
+        foreach (var r in Json.Array(fmr, "resultList"))
         {
-            var scope = r.TryGetProperty("scope", out var s) ? s.GetString() : null;
-            if (!r.TryGetProperty("winningTeamId", out var w) || !w.TryGetInt32(out var team))
-                continue;
+            var scope = Json.Str(r, "scope");
+            if (Json.Int(r, "winningTeamId") is not { } team) continue;
             if (scope == "MatchScope_Match") winningTeam = team;
             else if (scope == "MatchScope_Game")
             {
@@ -304,14 +351,6 @@ public sealed class EventExtractor(ICardDb cards)
         }
     }
 
-    private static long ReadTimestamp(JsonElement root)
-    {
-        if (!root.TryGetProperty("timestamp", out var ts)) return 0;
-        return ts.ValueKind switch
-        {
-            JsonValueKind.String when long.TryParse(ts.GetString(), out var v) => v,
-            JsonValueKind.Number when ts.TryGetInt64(out var v) => v,
-            _ => 0
-        };
-    }
+    private static long ReadTimestamp(JsonElement root) =>
+        root.TryGetProperty("timestamp", out var ts) ? Json.Long(ts) ?? 0 : 0;
 }

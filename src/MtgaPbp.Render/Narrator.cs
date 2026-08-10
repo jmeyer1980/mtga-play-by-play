@@ -76,6 +76,16 @@ public static class Narrator
             $"{e.TargetName} {(e.Amount > 0 ? "gets" : "loses")} {Math.Abs(e.Amount)} counter" +
             $"{(Math.Abs(e.Amount) == 1 ? "" : "s")}",
 
+        EventKind.Attack when e.SourceName is not null && e.TargetName is not null =>
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "attack", "attacks", t)} " +
+            $"{e.TargetName} with {e.SourceName}",
+        EventKind.Attack when e.SourceName is not null =>
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "attack", "attacks", t)} with {e.SourceName}",
+
+        EventKind.Block when e.SourceName is not null && e.TargetName is not null =>
+            $"{e.SourceName} blocks {e.TargetName}",
+        EventKind.Block when e.SourceName is not null => $"{e.SourceName} blocks",
+
         EventKind.Scry => $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "scry", "scries", t)}",
         EventKind.Revealed when e.SourceName is not null => $"{e.SourceName} is revealed",
 
