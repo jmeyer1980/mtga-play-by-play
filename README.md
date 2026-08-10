@@ -7,14 +7,16 @@ Turns Magic: The Gathering Arena match logs into readable, searchable, shareable
 text transcripts — plain files on your disk that you can read end to end, search
 across your whole history, and paste into a chat.
 
-Arena trackers already exist, and this is not filling an empty space —
-[Arena Tutor](https://draftsim.com/arenatutor/), for one, advertises "a complete text
-log of the game" (how that reads in practice, I haven't checked).
+**If you just want to read your games, use
+[Arena Tutor](https://draftsim.com/arenatutor/) instead.** It is easier to install
+and use, and its game log is genuinely detailed — it names counter types, tells you
+what you put on the bottom after a scry, and attributes every trigger, none of which
+this does today.
 
-What this produces is **standalone output you own**: a static HTML index of every
-archived match, a self-contained page per game, and a markdown export — files on your
-disk rather than a view inside a running application, with no account and no network
-access at all.
+This exists for a narrower case: **static files you own**. An HTML index across your
+whole match history, a self-contained page per game, and a markdown export — no
+application running, no account, no network access, MIT licensed. If that is not what
+you are after, the tracker is the better tool.
 
 ```
 ## Turn 7 — Opponent
