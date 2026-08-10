@@ -6,8 +6,17 @@
 ## Purpose
 
 Turn Magic: The Gathering Arena match logs into readable, chess-transcription-style
-text. Existing tools replay a game visually; none produce a transcript you can read,
-search, or paste into a chat.
+text you can read end to end, search across your history, and paste into a chat.
+
+Trackers for Arena already exist, and at least one (Arena Tutor) exposes a text log
+of a game, so this is not filling an empty space. The difference is the output:
+standalone static files — an HTML index, a page per game, a markdown export — rather
+than a view inside a running application, with no account and no network access.
+
+> An earlier draft of this spec claimed no existing tool produced a readable
+> transcript. That was carried over from the initial framing and was never checked;
+> it is wrong. Recorded here rather than quietly deleted, because the design was
+> partly justified by it.
 
 Three uses drive the design, all confirmed with the user:
 
