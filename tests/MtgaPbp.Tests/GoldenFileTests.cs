@@ -11,6 +11,20 @@ namespace MtgaPbp.Tests;
 /// </summary>
 public class GoldenFileTests
 {
+    private TimeZoneInfo _originalZone = null!;
+
+    // Match times render in local time, so without pinning this the golden file
+    // would only match on a machine in the timezone that generated it.
+    [OneTimeSetUp]
+    public void PinTimeZone()
+    {
+        _originalZone = TranscriptSummary.DisplayTimeZone;
+        TranscriptSummary.DisplayTimeZone = TimeZoneInfo.Utc;
+    }
+
+    [OneTimeTearDown]
+    public void RestoreTimeZone() => TranscriptSummary.DisplayTimeZone = _originalZone;
+
     private static string FixtureDir =>
         Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures");
 

@@ -22,6 +22,30 @@ public class RendererTests
         new Dictionary<string, int>(),
         new HashSet<string> { "Plains", "Lightning Bolt" });
 
+    [Test]
+    public void Match_times_render_in_the_configured_time_zone()
+    {
+        var original = TranscriptSummary.DisplayTimeZone;
+        try
+        {
+            TranscriptSummary.DisplayTimeZone = TimeZoneInfo.Utc;
+            var utc = TranscriptSummary.Date(Sample());
+
+            // 1786326812781 ms since the epoch is 2026-08-10 01:53:32 UTC.
+            Assert.That(utc.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2026-08-10 01:53"));
+            Assert.That(utc.Offset, Is.EqualTo(TimeSpan.Zero));
+
+            var minus5 = TimeZoneInfo.CreateCustomTimeZone("t", TimeSpan.FromHours(-5), "t", "t");
+            TranscriptSummary.DisplayTimeZone = minus5;
+            Assert.That(TranscriptSummary.Date(Sample()).ToString("yyyy-MM-dd HH:mm"),
+                Is.EqualTo("2026-08-09 20:53"));
+        }
+        finally
+        {
+            TranscriptSummary.DisplayTimeZone = original;
+        }
+    }
+
     // ---------- Task 8: markdown ----------
 
     [Test]

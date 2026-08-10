@@ -1,6 +1,6 @@
 # PlayerOne vs PlayerTwo
 
-*Ladder · 2026-08-09 23:23 · Lost 0-1 · 11 turns*
+*Ladder · 2026-08-10 03:23 · Lost 0-1 · 11 turns*
 
 
 ## Turn 1 — Opponent  (You 20 · Opponent 20)

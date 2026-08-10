@@ -41,8 +41,16 @@ public static class TranscriptSummary
     public static string Subtitle(Transcript t) =>
         $"{t.EventName} · {Date(t):yyyy-MM-dd HH:mm} · {Result(t)} · {Turns(t)} turns";
 
+    /// <summary>
+    /// Zone match times are rendered in. Local by default, because you want to see
+    /// when you actually played. Settable so golden-file output does not depend on
+    /// the timezone of the machine rendering it.
+    /// </summary>
+    public static TimeZoneInfo DisplayTimeZone { get; set; } = TimeZoneInfo.Local;
+
     public static DateTimeOffset Date(Transcript t) =>
-        DateTimeOffset.FromUnixTimeMilliseconds(t.StartedAtMs == 0 ? 0 : t.StartedAtMs).ToLocalTime();
+        TimeZoneInfo.ConvertTime(
+            DateTimeOffset.FromUnixTimeMilliseconds(t.StartedAtMs), DisplayTimeZone);
 
     public static int Turns(Transcript t) => t.Events.Count == 0 ? 0 : t.Events.Max(e => e.Turn);
 }
