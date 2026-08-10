@@ -341,6 +341,34 @@ public class EventExtractorTests
     }
 
     [Test]
+    public void Board_snapshots_are_skipped_while_the_board_is_unchanged()
+    {
+        string Turn(int n, int seat, string toughness) => Gre($$"""
+            { "type": "GameStateType_Full",
+              "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "gameObjects": [ { "instanceId": 50, "grpId": 1, "name": 1001,
+                "controllerSeatId": 2, "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
+                "power": 2, "toughness": {{toughness}} } ],
+              "turnInfo": { "turnNumber": {{n}}, "activePlayer": {{seat}} },
+              "annotations": [ { "id": 1, "affectorId": {{seat}}, "affectedIds": [ {{seat}} ],
+                "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+            """);
+
+        var t = Run(RoomLine, MulliganLine,
+            Turn(1, 1, "2"),   // board appears
+            Turn(2, 2, "2"),   // unchanged
+            Turn(3, 1, "2"),   // still unchanged
+            Turn(4, 2, "5"));  // grew
+
+        var boards = t.Events.Where(x => x.Kind == EventKind.BoardSnapshot).ToList();
+        Assert.That(boards.Select(b => b.Detail), Is.EqualTo(new[]
+        {
+            "Llanowar Elves 2/2",
+            "Llanowar Elves 2/5"
+        }), "an unchanged board should stay quiet until it actually moves");
+    }
+
+    [Test]
     public void Turn_start_carries_the_life_totals_entering_the_turn()
     {
         var t = Run(RoomLine, MulliganLine, Gre("""

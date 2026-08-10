@@ -72,12 +72,35 @@ public sealed class EventExtractor(ICardDb cards)
         "AnnotationType_Shuffle",
     };
 
+    /// <summary>
+    /// Mutable state for one extraction run. Collected into an object because the
+    /// emit helpers were accumulating ref parameters faster than they were gaining
+    /// responsibilities.
+    /// </summary>
+    private sealed class Emit
+    {
+        public int Seq;
+        public int LastTurn;
+        public int LastTurnStarted;
+        public readonly List<GameEvent> Events = [];
+        public readonly Dictionary<string, int> Unknown = new(StringComparer.Ordinal);
+        public readonly HashSet<string> CardsSeen = new(StringComparer.Ordinal);
+
+        /// <summary>Last board text emitted per seat, so unchanged boards stay quiet.</summary>
+        public readonly Dictionary<int, string> LastBoard = [];
+
+        public void Add(GameEvent e) => Events.Add(e with { Seq = Seq++ });
+
+        public void SawCard(string? name)
+        {
+            if (name is not null && !name.StartsWith('#')) CardsSeen.Add(name);
+        }
+    }
+
     public Transcript Extract(string matchId, IReadOnlyList<string> rawLines)
     {
         var tracker = new GameStateTracker(cards);
-        var events = new List<GameEvent>();
-        var unknown = new Dictionary<string, int>(StringComparer.Ordinal);
-        var cardsSeen = new HashSet<string>(StringComparer.Ordinal);
+        var st = new Emit();
         var seatMeta = new Dictionary<int, PlayerInfo>();
 
         long started = 0, ended = 0;
@@ -85,9 +108,6 @@ public sealed class EventExtractor(ICardDb cards)
         int? localSeat = null, fallbackSeat = null, winningTeam = null;
         int gamesForTeam1 = 0, gamesForTeam2 = 0;
         var sawFinal = false;
-        var seq = 0;
-        var lastTurn = 0;
-        var lastTurnStarted = 0;
 
         foreach (var raw in rawLines)
         {
@@ -123,10 +143,9 @@ public sealed class EventExtractor(ICardDb cards)
                 if (Json.Obj(m, "gameStateMessage") is not { } gsm) continue;
 
                 tracker.Apply(gsm);
-                EmitCombat(tracker, ts, ref seq, events, cardsSeen);
+                EmitCombat(tracker, ts, st);
                 foreach (var a in Json.Array(gsm, "annotations"))
-                    EmitFor(a, tracker, ts, ref seq, ref lastTurn, ref lastTurnStarted,
-                            events, unknown, cardsSeen);
+                    EmitFor(a, tracker, ts, st);
             }
         }
 
@@ -141,9 +160,8 @@ public sealed class EventExtractor(ICardDb cards)
 
         if (sawFinal)
         {
-            events.Add(new GameEvent
+            st.Add(new GameEvent
             {
-                Seq = seq++,
                 TimestampMs = ended,
                 Kind = EventKind.GameEnd,
                 Amount = winningTeam ?? 0,
@@ -155,7 +173,7 @@ public sealed class EventExtractor(ICardDb cards)
         return new Transcript(
             matchId, started, ended, eventName, you, opp,
             winningTeam, won, lost, Incomplete: !sawFinal,
-            events, unknown, cardsSeen);
+            st.Events, st.Unknown, st.CardsSeen);
     }
 
     /// <summary>
@@ -163,20 +181,17 @@ public sealed class EventExtractor(ICardDb cards)
     /// only as a state change on the creature — so it is read from the tracker's
     /// transition reports rather than from the annotation stream.
     /// </summary>
-    private static void EmitCombat(
-        GameStateTracker tracker, long ts, ref int seq,
-        List<GameEvent> events, HashSet<string> cardsSeen)
+    private static void EmitCombat(GameStateTracker tracker, long ts, Emit st)
     {
         foreach (var id in tracker.NewAttackers)
         {
             var obj = tracker.Get(id);
             var name = tracker.NameOf(id);
-            if (!name.StartsWith('#')) cardsSeen.Add(name);
+            st.SawCard(name);
 
             var target = obj?.AttackTargetId;
-            events.Add(Base(tracker, ts, EventKind.Attack) with
+            st.Add(Base(tracker, ts, EventKind.Attack) with
             {
-                Seq = seq++,
                 ActorSeat = obj?.ControllerSeat is > 0 ? obj.ControllerSeat : tracker.ActiveSeat,
                 SourceInstanceId = id,
                 SourceName = name,
@@ -190,12 +205,11 @@ public sealed class EventExtractor(ICardDb cards)
         {
             var obj = tracker.Get(id);
             var name = tracker.NameOf(id);
-            if (!name.StartsWith('#')) cardsSeen.Add(name);
+            st.SawCard(name);
 
             var attacker = obj?.BlockedAttackerIds.FirstOrDefault();
-            events.Add(Base(tracker, ts, EventKind.Block) with
+            st.Add(Base(tracker, ts, EventKind.Block) with
             {
-                Seq = seq++,
                 ActorSeat = obj?.ControllerSeat,
                 SourceInstanceId = id,
                 SourceName = name,
@@ -211,8 +225,7 @@ public sealed class EventExtractor(ICardDb cards)
     /// has the tracker; the renderer still decides how to present it and which player
     /// label to use.
     /// </summary>
-    private static void EmitBoardSnapshots(
-        GameStateTracker tracker, long ts, ref int seq, int turn, List<GameEvent> events)
+    private static void EmitBoardSnapshots(GameStateTracker tracker, long ts, int turn, Emit st)
     {
         foreach (var seat in new[] { 1, 2 })
         {
@@ -231,22 +244,25 @@ public sealed class EventExtractor(ICardDb cards)
                 return text;
             });
 
-            events.Add(new GameEvent
+            // A board that has not moved since the last turn tells you nothing, and
+            // repeating it verbatim is most of the noise these lines can generate.
+            var detail = string.Join(", ", parts);
+            if (st.LastBoard.TryGetValue(seat, out var previous) && previous == detail) continue;
+            st.LastBoard[seat] = detail;
+
+            st.Add(new GameEvent
             {
-                Seq = seq++,
                 TimestampMs = ts,
                 GameNumber = tracker.GameNumber,
                 Turn = turn,
                 Kind = EventKind.BoardSnapshot,
                 ActorSeat = seat,
-                Detail = string.Join(", ", parts)
+                Detail = detail
             });
         }
     }
 
-    private void EmitFor(
-        JsonElement a, GameStateTracker tracker, long ts, ref int seq, ref int lastTurn,
-        ref int lastTurnStarted, List<GameEvent> events, Dictionary<string, int> unknown, HashSet<string> cardsSeen)
+    private void EmitFor(JsonElement a, GameStateTracker tracker, long ts, Emit st)
     {
         foreach (var typeEl in Json.Array(a, "type"))
         {
@@ -266,7 +282,7 @@ public sealed class EventExtractor(ICardDb cards)
 
                 var objId = FirstAffected(a);
                 var name = objId is { } oid ? tracker.NameOf(oid) : null;
-                if (name is not null && !name.StartsWith('#')) cardsSeen.Add(name);
+                st.SawCard(name);
 
                 // A card the opponent draws has no game object, so its controller is
                 // unknown; whoever's turn it is did it.
@@ -308,7 +324,7 @@ public sealed class EventExtractor(ICardDb cards)
                 var affected = FirstAffected(a);
 
                 var sourceName = affector is { } s && s > 2 ? tracker.NameOf(s) : null;
-                if (sourceName is not null && !sourceName.StartsWith('#')) cardsSeen.Add(sourceName);
+                st.SawCard(sourceName);
 
                 // affectorId is a seat for player actions and an object id otherwise;
                 // for an object, credit its controller, else the active player.
@@ -334,24 +350,24 @@ public sealed class EventExtractor(ICardDb cards)
             }
             else
             {
-                unknown[type] = unknown.GetValueOrDefault(type) + 1;
+                st.Unknown[type] = st.Unknown.GetValueOrDefault(type) + 1;
                 ev = Base(tracker, ts, EventKind.Unknown) with { RawType = type };
             }
 
             // turnInfo carries no turnNumber until the first turn is under way, so the
             // opening NewTurnStarted would otherwise land on "Turn 0".
-            var turn = tracker.Turn > 0 ? tracker.Turn : Math.Max(lastTurn, 1);
+            var turn = tracker.Turn > 0 ? tracker.Turn : Math.Max(st.LastTurn, 1);
 
-            lastTurn = turn;
+            st.LastTurn = turn;
 
             if (ev.Kind == EventKind.TurnStart)
             {
                 // Compare against the last turn we opened, not the last turn seen:
                 // a phase change in the same message already advanced lastTurn to the
                 // new turn, so testing that would never fire.
-                if (lastTurnStarted > 0 && turn != lastTurnStarted)
-                    EmitBoardSnapshots(tracker, ts, ref seq, lastTurnStarted, events);
-                lastTurnStarted = turn;
+                if (st.LastTurnStarted > 0 && turn != st.LastTurnStarted)
+                    EmitBoardSnapshots(tracker, ts, st.LastTurnStarted, st);
+                st.LastTurnStarted = turn;
 
                 ev = ev with
                 {
@@ -360,7 +376,7 @@ public sealed class EventExtractor(ICardDb cards)
                 };
             }
 
-            events.Add(ev with { Seq = seq++, Turn = turn });
+            st.Add(ev with { Turn = turn });
         }
     }
 

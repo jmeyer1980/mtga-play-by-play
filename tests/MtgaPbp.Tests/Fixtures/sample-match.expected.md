@@ -12,7 +12,6 @@
 ## Turn 2 — You  (You 20 · Opponent 20)
 - You draw Hop to It
 - You play Plains
-  *Opponent controls: Hinterland Sanctifier 1/2*
 
 ## Turn 3 — Opponent  (You 20 · Opponent 20)
 - Opponent plays Plains
@@ -31,7 +30,6 @@
 - You draw Ghostly Dancers
 - You play Temple of Enlightenment
 - You scry
-  *Opponent controls: Ajani's Pridemate 3/3*
 
 ## Turn 5 — Opponent  (You 20 · Opponent 21)
 - Opponent plays Plains
@@ -52,7 +50,6 @@
 - Carrot Cake's ability creates Rabbit
 - You scry
   *You control: Rabbit 1/1*
-  *Opponent controls: Ajani's Pridemate 3/3 (tapped), Rabbit 1/1, Rabbit 1/1, Rabbit 1/1*
 
 ## Turn 7 — Opponent  (You 17 · Opponent 21)
 - Opponent casts Leonin Vanguard
@@ -81,7 +78,6 @@
 - Hop to It creates Rabbit
 - Hop to It resolves
   *You control: Rabbit 1/1, Rabbit 1/1, Rabbit 1/1*
-  *Opponent controls: Ajani's Pridemate 4/4 (1 dmg, tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1*
 
 ## Turn 9 — Opponent  (You 14 · Opponent 22)
 - Opponent casts Crowd of True Believers
@@ -111,7 +107,6 @@
 - You cast Ethereal Armor
 - Ethereal Armor resolves
   *You control: Rabbit 3/3, Rabbit 1/1*
-  *Opponent controls: Ajani's Pridemate 5/5 (1 dmg, tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1, Crowd of True Believers 1/2*
 
 ## Turn 11 — Opponent  (You 11 · Opponent 23)
 - Opponent plays Temple of Plenty
