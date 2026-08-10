@@ -117,21 +117,55 @@ Grab the latest `mtga-pbp-vX.Y.Z-win-x64.zip` from
 anywhere, and run `mtga-pbp.exe`. The build is self-contained — no .NET install
 needed. Each release ships a `.sha256` next to the zip if you want to verify it.
 
-## Build from source
+## Build it yourself
+
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and
+nothing else. Arena does not need to be installed to build or test — only to run.
 
 ```bash
+git clone https://github.com/jmeyer1980/mtga-play-by-play.git
+cd mtga-play-by-play
 dotnet test
-dotnet publish src/MtgaPbp.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o dist
 ```
+
+To produce the same single-file executable the releases ship:
+
+```bash
+dotnet publish src/MtgaPbp.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
+```
+
+That writes `dist/mtga-pbp.exe` — around 72 MB, because it bundles the .NET runtime
+so the machine running it needs nothing installed.
+
+Swapping `--self-contained` for `--no-self-contained` gives a 158 KB exe, but it
+needs .NET 10 present on the target machine and ships beside ~2.5 MB of dependency
+DLLs. Keep `-p:PublishSingleFile=true` and that folder collapses back into one file.
+The releases use the self-contained build so downloads just work.
+
+During development you can skip publishing entirely:
+
+```bash
+dotnet run --project src/MtgaPbp.Cli -- --open
+```
+
+### Tests and CI
 
 CI runs on Windows and checks formatting, builds with warnings as errors, runs the
 tests, and audits dependencies for known vulnerabilities. Releases are cut by pushing
 a `v*` tag.
 
-**One gap worth knowing:** the seven golden-file tests need MTG Arena's 237 MB card
-database, which cannot be committed and does not exist on a runner, so they skip on
-CI and only run on a machine with Arena installed. CI fails if the number of skipped
-tests ever grows past that known set, so coverage cannot shrink quietly — but the
-end-to-end transcript check is genuinely not running in CI today.
+The end-to-end transcript test replays a real anonymized match through the whole
+pipeline. It resolves card names from a small checked-in fixture
+(`tests/MtgaPbp.Tests/Fixtures/card-names.json`, ~2 KB) rather than Arena's 237 MB
+card database, so it runs everywhere including CI. `CardDbIntegrationTests` covers
+the real database and is the only thing that skips on a runner — including a check
+that the name fixture still agrees with what Arena actually returns.
+
+If you change the sample match, regenerate the name fixture on a machine with Arena
+installed:
+
+```bash
+dotnet test --filter "FullyQualifiedName~CardNameFixtureGenerator" -- NUnit.Explicit=true
+```
 
 Design and implementation notes: [`docs/superpowers/specs/`](docs/superpowers/specs/).

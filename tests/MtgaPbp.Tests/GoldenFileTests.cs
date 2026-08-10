@@ -18,7 +18,7 @@ public class GoldenFileTests
     // reasonable thing to check in.
     private static string SamplePath => Path.Combine(FixtureDir, "sample-match.json.gz");
 
-    private static string[] ReadFixture()
+    internal static string[] ReadFixture()
     {
         using var fs = File.OpenRead(SamplePath);
         using var gz = new System.IO.Compression.GZipStream(
@@ -36,15 +36,15 @@ public class GoldenFileTests
         TestContext.CurrentContext.TestDirectory,
         "..", "..", "..", "Fixtures", "sample-match.expected.md");
 
-    private static Transcript Extract()
-    {
-        var dbPath = CardDb.FindDatabase(null);
-        if (dbPath is null)
-            Assert.Ignore("MTG Arena card database not present; this test needs Arena installed.");
-
-        using var db = new CardDb(dbPath!);
-        return new EventExtractor(db).Extract("sample-match-0001", ReadFixture());
-    }
+    /// <summary>
+    /// Runs against the checked-in card-name fixture rather than Arena's 237 MB
+    /// database, so this end-to-end check runs on CI and not only on a machine with
+    /// the game installed. <see cref="CardDbIntegrationTests"/> covers the real
+    /// database separately.
+    /// </summary>
+    private static Transcript Extract() =>
+        new EventExtractor(FixtureCardDb.Load(FixtureDir))
+            .Extract("sample-match-0001", ReadFixture());
 
     [Test]
     public void Real_match_produces_a_transcript_with_both_players_and_a_result()

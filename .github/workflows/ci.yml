@@ -44,10 +44,8 @@ jobs:
           --logger "console;verbosity=normal"
           --results-directory artifacts/test-results
 
-      # The golden-file tests need MTG Arena's 237 MB card database, which cannot
-      # be committed and does not exist on a runner, so they self-ignore here.
-      # Fail loudly if the number ignored ever grows beyond that known set —
-      # silently shrinking coverage is exactly what this guards against.
+      # A few tests cannot run here, and this fails the build if that set ever grows.
+      # Silently shrinking coverage is exactly what it guards against.
       - name: Guard against unexpectedly skipped tests
         shell: pwsh
         run: |
@@ -59,10 +57,11 @@ jobs:
           $skipped = $total - $passed - $failed
           Write-Host "total=$total passed=$passed failed=$failed skipped=$skipped"
 
-          # Exactly the 7 GoldenFileTests, which need Arena's card database. The
-          # targeting-limitation test is one of them — it ignores before reaching
-          # its Assert.Warn, which is why this is 7 and not 8.
-          $expected = 7
+          # 4 CardDbIntegrationTests needing Arena's card database, the Explicit
+          # fixture generator, and the documented targeting-limitation warning.
+          # The golden-file tests are NOT in here — they run on a checked-in name
+          # fixture, so the end-to-end check runs on CI too.
+          $expected = 6
           if ($skipped -gt $expected) {
             throw "$skipped tests did not run; at most $expected are expected to skip on CI. Something stopped running rather than started failing."
           }

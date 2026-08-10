@@ -1,0 +1,78 @@
+{
+  "Locs": {
+    "648": "Plains",
+    "6506": "Rabbit",
+    "18841": "Ajani\u0027s Pridemate",
+    "40935": "Ethereal Armor",
+    "44192": "Temple of Enlightenment",
+    "44198": "Temple of Plenty",
+    "229409": "Leonin Vanguard",
+    "701836": "Elspeth\u0027s Smite",
+    "737054": "Dusk Rose Reliquary",
+    "810948": "Caretaker\u0027s Talent",
+    "810954": "Carrot Cake",
+    "810992": "Hop to It",
+    "812286": "Ghostly Dancers",
+    "823098": "Hinterland Sanctifier",
+    "1117188": "Crowd of True Believers"
+  },
+  "Cards": {
+    "91543": {
+      "Name": "Carrot Cake",
+      "Types": "1",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "92970": {
+      "Name": "Deal Gone Bad",
+      "Types": "4",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "93636": {
+      "Name": "Hinterland Sanctifier",
+      "Types": "2",
+      "Power": "1",
+      "Toughness": "2",
+      "IsToken": false
+    },
+    "93648": {
+      "Name": "Leonin Vanguard",
+      "Types": "2",
+      "Power": "1",
+      "Toughness": "1",
+      "IsToken": false
+    },
+    "94126": {
+      "Name": "Temple of Enlightenment",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "94131": {
+      "Name": "Temple of Plenty",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    }
+  },
+  "Enums": {
+    "Phase:1": "Beginning",
+    "Phase:2": "1st Main",
+    "Phase:3": "Combat",
+    "Phase:4": "2nd Main",
+    "Phase:5": "Ending",
+    "Step:1": "Untap",
+    "Step:10": "Cleanup",
+    "Step:2": "Upkeep",
+    "Step:3": "Draw",
+    "Step:5": "Declare Attackers",
+    "Step:6": "Declare Blockers",
+    "Step:7": "Combat Damage",
+    "Step:8": "End Combat"
+  }
+}
