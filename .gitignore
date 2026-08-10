@@ -10,3 +10,6 @@ archive/
 .vs/
 .idea/
 *.user
+
+# published artifacts
+dist/

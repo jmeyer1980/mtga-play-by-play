@@ -223,11 +223,16 @@ confusing than one where neither does.
 Constraint: **browsers block `fetch()` on `file://`.** Anything searchable must be
 embedded in the page that searches it, which rules out `index.html` + `games.json`.
 
-- **`out/index.html`** — self-contained. Embeds one compact record per game: date,
-  event/queue, opponent, result, games won–lost, turn count, duration, and the list
-  of card names that appeared. Search and filter run client-side over the embedded
-  blob. At ~1 KB per game, 1,000 games is a ~1 MB index — instant to load and search.
-  Sorted most-recent-first by default.
+- **`out/index.html`** — self-contained, sorted most-recent-first. One `<tr>` per
+  game rendered **statically** in the markup, carrying date, event/queue, opponent,
+  result, and turn count, plus a `data-search` attribute holding the lowercased
+  haystack (those fields plus every card name that appeared). Search filters rows by
+  toggling `hidden`.
+
+  Rows are markup rather than script-built output so the page works with JavaScript
+  disabled, the browser's own find-in-page sees every opponent and card name, and each
+  link is a real anchor. Search is progressive enhancement, not the thing that makes
+  the page exist. At ~1 KB per game, 1,000 games is a ~1 MB index.
 - **`out/games/<matchId>.html`** — one static self-contained file per game. Contains
   both densities with a toggle button. No fetch. Opens by clicking a link from the
   index; also stands alone if sent to someone.
@@ -299,6 +304,37 @@ Steam path and taking the newest `Raw_CardDatabase_*.mtga`; config overrides it.
 
 Shipped as a self-contained single-file `.exe` so it can be run by double-clicking
 after a play session.
+
+## Discovered during implementation
+
+Four things only real data revealed. All are now covered by regression tests.
+
+**The match id is sticky.** Only `GameStateType_Full` carries `gameInfo.matchID` — 74
+lines out of 4,774 in the sample log. Every `GameStateType_Diff`, which is where the
+annotations live, has no match id at all and must inherit the match in progress. The
+first implementation dropped 98% of the game data and produced a 168 KB archive
+instead of 2.0 MB.
+
+**`JsonElement.TryGetInt32` throws.** It returns `false` only when a number will not
+fit; when the element is not a number at all it raises `InvalidOperationException`.
+Arena sends nominally numeric fields as strings often enough to crash a build. All
+numeric reads go through `Json` in `MtgaPbp.Core`, which checks `ValueKind` first.
+
+**Combat has no annotation.** Attacks and blocks appear only as `attackState` /
+`blockState` transitions on the game object, so they are read from tracker transition
+reports rather than the annotation stream. Arena never sends `AttackState_None` — it
+simply stops sending the field — so combat state is cleared on a turn change.
+Without that, a creature is treated as permanently attacking after its first swing
+and every later attack goes unreported.
+
+**Hidden cards have no controller.** A card the opponent draws has no game object, so
+the actor falls back to the active player. Otherwise every opponent draw and scry
+reads as "Someone".
+
+Two smaller notes: `build` never caches, so `--rebuild` is accepted and documented but
+changes nothing today; and events whose subject resolves only to a bare instance id
+(a token that left play before the client described it) are dropped from beats and
+kept in verbose.
 
 ## Out of scope for v1
 
