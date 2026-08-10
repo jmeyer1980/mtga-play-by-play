@@ -40,9 +40,14 @@ it — after a session, at the end of the day.
 | Command | Does |
 |---|---|
 | `mtga-pbp` | capture new matches, then rebuild the site |
+| `mtga-pbp --open` | ... and open the report in your browser |
 | `mtga-pbp capture` | capture only |
 | `mtga-pbp build` | re-derive the whole site from the archive |
 | `mtga-pbp stats` | unhandled annotation types and unresolved cards |
+
+If you launch by double-clicking the exe, the console window closes before you can
+read anything — set `"OpenAfterBuild": true` in `mtga-pbp.json` and the report opens
+every time, no flag needed.
 
 Output lands in `%USERPROFILE%\MTGA_PlayByPlay`:
 
@@ -54,9 +59,14 @@ out/text/<matchId>.md            markdown, for pasting into chat
 ```
 
 Open `out/index.html` in any browser. Search filters on opponent, event, result,
-date, and every card that appeared. Each game page has a **Show verbose** toggle that
-swaps the readable beats for the full stream including phases, mana payments, and any
-annotation the parser did not recognise.
+date, and every card that appeared.
+
+Each game page has two buttons:
+
+- **Show verbose** swaps the readable beats for the full stream — named phases and
+  steps, mana payments, and any annotation the parser did not recognise.
+- **Copy transcript** puts the game on your clipboard as markdown, matching whichever
+  density is currently on screen. The buttons themselves are never included.
 
 ### Run it after every session
 
@@ -74,7 +84,8 @@ Optional `mtga-pbp.json` beside the executable:
   "LogPaths": ["C:\\path\\to\\Player.log", "C:\\path\\to\\Player-prev.log"],
   "CardDbPath": "C:\\path\\to\\Raw_CardDatabase_xxx.mtga",
   "ArchiveDir": "C:\\path\\to\\archive",
-  "OutputDir": "C:\\path\\to\\out"
+  "OutputDir": "C:\\path\\to\\out",
+  "OpenAfterBuild": true
 }
 ```
 

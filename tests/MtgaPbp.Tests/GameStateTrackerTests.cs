@@ -19,6 +19,7 @@ public class GameStateTrackerTests
             94131 => new CardInfo(94131, "Temple of Plenty", "5", null, null, false),
             _ => null
         };
+        public string? EnumName(string type, int value) => null;
     }
 
     private static GameStateTracker NewTracker() => new(new FakeCardDb());

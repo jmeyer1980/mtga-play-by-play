@@ -91,6 +91,36 @@ public class RendererTests
         Assert.That(html, Does.Contain("&lt;script&gt;bad"));
     }
 
+    [Test]
+    public void GamePage_has_a_copy_button()
+    {
+        var html = GamePageRenderer.Render(Sample());
+        Assert.That(html, Does.Contain("id=\"copy-button\""));
+    }
+
+    [Test]
+    public void GamePage_copy_reads_the_visible_density_and_not_the_controls()
+    {
+        var html = GamePageRenderer.Render(Sample());
+
+        // Copy must gather from the transcript sections, never from the header, so
+        // the toggle and copy button labels cannot end up in the clipboard.
+        Assert.That(html, Does.Contain("section[data-density]"));
+        Assert.That(html, Does.Contain("h2, p.beat"));
+        Assert.That(html, Does.Not.Contain("copy-button').textContent"),
+            "the button's own label must not be part of the copied text");
+    }
+
+    [Test]
+    public void GamePage_copy_falls_back_when_the_clipboard_api_is_unavailable()
+    {
+        // file:// is not a secure context in every browser, so navigator.clipboard
+        // can be absent or reject. Failing silently would look like a broken button.
+        var html = GamePageRenderer.Render(Sample());
+        Assert.That(html, Does.Contain("execCommand"));
+        Assert.That(html, Does.Contain("Copy failed"));
+    }
+
     // ---------- Task 10: index ----------
 
     [Test]

@@ -100,7 +100,8 @@ public static class Narrator
         EventKind.Revealed when e.SourceName is not null => $"{e.SourceName} is revealed",
 
         EventKind.ManaPaid when e.SourceName is not null => $"taps {e.SourceName} for mana",
-        EventKind.PhaseChange => $"— phase {e.Phase}, step {e.Step} —",
+        EventKind.PhaseChange when !string.IsNullOrWhiteSpace(e.Detail) => $"— {e.Detail} —",
+        EventKind.PhaseChange => null,
         EventKind.Unknown => $"[unhandled: {e.RawType}]",
 
         EventKind.GameEnd => e.Detail,

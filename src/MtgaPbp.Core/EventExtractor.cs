@@ -40,7 +40,8 @@ public sealed class EventExtractor(ICardDb cards)
             ["AnnotationType_Scry"] = EventKind.Scry,
             ["AnnotationType_RevealedCardCreated"] = EventKind.Revealed,
             ["AnnotationType_ManaPaid"] = EventKind.ManaPaid,
-            ["AnnotationType_PhaseOrStepModified"] = EventKind.PhaseChange,
+            // PhaseOrStepModified is handled separately — its phase and step come
+            // from the annotation's own details, not from tracker state.
         };
 
     /// <summary>Annotations that carry no transcript value and are silently dropped.</summary>
@@ -236,6 +237,28 @@ public sealed class EventExtractor(ICardDb cards)
                     SourceName = name,
                     ActorSeat = controller is > 0 ? controller : tracker.ActiveSeat,
                     Detail = category
+                };
+            }
+            else if (type == "AnnotationType_PhaseOrStepModified")
+            {
+                // The phase and step live on the annotation itself; turnInfo often
+                // omits them, so reading tracker state here yields "phase 0, step 0".
+                var phase = GameStateTracker.DetailInt(a, "phase") ?? 0;
+                var step = GameStateTracker.DetailInt(a, "step") ?? 0;
+                var label = string.Join(" · ", new[]
+                {
+                    cards.EnumName("Phase", phase),
+                    cards.EnumName("Step", step)
+                }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
+                // Phase 0 / Step 0 are both blank — nothing to say.
+                if (label.Length == 0) continue;
+
+                ev = Base(tracker, ts, EventKind.PhaseChange) with
+                {
+                    Phase = phase,
+                    Step = step,
+                    Detail = label
                 };
             }
             else if (SimpleAnnotationKinds.TryGetValue(type, out var simple))

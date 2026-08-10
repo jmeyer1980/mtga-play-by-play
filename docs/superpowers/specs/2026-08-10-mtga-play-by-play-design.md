@@ -236,6 +236,13 @@ embedded in the page that searches it, which rules out `index.html` + `games.jso
 - **`out/games/<matchId>.html`** — one static self-contained file per game. Contains
   both densities with a toggle button. No fetch. Opens by clicking a link from the
   index; also stands alone if sent to someone.
+
+  A **Copy transcript** button puts the currently-visible density on the clipboard as
+  markdown. It gathers from the transcript sections and the title only, so the button
+  labels can never end up in the copied text. `navigator.clipboard` is tried first and
+  `document.execCommand('copy')` is the fallback: `file://` is a secure context in
+  Chrome and Firefox but not universally, and a silently dead button is worse than a
+  legacy code path.
 - **`out/text/<matchId>.md`** — plain markdown of the beats view, for pasting into
   Discord. No dependency on the local card database.
 
@@ -331,10 +338,26 @@ and every later attack goes unreported.
 the actor falls back to the active player. Otherwise every opponent draw and scry
 reads as "Someone".
 
+**Phase and step live on the annotation, not on `turnInfo`.** `turnInfo` usually omits
+them, so reading tracker state made every verbose line read "phase 0, step 0".
+`AnnotationType_PhaseOrStepModified` carries its own `phase` and `step` details, and
+the card database's `Enums` table maps them to labels ("Combat", "Declare Attackers").
+Phase 0 and Step 0 are both blank in Arena's own table, so those events are dropped
+rather than rendered empty.
+
 Two smaller notes: `build` never caches, so `--rebuild` is accepted and documented but
 changes nothing today; and events whose subject resolves only to a bare instance id
 (a token that left play before the client described it) are dropped from beats and
 kept in verbose.
+
+## Launching the report
+
+`--open` opens `index.html` with the shell's default handler after a build, and
+`"OpenAfterBuild": true` in `mtga-pbp.json` makes that permanent. The config setting
+is the one that matters: launching by double-click closes the console before the
+output path can be read, which is how the output location gets lost. A failure to
+open is reported but never fails a build that already succeeded — the path is printed
+either way.
 
 ## Out of scope for v1
 

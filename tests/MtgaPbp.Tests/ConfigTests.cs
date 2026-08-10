@@ -47,6 +47,34 @@ public class ConfigTests
     }
 
     [Test]
+    public void OpenAfterBuild_defaults_to_false()
+    {
+        Assert.That(Config.Default().OpenAfterBuild, Is.False);
+    }
+
+    [Test]
+    public void OpenAfterBuild_can_be_turned_on_in_config()
+    {
+        // The setting exists for double-clicking the exe, where the console window
+        // closes before the output path can be read.
+        File.WriteAllText(Path.Combine(_dir, "mtga-pbp.json"), """
+        { "OpenAfterBuild": true }
+        """);
+        Assert.That(Config.Load(_dir).OpenAfterBuild, Is.True);
+    }
+
+    [Test]
+    public void Load_keeps_defaults_for_fields_the_config_omits()
+    {
+        File.WriteAllText(Path.Combine(_dir, "mtga-pbp.json"), """
+        { "OpenAfterBuild": true }
+        """);
+        var c = Config.Load(_dir);
+        Assert.That(c.LogPaths, Is.Not.Empty);
+        Assert.That(c.OutputDir, Is.Not.Empty);
+    }
+
+    [Test]
     public void Default_log_paths_include_both_current_and_previous_logs()
     {
         var c = Config.Default();

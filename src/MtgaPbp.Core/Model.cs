@@ -9,6 +9,12 @@ public interface ICardDb
 {
     string? NameForLocId(int locId);
     CardInfo? CardForGrpId(int grpId);
+
+    /// <summary>
+    /// A localized enum label, e.g. EnumName("Step", 5) is "Declare Attackers".
+    /// Null when the value has no label — Phase 0 and Step 0 are both blank.
+    /// </summary>
+    string? EnumName(string type, int value);
 }
 
 public sealed record LogEnvelope(long LineNumber, long TimestampMs, JsonElement Root);

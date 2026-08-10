@@ -10,6 +10,13 @@ public sealed class Config
     public string OutputDir { get; set; } = "";
     public string? LocalPlayerUserId { get; set; }
 
+    /// <summary>
+    /// Open index.html in the default browser after a build. Off by default; set it
+    /// when you launch the tool by double-clicking, where the console window closes
+    /// before the output path can be read.
+    /// </summary>
+    public bool OpenAfterBuild { get; set; }
+
     public static Config Default()
     {
         var low = Path.Combine(
@@ -42,6 +49,7 @@ public sealed class Config
             if (!string.IsNullOrWhiteSpace(loaded.OutputDir)) cfg.OutputDir = loaded.OutputDir;
             if (!string.IsNullOrWhiteSpace(loaded.LocalPlayerUserId))
                 cfg.LocalPlayerUserId = loaded.LocalPlayerUserId;
+            cfg.OpenAfterBuild = loaded.OpenAfterBuild;
             return cfg;
         }
         catch (JsonException)

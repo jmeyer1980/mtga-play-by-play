@@ -7,6 +7,7 @@ public sealed class CardDb : ICardDb, IDisposable
     private readonly SqliteConnection _con;
     private readonly Dictionary<int, string?> _locCache = new();
     private readonly Dictionary<int, CardInfo?> _cardCache = new();
+    private readonly Dictionary<(string Type, int Value), string?> _enumCache = new();
 
     public CardDb(string dbPath)
     {
@@ -79,6 +80,29 @@ public sealed class CardDb : ICardDb, IDisposable
         }
         _cardCache[grpId] = info;
         return info;
+    }
+
+    public string? EnumName(string type, int value)
+    {
+        var key = (type, value);
+        if (_enumCache.TryGetValue(key, out var hit)) return hit;
+
+        using var cmd = _con.CreateCommand();
+        cmd.CommandText = """
+            SELECT l.Loc
+            FROM Enums e
+            JOIN Localizations_enUS l ON l.LocId = e.LocId
+            WHERE e.Type = $type AND e.Value = $value
+            ORDER BY l.Formatted
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("$type", type);
+        cmd.Parameters.AddWithValue("$value", value);
+
+        var name = cmd.ExecuteScalar() as string;
+        if (string.IsNullOrWhiteSpace(name)) name = null;
+        _enumCache[key] = name;
+        return name;
     }
 
     public void Dispose() => _con.Dispose();

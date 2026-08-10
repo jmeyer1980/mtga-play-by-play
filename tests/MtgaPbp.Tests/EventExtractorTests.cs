@@ -15,6 +15,12 @@ public class EventExtractorTests
             _ => null
         };
         public CardInfo? CardForGrpId(int grpId) => null;
+        public string? EnumName(string type, int value) => (type, value) switch
+        {
+            ("Phase", 3) => "Combat",
+            ("Step", 5) => "Declare Attackers",
+            _ => null
+        };
     }
 
     private static Transcript Run(params string[] lines) =>
@@ -266,6 +272,40 @@ public class EventExtractorTests
         """));
 
         Assert.That(t.Events.Single(x => x.Kind == EventKind.TurnStart).Turn, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Phase_changes_are_named_from_the_annotations_own_details()
+    {
+        // turnInfo usually omits phase and step, so reading tracker state here
+        // produced "phase 0, step 0" for every line in the verbose stream.
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full", "turnInfo": { "turnNumber": 5 },
+          "annotations": [ { "id": 107, "affectedIds": [ 2 ],
+            "type": [ "AnnotationType_PhaseOrStepModified" ], "details": [
+              { "key": "phase", "valueInt32": [ 3 ] },
+              { "key": "step",  "valueInt32": [ 5 ] } ] } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.PhaseChange);
+        Assert.That(e.Phase, Is.EqualTo(3));
+        Assert.That(e.Step, Is.EqualTo(5));
+        Assert.That(e.Detail, Is.EqualTo("Combat · Declare Attackers"));
+    }
+
+    [Test]
+    public void Nameless_phase_changes_are_dropped_entirely()
+    {
+        // Phase 0 and Step 0 both have blank labels in Arena's own enum table.
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full", "annotations": [
+          { "id": 107, "type": [ "AnnotationType_PhaseOrStepModified" ], "details": [
+              { "key": "phase", "valueInt32": [ 0 ] },
+              { "key": "step",  "valueInt32": [ 0 ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.PhaseChange), Is.False);
+        Assert.That(t.UnknownAnnotations, Is.Empty, "dropping it is not the same as not knowing it");
     }
 
     [Test]
