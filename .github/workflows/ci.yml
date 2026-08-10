@@ -59,9 +59,10 @@ jobs:
           $skipped = $total - $passed - $failed
           Write-Host "total=$total passed=$passed failed=$failed skipped=$skipped"
 
-          # 7 golden-file tests that need the card database, plus the documented
-          # targeting-limitation warning.
-          $expected = 8
+          # Exactly the 7 GoldenFileTests, which need Arena's card database. The
+          # targeting-limitation test is one of them — it ignores before reaching
+          # its Assert.Warn, which is why this is 7 and not 8.
+          $expected = 7
           if ($skipped -gt $expected) {
             throw "$skipped tests did not run; at most $expected are expected to skip on CI. Something stopped running rather than started failing."
           }
@@ -74,7 +75,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: test-results
           path: artifacts/test-results
