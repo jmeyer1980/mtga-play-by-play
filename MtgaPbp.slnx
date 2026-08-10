@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MtgaPbp.Cli/MtgaPbp.Cli.csproj" />
+    <Project Path="src/MtgaPbp.Core/MtgaPbp.Core.csproj" />
+    <Project Path="src/MtgaPbp.Render/MtgaPbp.Render.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MtgaPbp.Tests/MtgaPbp.Tests.csproj" />
+  </Folder>
+</Solution>
