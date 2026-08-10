@@ -143,6 +143,16 @@ public class NarratorTests
     }
 
     [Test]
+    public void Beats_drop_events_whose_subject_is_only_a_bare_instance_id()
+    {
+        var ev = E(EventKind.StateBasedAction) with { SourceName = "#332" };
+
+        Assert.That(Narrator.Narrate(T(ev), Density.Beats), Is.Empty);
+        Assert.That(Narrator.Narrate(T(ev), Density.Verbose), Is.Not.Empty,
+            "verbose keeps them so the gap stays visible");
+    }
+
+    [Test]
     public void Narrate_drops_events_it_cannot_phrase_rather_than_emitting_blanks()
     {
         var lines = Narrator.Narrate(

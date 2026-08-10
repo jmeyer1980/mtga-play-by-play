@@ -241,6 +241,51 @@ public class GameStateTrackerTests
     }
 
     [Test]
+    public void Apply_reports_the_same_creature_attacking_again_on_a_later_turn()
+    {
+        var t = NewTracker();
+        string Attack(string state) => $$"""
+            { "type": "GameStateType_Diff", "gameObjects": [
+              { "instanceId": 377, "grpId": 1, "controllerSeatId": 2,
+                "attackState": "{{state}}", "attackInfo": { "targetId": 1 } } ] }
+            """;
+
+        t.Apply(Msg(Attack("AttackState_Declared")));
+        Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 377 }), "first attack");
+
+        t.Apply(Msg(Attack("AttackState_None")));       // combat ends
+        Assert.That(t.NewAttackers, Is.Empty);
+
+        t.Apply(Msg(Attack("AttackState_Declared")));   // attacks again next turn
+        Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 377 }), "second attack");
+    }
+
+    /// <summary>
+    /// Arena never sends AttackState_None — it just stops sending the field. A new
+    /// turn is therefore the only signal that combat ended.
+    /// </summary>
+    [Test]
+    public void A_new_turn_clears_combat_so_the_same_creature_can_attack_again()
+    {
+        var t = NewTracker();
+        string Turn(int n) => $$"""{ "type": "GameStateType_Diff", "turnInfo": { "turnNumber": {{n}} } }""";
+        const string Declare = """
+            { "type": "GameStateType_Diff", "gameObjects": [
+              { "instanceId": 299, "grpId": 1, "controllerSeatId": 2,
+                "attackState": "AttackState_Declared", "attackInfo": { "targetId": 1 } } ] }
+            """;
+
+        t.Apply(Msg(Turn(5)));
+        t.Apply(Msg(Declare));
+        Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 299 }));
+
+        t.Apply(Msg(Turn(7)));                 // no AttackState_None ever arrives
+        t.Apply(Msg(Declare));
+        Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 299 }),
+            "the same creature attacking on a later turn must be reported again");
+    }
+
+    [Test]
     public void Apply_reports_creatures_that_just_declared_a_block()
     {
         var t = NewTracker();

@@ -26,4 +26,8 @@
     <ProjectReference Include="..\..\src\MtgaPbp.Cli\MtgaPbp.Cli.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

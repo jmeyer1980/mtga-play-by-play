@@ -66,7 +66,15 @@ public sealed class GameStateTracker(ICardDb cards)
 
         if (Json.Obj(gsm, "turnInfo") is { } ti)
         {
-            if (Json.Int(ti, "turnNumber") is { } tn) Turn = tn;
+            if (Json.Int(ti, "turnNumber") is { } tn)
+            {
+                // Combat state does not survive a turn, and Arena does not announce
+                // that it ended — it simply stops sending attackState once combat is
+                // over. Without this reset a creature that attacked once would be
+                // considered permanently attacking and never reported again.
+                if (tn != Turn) ClearCombatState();
+                Turn = tn;
+            }
             if (Json.Int(ti, "activePlayer") is { } ap) ActiveSeat = ap;
             if (Json.Int(ti, "phase") is { } ph) Phase = ph;
             if (Json.Int(ti, "step") is { } st) Step = st;
@@ -132,7 +140,11 @@ public sealed class GameStateTracker(ICardDb cards)
         // across many diffs is announced once.
         if (Json.Str(go, "attackState") is { } atk)
         {
-            var wasAttacking = obj.AttackState.Length > 0;
+            // Compare against the attacking states specifically, not "has any state":
+            // a creature attacks on many turns, and its state returns to none in
+            // between. Testing for a non-empty string would report only its first
+            // attack of the game and silently drop every later one.
+            var wasAttacking = obj.AttackState is "AttackState_Declared" or "AttackState_Attacking";
             obj.AttackState = atk;
             if (!wasAttacking && atk is "AttackState_Declared" or "AttackState_Attacking")
                 _newAttackers.Add(id);
@@ -143,6 +155,17 @@ public sealed class GameStateTracker(ICardDb cards)
             obj.BlockState = blk;
             if (!wasBlocking && blk is "BlockState_Declared" or "BlockState_Blocking")
                 _newBlockers.Add(id);
+        }
+    }
+
+    private void ClearCombatState()
+    {
+        foreach (var o in _objects.Values)
+        {
+            o.AttackState = "";
+            o.BlockState = "";
+            o.AttackTargetId = null;
+            o.BlockedAttackerIds = [];
         }
     }
 

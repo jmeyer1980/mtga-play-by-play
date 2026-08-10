@@ -17,6 +17,7 @@ public static class Narrator
         foreach (var e in t.Events.OrderBy(x => x.Seq))
         {
             if (density == Density.Beats && VerboseOnly.Contains(e.Kind)) continue;
+            if (density == Density.Beats && IsUnnamed(e)) continue;
             var text = Phrase(e, t);
             if (string.IsNullOrWhiteSpace(text)) continue;
             lines.Add(new Line(e.Turn, e.Kind == EventKind.TurnStart ? 0 : 1, text,
@@ -24,6 +25,15 @@ public static class Narrator
         }
         return lines;
     }
+
+    /// <summary>
+    /// True when the event's subject resolved only to a bare instance id — a token
+    /// that left play before the client ever described it, typically. "#332 is put
+    /// into the graveyard" is noise, so beats drop it; verbose keeps it so the gap
+    /// stays visible when debugging.
+    /// </summary>
+    private static bool IsUnnamed(GameEvent e) =>
+        e.SourceName?.StartsWith('#') == true || e.TargetName?.StartsWith('#') == true;
 
     private static string Who(int? seat, Transcript t) =>
         seat is null ? "Someone" : seat == t.You?.Seat ? "You" : "Opponent";
