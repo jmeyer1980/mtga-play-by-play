@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: jmeyer1980.MtgaPlayByPlay
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: jmeyer1980
+PublisherUrl: https://github.com/jmeyer1980
+PublisherSupportUrl: https://github.com/jmeyer1980/mtga-play-by-play/issues
+Author: jmeyer1980
+PackageName: MTGA Play-by-Play
+PackageUrl: https://github.com/jmeyer1980/mtga-play-by-play
+License: MIT
+LicenseUrl: https://github.com/jmeyer1980/mtga-play-by-play/blob/main/LICENSE
+Copyright: Copyright (c) 2026 jmeyer1980
+CopyrightUrl: https://github.com/jmeyer1980/mtga-play-by-play/blob/main/LICENSE
+ShortDescription: "Turns Magic: The Gathering Arena match logs into readable text transcripts."
+Description: |-
+  Reads Magic: The Gathering Arena's local match log and turns it into readable,
+  searchable, shareable text transcripts — a chess-style play-by-play of each game
+  rather than a visual replay.
+
+  Produces an HTML index of every archived match, sortable and searchable by
+  opponent, event, result and any card that appeared, plus a self-contained page per
+  game with a readable "beats" view, a verbose view, and a copy-to-clipboard button.
+  Markdown exports are written alongside for pasting into chat.
+
+  Everything resolves locally against Arena's own card database; the tool makes no
+  network requests. Requires MTG Arena with Detailed Logs (Plugin Support) enabled.
+Moniker: mtga-pbp
+Tags:
+- arena
+- card-game
+- cli
+- game-log
+- log-parser
+- magic-the-gathering
+- mtg
+- mtga
+- transcript
+ReleaseNotesUrl: https://github.com/jmeyer1980/mtga-play-by-play/releases/tag/v0.1.0
+Documentations:
+- DocumentLabel: Readme
+  DocumentUrl: https://github.com/jmeyer1980/mtga-play-by-play/blob/main/README.md
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0

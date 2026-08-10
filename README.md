@@ -1,6 +1,7 @@
 # MTGA Play-by-Play
 
 [![CI](https://github.com/jmeyer1980/mtga-play-by-play/actions/workflows/ci.yml/badge.svg)](https://github.com/jmeyer1980/mtga-play-by-play/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Turns Magic: The Gathering Arena match logs into readable, searchable, shareable
 text transcripts. Plenty of tools replay a game visually; none produce something you
@@ -116,6 +117,14 @@ Grab the latest `mtga-pbp-vX.Y.Z-win-x64.zip` from
 [Releases](https://github.com/jmeyer1980/mtga-play-by-play/releases), unzip it
 anywhere, and run `mtga-pbp.exe`. The build is self-contained — no .NET install
 needed. Each release ships a `.sha256` next to the zip if you want to verify it.
+
+Windows will show a SmartScreen prompt the first time, because the executable is not
+code-signed. Verifying the checksum against the published `.sha256` is the way to
+confirm you have the real thing.
+
+WinGet manifests live in [`packaging/winget/`](packaging/winget/) and are validated,
+but not yet submitted to the community repository — so `winget install` does not
+resolve this package yet.
 
 ## Build it yourself
 
