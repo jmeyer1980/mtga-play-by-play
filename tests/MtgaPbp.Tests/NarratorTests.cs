@@ -71,8 +71,10 @@ public class NarratorTests
         var lines = Narrator.Narrate(T(
             E(EventKind.Damage) with
             {
-                SourceName = "Lightning Bolt", TargetInstanceId = 99,
-                TargetName = "Llanowar Elves", Amount = 3
+                SourceName = "Lightning Bolt",
+                TargetInstanceId = 99,
+                TargetName = "Llanowar Elves",
+                Amount = 3
             }), Density.Beats);
 
         Assert.That(lines.Single().Text,

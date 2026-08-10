@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    # This is a Windows-only tool — the log, the card database and the shell
+    # handler for --open are all Windows. Testing anywhere else would prove
+    # something we do not ship.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Check formatting
+        run: dotnet format --verify-no-changes --verbosity minimal
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release -warnaserror
+
+      - name: Test
+        run: >
+          dotnet test --no-build --configuration Release
+          --logger "trx;LogFileName=results.trx"
+          --logger "console;verbosity=normal"
+          --results-directory artifacts/test-results
+
+      # The golden-file tests need MTG Arena's 237 MB card database, which cannot
+      # be committed and does not exist on a runner, so they self-ignore here.
+      # Fail loudly if the number ignored ever grows beyond that known set —
+      # silently shrinking coverage is exactly what this guards against.
+      - name: Guard against unexpectedly skipped tests
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem artifacts/test-results -Filter *.trx -Recurse | Select-Object -First 1
+          if (-not $trx) { throw "no test results found" }
+          [xml]$x = Get-Content $trx.FullName
+          $c = $x.TestRun.ResultSummary.Counters
+          $total = [int]$c.total; $passed = [int]$c.passed; $failed = [int]$c.failed
+          $skipped = $total - $passed - $failed
+          Write-Host "total=$total passed=$passed failed=$failed skipped=$skipped"
+
+          # 7 golden-file tests that need the card database, plus the documented
+          # targeting-limitation warning.
+          $expected = 8
+          if ($skipped -gt $expected) {
+            throw "$skipped tests did not run; at most $expected are expected to skip on CI. Something stopped running rather than started failing."
+          }
+          Write-Host "guard ok"
+
+      - name: Audit dependencies
+        run: |
+          dotnet list package --vulnerable --include-transitive
+          dotnet list package --deprecated
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: artifacts/test-results
+          retention-days: 14

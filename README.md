@@ -1,5 +1,7 @@
 # MTGA Play-by-Play
 
+[![CI](https://github.com/jmeyer1980/mtga-play-by-play/actions/workflows/ci.yml/badge.svg)](https://github.com/jmeyer1980/mtga-play-by-play/actions/workflows/ci.yml)
+
 Turns Magic: The Gathering Arena match logs into readable, searchable, shareable
 text transcripts. Plenty of tools replay a game visually; none produce something you
 can read, search, or paste into Discord.
@@ -108,11 +110,28 @@ player making them. Interactions are therefore reported as observed effects
 That is symmetric across both players and records what happened rather than what was
 announced.
 
+## Install
+
+Grab the latest `mtga-pbp-vX.Y.Z-win-x64.zip` from
+[Releases](https://github.com/jmeyer1980/mtga-play-by-play/releases), unzip it
+anywhere, and run `mtga-pbp.exe`. The build is self-contained — no .NET install
+needed. Each release ships a `.sha256` next to the zip if you want to verify it.
+
 ## Build from source
 
 ```bash
 dotnet test
 dotnet publish src/MtgaPbp.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o dist
 ```
+
+CI runs on Windows and checks formatting, builds with warnings as errors, runs the
+tests, and audits dependencies for known vulnerabilities. Releases are cut by pushing
+a `v*` tag.
+
+**One gap worth knowing:** the seven golden-file tests need MTG Arena's 237 MB card
+database, which cannot be committed and does not exist on a runner, so they skip on
+CI and only run on a machine with Arena installed. CI fails if the number of skipped
+tests ever grows past that known set, so coverage cannot shrink quietly — but the
+end-to-end transcript check is genuinely not running in CI today.
 
 Design and implementation notes: [`docs/superpowers/specs/`](docs/superpowers/specs/).
