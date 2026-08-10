@@ -153,6 +153,47 @@ public class NarratorTests
     }
 
     [Test]
+    public void Turn_header_shows_both_life_totals_you_first()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.TurnStart) with
+            { Turn = 6, ActorSeat = 2, LifeSeat1 = 18, LifeSeat2 = 12 }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Turn 6 — Opponent  (You 18 · Opponent 12)"));
+    }
+
+    [Test]
+    public void Turn_header_omits_the_score_before_any_life_is_known()
+    {
+        var lines = Narrator.Narrate(T(E(EventKind.TurnStart) with { Turn = 1, ActorSeat = 1 }),
+            Density.Beats);
+        Assert.That(lines.Single().Text, Is.EqualTo("Turn 1 — You"));
+    }
+
+    [Test]
+    public void Board_snapshot_is_flagged_so_renderers_can_set_it_apart()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.BoardSnapshot) with
+            { ActorSeat = 2, Detail = "Ajani's Pridemate 4/4 (1 dmg), Rabbit 1/1 (tapped)" }),
+            Density.Beats);
+
+        var line = lines.Single();
+        Assert.That(line.IsBoard, Is.True);
+        Assert.That(line.Text,
+            Is.EqualTo("Opponent controls: Ajani's Pridemate 4/4 (1 dmg), Rabbit 1/1 (tapped)"));
+    }
+
+    [Test]
+    public void Board_snapshot_for_you_reads_in_second_person()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.BoardSnapshot) with { ActorSeat = 1, Detail = "Knight 2/2" }),
+            Density.Beats);
+        Assert.That(lines.Single().Text, Is.EqualTo("You control: Knight 2/2"));
+    }
+
+    [Test]
     public void Narrate_drops_events_it_cannot_phrase_rather_than_emitting_blanks()
     {
         var lines = Narrator.Narrate(

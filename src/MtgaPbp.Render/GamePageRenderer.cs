@@ -37,6 +37,8 @@ public static class GamePageRenderer
             {
                 if (line.IsTurnHeader)
                     sb.Append($"""<h2 id="t{line.Turn}">{E(line.Text)}</h2>""");
+                else if (line.IsBoard)
+                    sb.Append($"""<p class="board">{E(line.Text)}</p>""");
                 else
                     sb.Append($"""<p class="beat">{E(line.Text)}</p>""");
             }
@@ -61,6 +63,7 @@ public static class GamePageRenderer
         .back a{text-decoration:none;opacity:.7}
         h2{font-size:1rem;margin:1.6rem 0 .4rem;padding-top:.6rem;border-top:1px dashed currentColor;opacity:.85}
         .beat{margin:.15rem 0 .15rem 1.5rem}
+        .board{margin:.15rem 0 .15rem 1.5rem;opacity:.6;font-style:italic;font-size:.92em}
         .warn{border-left:3px solid #c80;padding-left:.8rem;opacity:.85}
         .controls{display:flex;gap:.5rem;flex-wrap:wrap;margin:.4rem 0 0}
         button{font:inherit;padding:.3rem .8rem;cursor:pointer}
@@ -106,11 +109,12 @@ public static class GamePageRenderer
             if (sub) out.push('*' + sub.textContent.trim() + '*', '');
             if (warn) out.push('> ' + warn.textContent.trim(), '');
 
-            var nodes = section.querySelectorAll('h2, p.beat');
+            var nodes = section.querySelectorAll('h2, p.beat, p.board');
             for (var i = 0; i < nodes.length; i++) {
               var node = nodes[i];
               var text = node.textContent.trim();
               if (node.tagName === 'H2') out.push('', '## ' + text);
+              else if (node.className === 'board') out.push('  *' + text + '*');
               else out.push('- ' + text);
             }
             return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';

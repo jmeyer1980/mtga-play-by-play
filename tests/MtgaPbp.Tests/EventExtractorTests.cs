@@ -309,6 +309,55 @@ public class EventExtractorTests
     }
 
     [Test]
+    public void Extract_snapshots_the_board_at_each_turn_boundary()
+    {
+        const string zones = """
+            "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+            "gameObjects": [ { "instanceId": 50, "grpId": 1, "name": 1001,
+              "controllerSeatId": 2, "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
+              "power": 2, "toughness": 2 } ],
+            """;
+        string NewTurn(int n, int seat) => Gre($$"""
+            { "type": "GameStateType_Full",
+              {{zones}}
+              "players": [ { "systemSeatNumber": 1, "lifeTotal": 20 },
+                           { "systemSeatNumber": 2, "lifeTotal": 17 } ],
+              "turnInfo": { "turnNumber": {{n}}, "activePlayer": {{seat}} },
+              "annotations": [
+                { "id": 0, "type": [ "AnnotationType_PhaseOrStepModified" ], "details": [
+                    { "key": "phase", "valueInt32": [ 3 ] },
+                    { "key": "step",  "valueInt32": [ 5 ] } ] },
+                { "id": 1, "affectorId": {{seat}}, "affectedIds": [ {{seat}} ],
+                  "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+            """);
+
+        var t = Run(RoomLine, MulliganLine, NewTurn(1, 1), NewTurn(2, 2));
+
+        var board = t.Events.SingleOrDefault(x => x.Kind == EventKind.BoardSnapshot);
+        Assert.That(board, Is.Not.Null, "one snapshot for the turn that just ended");
+        Assert.That(board!.ActorSeat, Is.EqualTo(2));
+        Assert.That(board.Detail, Is.EqualTo("Llanowar Elves 2/2"));
+        Assert.That(board.Turn, Is.EqualTo(1), "it describes the turn that ended, not the new one");
+    }
+
+    [Test]
+    public void Turn_start_carries_the_life_totals_entering_the_turn()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "players": [ { "systemSeatNumber": 1, "lifeTotal": 18 },
+                       { "systemSeatNumber": 2, "lifeTotal": 13 } ],
+          "turnInfo": { "turnNumber": 6, "activePlayer": 1 },
+          "annotations": [ { "id": 1, "affectorId": 1, "affectedIds": [ 1 ],
+            "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.TurnStart);
+        Assert.That(e.LifeSeat1, Is.EqualTo(18));
+        Assert.That(e.LifeSeat2, Is.EqualTo(13));
+    }
+
+    [Test]
     public void Extract_never_throws_on_malformed_annotations()
     {
         Assert.DoesNotThrow(() => Run(RoomLine, Gre("""

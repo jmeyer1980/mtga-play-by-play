@@ -33,7 +33,7 @@ public enum EventKind
     Drew, Discarded, Destroyed, Sacrificed, Exiled, Returned,
     StateBasedAction, ZoneMove,
     Damage, LifeChanged, TokenCreated, CounterChanged,
-    Scry, Revealed, ManaPaid, Attack, Block, GameEnd, Unknown
+    Scry, Revealed, ManaPaid, Attack, Block, BoardSnapshot, GameEnd, Unknown
 }
 
 /// <summary>
@@ -61,4 +61,9 @@ public sealed record GameEvent
     public int Amount { get; init; }
     public string? Detail { get; init; }
     public string? RawType { get; init; }
+
+    /// <summary>Life totals by seat, carried on TurnStart so a turn header can show
+    /// the score entering the turn. Zero when not applicable.</summary>
+    public int LifeSeat1 { get; init; }
+    public int LifeSeat2 { get; init; }
 }

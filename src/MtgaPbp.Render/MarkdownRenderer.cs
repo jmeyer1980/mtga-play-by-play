@@ -19,6 +19,7 @@ public static class MarkdownRenderer
         foreach (var line in Narrator.Narrate(t, Density.Beats))
         {
             if (line.IsTurnHeader) sb.AppendLine().AppendLine($"## {line.Text}");
+            else if (line.IsBoard) sb.AppendLine($"  *{line.Text}*");
             else sb.AppendLine($"- {line.Text}");
         }
         return sb.ToString();

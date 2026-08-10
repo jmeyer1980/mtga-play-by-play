@@ -4,7 +4,8 @@ namespace MtgaPbp.Render;
 
 public enum Density { Beats, Verbose }
 
-public sealed record Line(int Turn, int Indent, string Text, bool IsTurnHeader);
+public sealed record Line(
+    int Turn, int Indent, string Text, bool IsTurnHeader, bool IsBoard = false);
 
 public static class Narrator
 {
@@ -20,8 +21,12 @@ public static class Narrator
             if (density == Density.Beats && IsUnnamed(e)) continue;
             var text = Phrase(e, t);
             if (string.IsNullOrWhiteSpace(text)) continue;
-            lines.Add(new Line(e.Turn, e.Kind == EventKind.TurnStart ? 0 : 1, text,
-                               e.Kind == EventKind.TurnStart));
+            lines.Add(new Line(
+                e.Turn,
+                e.Kind == EventKind.TurnStart ? 0 : 1,
+                text,
+                e.Kind == EventKind.TurnStart,
+                e.Kind == EventKind.BoardSnapshot));
         }
         return lines;
     }
@@ -35,6 +40,15 @@ public static class Narrator
     private static bool IsUnnamed(GameEvent e) =>
         e.SourceName?.StartsWith('#') == true || e.TargetName?.StartsWith('#') == true;
 
+    /// <summary>Life totals entering the turn, always ordered you-first.</summary>
+    private static string LifeScore(GameEvent e, Transcript t)
+    {
+        if (e.LifeSeat1 == 0 && e.LifeSeat2 == 0) return "";
+        var yours = t.You?.Seat == 2 ? e.LifeSeat2 : e.LifeSeat1;
+        var theirs = t.You?.Seat == 2 ? e.LifeSeat1 : e.LifeSeat2;
+        return $"  (You {yours} · Opponent {theirs})";
+    }
+
     private static string Who(int? seat, Transcript t) =>
         seat is null ? "Someone" : seat == t.You?.Seat ? "You" : "Opponent";
 
@@ -44,7 +58,10 @@ public static class Narrator
     private static string? Phrase(GameEvent e, Transcript t) => e.Kind switch
     {
         EventKind.TurnStart =>
-            $"Turn {e.Turn} — {Who(e.ActorSeat ?? e.ActiveSeat, t)}",
+            $"Turn {e.Turn} — {Who(e.ActorSeat ?? e.ActiveSeat, t)}{LifeScore(e, t)}",
+
+        EventKind.BoardSnapshot when !string.IsNullOrWhiteSpace(e.Detail) =>
+            $"{Who(e.ActorSeat, t)} control{(e.ActorSeat == t.You?.Seat ? "" : "s")}: {e.Detail}",
 
         EventKind.LandPlayed when e.SourceName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "play", "plays", t)} {e.SourceName}",

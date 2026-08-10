@@ -17,6 +17,7 @@ public sealed class TrackedObject
     public bool IsTapped;
     public int? Loyalty;
     public int? ObjectSourceGrpId;
+    public IReadOnlyList<string> CardTypes = [];
     public string AttackState = "";
     public string BlockState = "";
     public int? AttackTargetId;
@@ -126,6 +127,11 @@ public sealed class GameStateTracker(ICardDb cards)
         if (ReadStat(go, "loyalty") is { } ly) obj.Loyalty = ly;
         if (Json.Int(go, "objectSourceGrpId") is { } src) obj.ObjectSourceGrpId = src;
 
+        var types = new List<string>();
+        foreach (var ct in Json.Array(go, "cardTypes"))
+            if (ct.ValueKind == JsonValueKind.String) types.Add(ct.GetString()!);
+        if (types.Count > 0) obj.CardTypes = types;
+
         if (Json.Obj(go, "attackInfo") is { } ai && Json.Int(ai, "targetId") is { } tid)
             obj.AttackTargetId = tid;
         if (Json.Obj(go, "blockInfo") is { } bi)
@@ -205,6 +211,29 @@ public sealed class GameStateTracker(ICardDb cards)
     }
 
     public string SeatName(int seat) => seat == LocalSeat ? "You" : "Opponent";
+
+    /// <summary>
+    /// Creatures a seat currently controls on the battlefield, in a stable order.
+    /// An object is only counted once — the alias map means a card can be reachable
+    /// under several ids after moving zones.
+    /// </summary>
+    public IReadOnlyList<TrackedObject> CreaturesOnBattlefield(int seat)
+    {
+        var seen = new HashSet<int>();
+        var result = new List<TrackedObject>();
+
+        foreach (var o in _objects.Values)
+        {
+            if (o.ControllerSeat != seat) continue;
+            if (!o.CardTypes.Contains("CardType_Creature")) continue;
+            if (!_zoneTypes.TryGetValue(o.ZoneId, out var zt) || zt != "ZoneType_Battlefield")
+                continue;
+            if (!seen.Add(Resolve(o.InstanceId))) continue;
+            result.Add(o);
+        }
+
+        return result.OrderBy(o => o.InstanceId).ToList();
+    }
 
     internal static bool HasType(JsonElement annotation, string type)
     {

@@ -87,6 +87,7 @@ public sealed class EventExtractor(ICardDb cards)
         var sawFinal = false;
         var seq = 0;
         var lastTurn = 0;
+        var lastTurnStarted = 0;
 
         foreach (var raw in rawLines)
         {
@@ -124,7 +125,8 @@ public sealed class EventExtractor(ICardDb cards)
                 tracker.Apply(gsm);
                 EmitCombat(tracker, ts, ref seq, events, cardsSeen);
                 foreach (var a in Json.Array(gsm, "annotations"))
-                    EmitFor(a, tracker, ts, ref seq, ref lastTurn, events, unknown, cardsSeen);
+                    EmitFor(a, tracker, ts, ref seq, ref lastTurn, ref lastTurnStarted,
+                            events, unknown, cardsSeen);
             }
         }
 
@@ -203,9 +205,48 @@ public sealed class EventExtractor(ICardDb cards)
         }
     }
 
+    /// <summary>
+    /// One board line per player, describing what they control at the end of a turn.
+    /// The line text is built here rather than in the renderer because only this layer
+    /// has the tracker; the renderer still decides how to present it and which player
+    /// label to use.
+    /// </summary>
+    private static void EmitBoardSnapshots(
+        GameStateTracker tracker, long ts, ref int seq, int turn, List<GameEvent> events)
+    {
+        foreach (var seat in new[] { 1, 2 })
+        {
+            var creatures = tracker.CreaturesOnBattlefield(seat);
+            if (creatures.Count == 0) continue;
+
+            var parts = creatures.Select(c =>
+            {
+                var text = tracker.NameOf(c.InstanceId);
+                if (c.Power is { } p && c.Toughness is { } t) text += $" {p}/{t}";
+
+                var flags = new List<string>();
+                if (c.Damage > 0) flags.Add($"{c.Damage} dmg");
+                if (c.IsTapped) flags.Add("tapped");
+                if (flags.Count > 0) text += $" ({string.Join(", ", flags)})";
+                return text;
+            });
+
+            events.Add(new GameEvent
+            {
+                Seq = seq++,
+                TimestampMs = ts,
+                GameNumber = tracker.GameNumber,
+                Turn = turn,
+                Kind = EventKind.BoardSnapshot,
+                ActorSeat = seat,
+                Detail = string.Join(", ", parts)
+            });
+        }
+    }
+
     private void EmitFor(
         JsonElement a, GameStateTracker tracker, long ts, ref int seq, ref int lastTurn,
-        List<GameEvent> events, Dictionary<string, int> unknown, HashSet<string> cardsSeen)
+        ref int lastTurnStarted, List<GameEvent> events, Dictionary<string, int> unknown, HashSet<string> cardsSeen)
     {
         foreach (var typeEl in Json.Array(a, "type"))
         {
@@ -300,7 +341,24 @@ public sealed class EventExtractor(ICardDb cards)
             // turnInfo carries no turnNumber until the first turn is under way, so the
             // opening NewTurnStarted would otherwise land on "Turn 0".
             var turn = tracker.Turn > 0 ? tracker.Turn : Math.Max(lastTurn, 1);
+
             lastTurn = turn;
+
+            if (ev.Kind == EventKind.TurnStart)
+            {
+                // Compare against the last turn we opened, not the last turn seen:
+                // a phase change in the same message already advanced lastTurn to the
+                // new turn, so testing that would never fire.
+                if (lastTurnStarted > 0 && turn != lastTurnStarted)
+                    EmitBoardSnapshots(tracker, ts, ref seq, lastTurnStarted, events);
+                lastTurnStarted = turn;
+
+                ev = ev with
+                {
+                    LifeSeat1 = tracker.Life.GetValueOrDefault(1),
+                    LifeSeat2 = tracker.Life.GetValueOrDefault(2)
+                };
+            }
 
             events.Add(ev with { Seq = seq++, Turn = turn });
         }

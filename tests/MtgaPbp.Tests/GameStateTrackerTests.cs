@@ -314,6 +314,50 @@ public class GameStateTrackerTests
     }
 
     [Test]
+    public void CreaturesOnBattlefield_returns_only_that_seats_creatures_in_play()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" },
+                     { "zoneId": 35, "type": "ZoneType_Hand" },
+                     { "zoneId": 31, "type": "ZoneType_Graveyard" } ],
+          "gameObjects": [
+            { "instanceId": 1, "grpId": 1, "name": 648, "controllerSeatId": 1,
+              "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
+              "power": 2, "toughness": 3, "damage": 1, "isTapped": true },
+            { "instanceId": 2, "grpId": 1, "name": 648, "controllerSeatId": 1,
+              "zoneId": 28, "cardTypes": [ "CardType_Land" ] },
+            { "instanceId": 3, "grpId": 1, "name": 648, "controllerSeatId": 2,
+              "zoneId": 28, "cardTypes": [ "CardType_Creature" ] },
+            { "instanceId": 4, "grpId": 1, "name": 648, "controllerSeatId": 1,
+              "zoneId": 35, "cardTypes": [ "CardType_Creature" ] },
+            { "instanceId": 5, "grpId": 1, "name": 648, "controllerSeatId": 1,
+              "zoneId": 31, "cardTypes": [ "CardType_Creature" ] } ] }
+        """));
+
+        var mine = t.CreaturesOnBattlefield(1);
+        Assert.That(mine.Select(o => o.InstanceId), Is.EqualTo(new[] { 1 }),
+            "lands, the opponent's creatures, hand and graveyard must all be excluded");
+        Assert.That(mine[0].Damage, Is.EqualTo(1));
+        Assert.That(mine[0].IsTapped, Is.True);
+        Assert.That(t.CreaturesOnBattlefield(2).Select(o => o.InstanceId), Is.EqualTo(new[] { 3 }));
+    }
+
+    [Test]
+    public void CreaturesOnBattlefield_is_empty_when_zones_are_unknown()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full", "gameObjects": [
+          { "instanceId": 1, "grpId": 1, "controllerSeatId": 1, "zoneId": 28,
+            "cardTypes": [ "CardType_Creature" ] } ] }
+        """));
+        Assert.That(t.CreaturesOnBattlefield(1), Is.Empty,
+            "without a zone table we cannot claim anything is on the battlefield");
+    }
+
+    [Test]
     public void Apply_records_zone_types_by_id()
     {
         var t = NewTracker();
