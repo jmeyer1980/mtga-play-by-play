@@ -1,0 +1,12 @@
+# build
+bin/
+obj/
+out/
+
+# archive of captured matches
+archive/
+
+# tooling
+.vs/
+.idea/
+*.user
