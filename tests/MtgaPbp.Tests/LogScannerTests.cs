@@ -62,6 +62,42 @@ public class LogScannerTests
         Assert.That(LogScanner.Scan(p, new ScanStats()).Single().LineNumber, Is.EqualTo(2));
     }
 
+    /// <summary>
+    /// Arena keeps Player.log open for writing the whole time it runs. Opening it with
+    /// the default share mode fails with a sharing violation, which meant you had to
+    /// quit the game before you could read a match you had just played.
+    /// </summary>
+    [Test]
+    public void Scan_reads_a_log_that_is_still_open_for_writing()
+    {
+        var p = WriteLog(
+            """{ "timestamp": "1", "greToClientEvent": { } }""",
+            """{ "timestamp": "2", "greToClientEvent": { } }""");
+
+        // Hold it exactly as a running logger would: writing, and only tolerating readers.
+        using var holder = new FileStream(p, FileMode.Open, FileAccess.Write, FileShare.Read);
+
+        var stats = new ScanStats();
+        var got = LogScanner.Scan(p, stats).ToList();
+
+        Assert.That(got, Has.Count.EqualTo(2));
+        Assert.That(stats.JsonLines, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void Scan_does_not_block_the_writer_from_appending()
+    {
+        var p = WriteLog("""{ "timestamp": "1" }""");
+
+        using var holder = new FileStream(p, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+        _ = LogScanner.Scan(p, new ScanStats()).ToList();
+
+        // Arena must still be able to write while we are reading.
+        holder.Seek(0, SeekOrigin.End);
+        var line = System.Text.Encoding.UTF8.GetBytes("\n{ \"timestamp\": \"2\" }\n");
+        Assert.DoesNotThrow(() => { holder.Write(line, 0, line.Length); holder.Flush(); });
+    }
+
     [Test]
     public void Scan_defaults_timestamp_to_zero_when_absent()
     {

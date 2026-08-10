@@ -82,7 +82,11 @@ Each game page has two buttons:
 - **Copy transcript** puts the game on your clipboard as markdown, matching whichever
   density is currently on screen. The buttons themselves are never included.
 
-### Run it after every session
+### Run it whenever, including mid-session
+
+**You do not need to quit Arena.** Finish a match, alt-tab, run `mtga-pbp`, and read
+it. The log is opened in a way that tolerates Arena's own write handle, so the game
+can keep running and keep logging while the tool reads.
 
 `Player.log` is a rolling buffer — Arena truncates it on restart, and only the
 previous session survives in `Player-prev.log`. If Arena restarts twice before you

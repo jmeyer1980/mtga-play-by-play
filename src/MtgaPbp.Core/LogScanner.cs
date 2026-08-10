@@ -18,7 +18,13 @@ public static class LogScanner
     /// </summary>
     public static IEnumerable<LogEnvelope> Scan(string path, ScanStats stats)
     {
-        using var reader = new StreamReader(path);
+        // Arena holds Player.log open for writing the entire time it runs, so the
+        // default share mode raises a sharing violation and you would have to quit
+        // the game to read a match you just played. ReadWrite tolerates its write
+        // handle; Delete lets it rotate the log without being blocked by us.
+        using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
         long lineNo = 0;
         while (reader.ReadLine() is { } raw)
         {

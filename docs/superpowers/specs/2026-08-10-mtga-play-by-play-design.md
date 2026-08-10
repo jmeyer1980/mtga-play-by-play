@@ -279,6 +279,7 @@ untrusted input that changes with every Arena patch.
 
 | Condition | Behaviour |
 |---|---|
+| Arena running and holding the log open | Read anyway — the log is opened `FileShare.ReadWrite \| Delete`, so a match can be read the moment it ends without quitting the game |
 | Non-JSON line (92k of them) | Skip, count |
 | Malformed JSON line | Skip, count, record line number |
 | Unknown annotation type | Emit `Unknown` event, count by type name; visible in verbose |
