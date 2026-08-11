@@ -36,15 +36,28 @@ public static class IndexRenderer
         var body = new StringBuilder();
         if (ordered.Count == 0)
         {
+            // No rows means nothing to search, so the field, the counter and the
+            // footnotes are all omitted rather than rendered inert.
             body.Append(
                 "<p class=\"empty\">No games archived yet. Play a match, then run " +
                 "<code>mtga-pbp</code>.</p>");
         }
         else
         {
-            body.Append("""
-                <table id="rows"><thead><tr><th></th><th>Date</th><th>Event</th><th>Opponent</th>
-                <th>Result</th><th>Turns</th></tr></thead><tbody id="data">
+            // The counter is server-rendered rather than filled in by script: it is a
+            // live region, and a region that gains its first text after load announces
+            // that text. Starting it correct means the first announcement is a real
+            // change, and the count is also right with JavaScript turned off.
+            body.Append($"""
+                <label for="q">Search matches</label>
+                <input id="q" type="search" placeholder="opponent, event, result, or card"
+                       autocomplete="off" aria-describedby="count" />
+                <p id="count" class="sub" role="status">{ordered.Count} of {ordered.Count} shown</p>
+                <table id="rows">
+                <caption class="vh">Archived matches, most recent first</caption>
+                <thead><tr><th scope="col">Keep</th><th scope="col">Date</th>
+                <th scope="col">Event</th><th scope="col">Opponent</th>
+                <th scope="col">Result</th><th scope="col">Turns</th></tr></thead><tbody id="data">
                 """);
             foreach (var r in ordered)
             {
@@ -53,62 +66,120 @@ public static class IndexRenderer
                     r.Opponent, r.EventName, r.Result, r.Date, string.Join(' ', r.Cards))
                     .ToLowerInvariant();
 
+                // The star is a toggle button, so its state rides on aria-pressed and
+                // its name stays constant; the glyph is decoration and is hidden from
+                // assistive technology, which would otherwise read it as "white star".
+                // It ships disabled because keeping a match needs the local server —
+                // an unavailable control is better than one that silently does nothing.
                 body.Append($"""
                     <tr data-search="{E(haystack)}">
-                    <td><button class="star{(r.Favorite ? " on" : "")}" type="button"
-                        data-id="{E(r.MatchId)}" title="Kept matches are never pruned"
-                        >{(r.Favorite ? "★" : "☆")}</button></td>
-                    <td><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></td>
+                    <td><button class="star{(r.Favorite ? " on" : "")}" type="button" disabled="disabled"
+                        aria-pressed="{(r.Favorite ? "true" : "false")}"
+                        aria-describedby="keep-note" data-id="{E(r.MatchId)}"
+                        aria-label="Keep the {E(r.Date)} match against {E(r.Opponent)}"
+                        ><span aria-hidden="true">{(r.Favorite ? "★" : "☆")}</span></button></td>
+                    <th scope="row"><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></th>
                     <td>{E(r.EventName)}</td><td>{E(r.Opponent)}</td>
-                    <td class="{cls}">{E(r.Result)}{(r.Incomplete ? " *" : "")}</td>
+                    <td class="{cls}">{E(r.Result)}{Incomplete(r)}</td>
                     <td>{r.Turns}</td></tr>
                     """);
             }
             body.Append("</tbody></table>");
+
+            if (ordered.Any(r => r.Incomplete))
+            {
+                body.Append("""
+                    <p class="note" id="incomplete-note"><span aria-hidden="true">*</span>
+                    Incomplete — the log was rotated before the match finished.</p>
+                    """);
+            }
+
+            body.Append("""
+                <p class="note" id="keep-note">Keeping a match protects it from pruning.
+                It works while the report is served by <code>mtga-pbp watch</code>; opened
+                from a file this page is read-only, so the Keep buttons are disabled.</p>
+                <p id="status" class="vh" role="status"></p>
+                """);
         }
 
         return $$"""
             <!doctype html>
-            <html lang="en"><head><meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <html lang="en"><head><meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
             <title>MTGA Play-by-Play</title>
             <style>{{Css}}</style></head><body>
+            <main>
             <h1>MTGA Play-by-Play</h1>
-            <p class="sub">{{ordered.Count}} game{{(ordered.Count == 1 ? "" : "s")}} archived<span id="live">· live</span></p>
-            <input id="q" type="search" placeholder="Search opponent, event, result, or card…"
-                   autocomplete="off">
-            <p id="count" class="sub"></p>
+            <p class="sub">{{ordered.Count}} game{{(ordered.Count == 1 ? "" : "s")}} archived<span
+                id="live"> <span aria-hidden="true">· </span>live updating</span></p>
             {{body}}
+            </main>
             <script>{{Script}}</script>
             </body></html>
             """;
     }
 
+    /// <summary>
+    /// The asterisk is a sighted-reader shorthand explained by the footnote below the
+    /// table; screen readers get the word instead, because "star" next to "Lost 0-1"
+    /// means nothing on its own.
+    /// </summary>
+    private static string Incomplete(MatchSummary r) => r.Incomplete
+        ? """<span aria-hidden="true"> *</span><span class="vh"> (incomplete)</span>"""
+        : "";
+
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 
+    // Contrast is measured against the two backdrops `color-scheme: light dark` can
+    // produce: #fff/#000 in light, and a #121212–#1e1e1e canvas with white text in
+    // dark. Dimming with `opacity` is kept where the result still clears 4.5:1 — over
+    // a 21:1 base it does — but the win colour and both star colours did not, so they
+    // are stated per scheme instead. `prefers-color-scheme` rather than `light-dark()`
+    // so the fix is not conditional on a recent engine.
     private const string Css = """
         :root{color-scheme:light dark}
         body{font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;
              max-width:64rem;margin:0 auto;padding:2rem 1rem}
         h1{font-size:1.5rem;margin:0 0 .2rem}
         .sub{opacity:.65;margin:.2rem 0 1rem}
+        .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+            clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+        label{display:block;font-size:.85rem;margin-bottom:.25rem}
         #q{width:100%;font:inherit;padding:.55rem .7rem;margin-bottom:1rem;
            border:1px solid currentColor;border-radius:.4rem;background:transparent;color:inherit}
         table{width:100%;border-collapse:collapse}
-        th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid rgba(128,128,128,.3)}
-        th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;opacity:.6}
+        caption{text-align:left}
+        th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid rgba(128,128,128,.35)}
+        thead th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;opacity:.6}
+        tbody th{font-weight:400}
         tbody tr:hover{background:rgba(128,128,128,.12)}
         a{color:inherit}
-        .win{color:#2a2}.loss{opacity:.7}
+        tbody a{display:inline-block;padding-block:.15rem}
+        .win{color:#137333}
+        .loss{opacity:.7}
         .empty{opacity:.7}
-        .star{background:none;border:0;cursor:default;font-size:1rem;padding:0 .2rem;
-              color:inherit;opacity:.35}
-        .star.on{opacity:1;color:#e8b923}
-        body.live .star{cursor:pointer}
-        body.live .star:hover{opacity:.8}
-        #live{display:none;font-size:.8rem;opacity:.6;margin-left:.5rem}
+        .note{opacity:.7;font-size:.85rem;max-width:44rem}
+        body.live #keep-note{display:none}
+        .star{background:none;border:0;cursor:default;font-size:1rem;padding:0;color:#666666;
+              display:inline-flex;align-items:center;justify-content:center;
+              min-width:1.75rem;min-height:1.75rem;border-radius:.3rem}
+        .star.on{color:#8a6100}
+        .star:enabled{cursor:pointer}
+        .star:enabled:hover{background:rgba(128,128,128,.2)}
+        :focus-visible{outline:2px solid currentColor;outline-offset:2px}
+        #live{display:none;font-size:.8rem;opacity:.6}
         body.live #live{display:inline}
         code{font-family:ui-monospace,Menlo,Consolas,monospace}
+        @media (prefers-color-scheme:dark){
+          .win{color:#4ade80}
+          .star{color:#9a9a9a}
+          .star.on{color:#f2c14a}
+        }
+        @media (forced-colors:active){
+          .sub,.loss,.empty,.note,th,#live{opacity:1}
+          .star{color:ButtonText}
+          .star.on{color:Highlight}
+        }
         """;
 
     private const string Script = """
@@ -116,9 +187,20 @@ public static class IndexRenderer
           var tbody = document.getElementById('data');
           var q = document.getElementById('q');
           var count = document.getElementById('count');
+          var status = document.getElementById('status');
           if (!tbody || !q || !count) return;
 
           let rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+          var counting;
+
+          // Assigning a live region the string it already holds is a no-op, so a
+          // second identical message would be silent. Clearing first, in its own
+          // task, makes it announce again.
+          function announce(message) {
+            if (!status) return;
+            status.textContent = '';
+            setTimeout(function () { status.textContent = message; }, 60);
+          }
 
           function apply() {
             var terms = q.value.toLowerCase().split(/\s+/).filter(Boolean);
@@ -129,7 +211,17 @@ public static class IndexRenderer
               tr.hidden = !match;
               if (match) shown++;
             });
-            count.textContent = shown + ' of ' + rows.length + ' shown';
+
+            // The counter is a live region, so writing it on every keystroke would
+            // queue one announcement per character typed. Filtering stays immediate;
+            // only the announcement waits for a pause. And writing the same string
+            // back still replaces the text node, which a live region would announce,
+            // so it is only written when it actually changed.
+            var text = shown + ' of ' + rows.length + ' shown';
+            clearTimeout(counting);
+            counting = setTimeout(function () {
+              if (count.textContent !== text) count.textContent = text;
+            }, 300);
           }
 
           q.addEventListener('input', apply);
@@ -140,14 +232,26 @@ public static class IndexRenderer
           if (location.protocol.indexOf('http') !== 0) return;
           document.body.classList.add('live');
 
+          function setStar(b, on) {
+            b.classList.toggle('on', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            (b.firstElementChild || b).textContent = on ? '★' : '☆';
+          }
+
           function wireStars() {
             tbody.querySelectorAll('.star').forEach(function (b) {
+              // Served, so the control works: drop both the disabled state and the
+              // note explaining why it did not, which would otherwise still be read.
+              b.disabled = false;
+              b.removeAttribute('aria-describedby');
               b.addEventListener('click', function () {
-                var on = !b.classList.contains('on');
+                var on = b.getAttribute('aria-pressed') !== 'true';
                 fetch('/api/favorite/' + encodeURIComponent(b.dataset.id) + '?on=' + on,
                       { method: 'POST' })
-                  .then(function (r) { if (r.ok) { b.classList.toggle('on', on);
-                                                   b.textContent = on ? '★' : '☆'; } });
+                  .then(function (r) {
+                    if (r.ok) setStar(b, on);
+                    else announce('Could not change the keep state.');
+                  }, function () { announce('Could not change the keep state.'); });
               });
             });
           }
@@ -156,6 +260,10 @@ public static class IndexRenderer
           // Re-read the freshly written index and swap in its rows, so the search box
           // and scroll position survive what would otherwise be a reload.
           function refresh() {
+            var active = document.activeElement;
+            var focused = active && active.classList && active.classList.contains('star')
+              ? active.dataset.id : null;
+
             fetch('/', { cache: 'no-store' })
               .then(function (r) { return r.text(); })
               .then(function (html) {
@@ -166,6 +274,13 @@ public static class IndexRenderer
                 rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
                 wireStars();
                 apply();
+                // Replacing the rows destroys the node that had focus, which would
+                // drop a keyboard or screen-reader user back to the top of the page.
+                if (focused) {
+                  var again = tbody.querySelector('.star[data-id="' + focused + '"]');
+                  if (again) again.focus();
+                }
+                announce('Match list updated.');
               });
           }
 
