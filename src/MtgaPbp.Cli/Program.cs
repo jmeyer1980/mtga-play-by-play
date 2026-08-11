@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using MtgaPbp.Core;
 using MtgaPbp.Render;
 
@@ -19,6 +20,9 @@ public static class Program
                 "capture" => Capture(cfg),
                 "build" => Build(cfg, open),
                 "stats" => Stats(cfg),
+                "watch" => Watch(cfg, args),
+                "keep" => Favorite(cfg, Arg(args, 1), on: true),
+                "unkeep" => Favorite(cfg, Arg(args, 1), on: false),
                 "all" => Capture(cfg) is var c && c != 0 ? c : Build(cfg, open),
                 _ => Usage()
             };
@@ -30,6 +34,10 @@ public static class Program
         }
     }
 
+    private static string? Arg(string[] args, int index) =>
+        args.Where(a => !a.StartsWith("--", StringComparison.Ordinal))
+            .Skip(index).FirstOrDefault();
+
     private static int Usage()
     {
         Console.WriteLine("""
@@ -39,6 +47,12 @@ public static class Program
             mtga-pbp build            re-derive the whole site from the archive
             mtga-pbp build --rebuild  same as above (build never caches)
             mtga-pbp stats            unhandled annotations and unresolved cards
+            mtga-pbp keep <matchId>   never prune this match
+            mtga-pbp unkeep <matchId> allow it to be pruned again
+
+            Set "MaxArchivedMatches" in mtga-pbp.json to cap how many matches are kept;
+            the oldest are dropped as new ones arrive. Kept matches never count against
+            the cap. It defaults to 0, meaning no limit.
 
             Set "OpenAfterBuild": true in mtga-pbp.json to always open the report —
             useful when launching by double-click, where this window closes too fast
@@ -73,6 +87,123 @@ public static class Program
         Console.WriteLine(
             $"captured {added} new match(es); {stats.JsonLines:N0} json lines read, " +
             $"{stats.MalformedLines} malformed");
+
+        Prune(cfg, archive);
+        return 0;
+    }
+
+    /// <summary>
+    /// Enforces the retention cap, deleting the rendered output for anything dropped
+    /// so the report does not link to pages that no longer exist.
+    /// </summary>
+    private static void Prune(Config cfg, RawArchive archive)
+    {
+        if (cfg.MaxArchivedMatches <= 0) return;
+
+        var removed = archive.Prune(cfg.MaxArchivedMatches);
+        foreach (var id in removed)
+        {
+            foreach (var path in new[]
+            {
+                Path.Combine(cfg.OutputDir, "games", $"{id}.html"),
+                Path.Combine(cfg.OutputDir, "text", $"{id}.md"),
+            })
+                if (File.Exists(path)) File.Delete(path);
+        }
+
+        if (removed.Count > 0)
+            Console.WriteLine(
+                $"pruned {removed.Count} match(es) past the {cfg.MaxArchivedMatches} cap " +
+                "(favourites kept)");
+    }
+
+    /// <summary>
+    /// Serves the report and keeps it current: polls the log, re-captures when it
+    /// grows, and tells any open page to refresh itself.
+    /// </summary>
+    /// <remarks>
+    /// Polling rather than FileSystemWatcher — Arena writes to Player.log constantly,
+    /// so change notifications fire continuously and tell us nothing useful. Length is
+    /// the honest signal, and a shrink means Arena restarted and truncated the log.
+    /// </remarks>
+    private static int Watch(Config cfg, string[] args)
+    {
+        var port = int.TryParse(Arg(args, 1), out var p) ? p : 8787;
+        var interval = TimeSpan.FromSeconds(3);
+
+        Directory.CreateDirectory(cfg.OutputDir);
+        Capture(cfg);
+        if (Build(cfg, open: false) is var code and not 0) return code;
+
+        using var server = new LiveServer(cfg.OutputDir, port);
+        server.OnFavorite = (id, on) =>
+        {
+            var ok = new RawArchive(cfg.ArchiveDir).SetFavorite(id, on);
+            if (ok) { Build(cfg, open: false); server.NotifyChanged(); }
+            return ok;
+        };
+
+        try { server.Start(); }
+        catch (SocketException ex)
+        {
+            Console.Error.WriteLine(
+                $"could not listen on port {port} ({ex.Message}). " +
+                "Pass a different one: mtga-pbp watch 9000");
+            return 2;
+        }
+
+        Console.WriteLine($"watching {cfg.LogPaths.FirstOrDefault()}");
+        Console.WriteLine($"report is live at {server.Url}");
+        Console.WriteLine("leave this window open; press Ctrl+C to stop.");
+        OpenInBrowser(server.Url);
+
+        var stop = new ManualResetEventSlim(false);
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Set(); };
+
+        var sizes = new Dictionary<string, long>();
+        while (!stop.Wait(interval))
+        {
+            var changed = false;
+            foreach (var log in cfg.LogPaths.Where(File.Exists))
+            {
+                var length = new FileInfo(log).Length;
+                if (sizes.TryGetValue(log, out var was) && was == length) continue;
+                sizes[log] = length;
+                changed = true;
+            }
+            if (!changed) continue;
+
+            var archive = new RawArchive(cfg.ArchiveDir);
+            var before = archive.MatchIds().Count();
+
+            Capture(cfg);
+            if (new RawArchive(cfg.ArchiveDir).MatchIds().Count() == before) continue;
+
+            Build(cfg, open: false);
+            server.NotifyChanged();
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] new match captured — report updated");
+        }
+
+        Console.WriteLine("stopped.");
+        return 0;
+    }
+
+    private static int Favorite(Config cfg, string? matchId, bool on)
+    {
+        if (string.IsNullOrWhiteSpace(matchId))
+        {
+            Console.Error.WriteLine($"usage: mtga-pbp {(on ? "keep" : "unkeep")} <matchId>");
+            return 1;
+        }
+
+        var archive = new RawArchive(cfg.ArchiveDir);
+        if (!archive.SetFavorite(matchId, on))
+        {
+            Console.Error.WriteLine($"no archived match with id {matchId}");
+            return 1;
+        }
+
+        Console.WriteLine($"{matchId} {(on ? "kept — it will never be pruned" : "no longer kept")}");
         return 0;
     }
 
@@ -114,7 +245,10 @@ public static class Program
             File.WriteAllText(gamePath, GamePageRenderer.Render(transcript));
             File.WriteAllText(Path.Combine(textDir, $"{matchId}.md"),
                 MarkdownRenderer.Render(transcript));
-            summaries.Add(IndexRenderer.Summarize(transcript));
+            summaries.Add(IndexRenderer.Summarize(transcript) with
+            {
+                Favorite = archive.Meta(matchId)?.Favorite ?? false
+            });
 
             foreach (var c in transcript.CardsSeen.Where(
                          c => c.StartsWith("Card #", StringComparison.Ordinal)))

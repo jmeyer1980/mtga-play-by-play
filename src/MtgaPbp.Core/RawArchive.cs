@@ -3,7 +3,8 @@ using System.Text.Json;
 
 namespace MtgaPbp.Core;
 
-public sealed record ArchiveEntry(string MatchId, long StartedAtMs, long EndedAtMs, bool Incomplete);
+public sealed record ArchiveEntry(
+    string MatchId, long StartedAtMs, long EndedAtMs, bool Incomplete, bool Favorite = false);
 
 public sealed class RawArchive
 {
@@ -40,6 +41,9 @@ public sealed class RawArchive
             (!existing.Incomplete || slice.Incomplete))
             return false;
 
+        // Re-capturing a match must not silently unfavourite it.
+        var favorite = existing?.Favorite ?? false;
+
         var path = Path.Combine(_rawDir, $"{slice.MatchId}.json.gz");
         using (var fs = File.Create(path))
         using (var gz = new GZipStream(fs, CompressionLevel.Optimal))
@@ -48,10 +52,50 @@ public sealed class RawArchive
             foreach (var line in slice.RawLines) w.WriteLine(line);
         }
 
-        _ledger[slice.MatchId] =
-            new ArchiveEntry(slice.MatchId, slice.StartedAtMs, slice.EndedAtMs, slice.Incomplete);
+        _ledger[slice.MatchId] = new ArchiveEntry(
+            slice.MatchId, slice.StartedAtMs, slice.EndedAtMs, slice.Incomplete, favorite);
         SaveLedger();
         return true;
+    }
+
+    /// <summary>Marks a match as kept, so pruning will never remove it.</summary>
+    public bool SetFavorite(string matchId, bool favorite)
+    {
+        if (!_ledger.TryGetValue(matchId, out var e)) return false;
+        _ledger[matchId] = e with { Favorite = favorite };
+        SaveLedger();
+        return true;
+    }
+
+    /// <summary>
+    /// Drops the oldest matches until at most <paramref name="keep"/> remain, and
+    /// returns what was removed so the caller can delete the rendered output too.
+    /// Favourites are never counted against the cap and never removed — a cap of 60
+    /// with 70 favourites keeps all 70.
+    /// </summary>
+    public IReadOnlyList<string> Prune(int keep)
+    {
+        if (keep <= 0) return [];
+
+        var prunable = _ledger.Values
+            .Where(e => !e.Favorite)
+            .OrderBy(e => e.StartedAtMs)
+            .ToList();
+
+        var excess = _ledger.Count - keep;
+        if (excess <= 0) return [];
+
+        var removed = new List<string>();
+        foreach (var entry in prunable.Take(excess))
+        {
+            var path = Path.Combine(_rawDir, $"{entry.MatchId}.json.gz");
+            if (File.Exists(path)) File.Delete(path);
+            _ledger.Remove(entry.MatchId);
+            removed.Add(entry.MatchId);
+        }
+
+        if (removed.Count > 0) SaveLedger();
+        return removed;
     }
 
     public IReadOnlyList<string> ReadLines(string matchId)

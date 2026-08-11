@@ -64,6 +64,83 @@ public class RawArchiveTests
         Assert.That(meta.EndedAtMs, Is.EqualTo(200));
     }
 
+    private static MatchSlice At(string id, long started) =>
+        new(id, started, started + 100, ["""{"a":1}"""], false);
+
+    [Test]
+    public void Prune_removes_the_oldest_until_the_cap_is_met()
+    {
+        var a = new RawArchive(_root);
+        for (var i = 1; i <= 5; i++) a.Write(At($"m{i}", i * 1000));
+
+        var removed = a.Prune(keep: 3);
+
+        Assert.That(removed, Is.EquivalentTo(new[] { "m1", "m2" }));
+        Assert.That(a.MatchIds(), Is.EquivalentTo(new[] { "m3", "m4", "m5" }));
+        Assert.That(File.Exists(Path.Combine(_root, "raw", "m1.json.gz")), Is.False);
+    }
+
+    [Test]
+    public void Prune_never_removes_a_favourite_however_old()
+    {
+        var a = new RawArchive(_root);
+        for (var i = 1; i <= 5; i++) a.Write(At($"m{i}", i * 1000));
+        a.SetFavorite("m1", true);
+
+        a.Prune(keep: 3);
+
+        Assert.That(a.Contains("m1"), Is.True, "the oldest match was favourited");
+        Assert.That(a.MatchIds(), Is.EquivalentTo(new[] { "m1", "m4", "m5" }));
+    }
+
+    [Test]
+    public void Prune_keeps_everything_when_favourites_exceed_the_cap()
+    {
+        var a = new RawArchive(_root);
+        for (var i = 1; i <= 5; i++) { a.Write(At($"m{i}", i * 1000)); a.SetFavorite($"m{i}", true); }
+
+        Assert.That(a.Prune(keep: 2), Is.Empty);
+        Assert.That(a.MatchIds().Count(), Is.EqualTo(5));
+    }
+
+    [Test]
+    public void Prune_does_nothing_when_the_cap_is_unset_or_not_reached()
+    {
+        var a = new RawArchive(_root);
+        for (var i = 1; i <= 3; i++) a.Write(At($"m{i}", i * 1000));
+
+        Assert.That(a.Prune(keep: 0), Is.Empty, "0 means no limit");
+        Assert.That(a.Prune(keep: 10), Is.Empty);
+        Assert.That(a.MatchIds().Count(), Is.EqualTo(3));
+    }
+
+    [Test]
+    public void Favourite_survives_recapturing_the_same_match()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1", incomplete: true));
+        a.SetFavorite("m1", true);
+        a.Write(Slice("m1", incomplete: false));   // completes it
+
+        Assert.That(a.Meta("m1")!.Favorite, Is.True);
+    }
+
+    [Test]
+    public void Favourite_state_survives_reopening()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1"));
+        a.SetFavorite("m1", true);
+
+        Assert.That(new RawArchive(_root).Meta("m1")!.Favorite, Is.True);
+    }
+
+    [Test]
+    public void SetFavorite_reports_when_the_match_is_unknown()
+    {
+        Assert.That(new RawArchive(_root).SetFavorite("nope", true), Is.False);
+    }
+
     [Test]
     public void Written_payload_is_gzip_compressed()
     {

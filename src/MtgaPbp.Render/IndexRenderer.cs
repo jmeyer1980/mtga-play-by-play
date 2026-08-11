@@ -7,7 +7,7 @@ namespace MtgaPbp.Render;
 public sealed record MatchSummary(
     string MatchId, string Date, long SortKey, string EventName,
     string Opponent, string Result, int Turns, bool Incomplete,
-    IReadOnlyList<string> Cards);
+    IReadOnlyList<string> Cards, bool Favorite = false);
 
 public static class IndexRenderer
 {
@@ -43,7 +43,7 @@ public static class IndexRenderer
         else
         {
             body.Append("""
-                <table id="rows"><thead><tr><th>Date</th><th>Event</th><th>Opponent</th>
+                <table id="rows"><thead><tr><th></th><th>Date</th><th>Event</th><th>Opponent</th>
                 <th>Result</th><th>Turns</th></tr></thead><tbody id="data">
                 """);
             foreach (var r in ordered)
@@ -55,6 +55,9 @@ public static class IndexRenderer
 
                 body.Append($"""
                     <tr data-search="{E(haystack)}">
+                    <td><button class="star{(r.Favorite ? " on" : "")}" type="button"
+                        data-id="{E(r.MatchId)}" title="Kept matches are never pruned"
+                        >{(r.Favorite ? "★" : "☆")}</button></td>
                     <td><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></td>
                     <td>{E(r.EventName)}</td><td>{E(r.Opponent)}</td>
                     <td class="{cls}">{E(r.Result)}{(r.Incomplete ? " *" : "")}</td>
@@ -71,7 +74,7 @@ public static class IndexRenderer
             <title>MTGA Play-by-Play</title>
             <style>{{Css}}</style></head><body>
             <h1>MTGA Play-by-Play</h1>
-            <p class="sub">{{ordered.Count}} game{{(ordered.Count == 1 ? "" : "s")}} archived</p>
+            <p class="sub">{{ordered.Count}} game{{(ordered.Count == 1 ? "" : "s")}} archived<span id="live">· live</span></p>
             <input id="q" type="search" placeholder="Search opponent, event, result, or card…"
                    autocomplete="off">
             <p id="count" class="sub"></p>
@@ -98,6 +101,13 @@ public static class IndexRenderer
         a{color:inherit}
         .win{color:#2a2}.loss{opacity:.7}
         .empty{opacity:.7}
+        .star{background:none;border:0;cursor:default;font-size:1rem;padding:0 .2rem;
+              color:inherit;opacity:.35}
+        .star.on{opacity:1;color:#e8b923}
+        body.live .star{cursor:pointer}
+        body.live .star:hover{opacity:.8}
+        #live{display:none;font-size:.8rem;opacity:.6;margin-left:.5rem}
+        body.live #live{display:inline}
         code{font-family:ui-monospace,Menlo,Consolas,monospace}
         """;
 
@@ -108,7 +118,7 @@ public static class IndexRenderer
           var count = document.getElementById('count');
           if (!tbody || !q || !count) return;
 
-          var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+          let rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
 
           function apply() {
             var terms = q.value.toLowerCase().split(/\s+/).filter(Boolean);
@@ -124,6 +134,43 @@ public static class IndexRenderer
 
           q.addEventListener('input', apply);
           apply();
+
+          // Everything below only works when the page is served by `mtga-pbp watch`.
+          // Opened from disk it stays a plain static report, which is the point.
+          if (location.protocol.indexOf('http') !== 0) return;
+          document.body.classList.add('live');
+
+          function wireStars() {
+            tbody.querySelectorAll('.star').forEach(function (b) {
+              b.addEventListener('click', function () {
+                var on = !b.classList.contains('on');
+                fetch('/api/favorite/' + encodeURIComponent(b.dataset.id) + '?on=' + on,
+                      { method: 'POST' })
+                  .then(function (r) { if (r.ok) { b.classList.toggle('on', on);
+                                                   b.textContent = on ? '★' : '☆'; } });
+              });
+            });
+          }
+          wireStars();
+
+          // Re-read the freshly written index and swap in its rows, so the search box
+          // and scroll position survive what would otherwise be a reload.
+          function refresh() {
+            fetch('/', { cache: 'no-store' })
+              .then(function (r) { return r.text(); })
+              .then(function (html) {
+                var next = new DOMParser().parseFromString(html, 'text/html')
+                                          .querySelector('#data');
+                if (!next) return;
+                tbody.innerHTML = next.innerHTML;
+                rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+                wireStars();
+                apply();
+              });
+          }
+
+          var es = new EventSource('/api/events');
+          es.addEventListener('changed', refresh);
         })();
         """;
 }

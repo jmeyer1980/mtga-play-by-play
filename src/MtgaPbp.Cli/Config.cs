@@ -17,6 +17,14 @@ public sealed class Config
     /// </summary>
     public bool OpenAfterBuild { get; set; }
 
+    /// <summary>
+    /// Keep at most this many matches, dropping the oldest as new ones arrive.
+    /// Favourites never count against it and are never dropped. Zero means no limit,
+    /// which is the default — deleting someone's match history on the first run after
+    /// an upgrade would be a poor surprise.
+    /// </summary>
+    public int MaxArchivedMatches { get; set; }
+
     public static Config Default()
     {
         var low = Path.Combine(
@@ -50,6 +58,7 @@ public sealed class Config
             if (!string.IsNullOrWhiteSpace(loaded.LocalPlayerUserId))
                 cfg.LocalPlayerUserId = loaded.LocalPlayerUserId;
             cfg.OpenAfterBuild = loaded.OpenAfterBuild;
+            if (loaded.MaxArchivedMatches > 0) cfg.MaxArchivedMatches = loaded.MaxArchivedMatches;
             return cfg;
         }
         catch (JsonException)

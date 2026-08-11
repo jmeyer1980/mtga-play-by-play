@@ -60,9 +60,40 @@ cd C:\path\to\mtga-pbp
 |---|---|
 | `.\mtga-pbp.exe` | capture new matches, then rebuild the site |
 | `.\mtga-pbp.exe --open` | ... and open the report in your browser |
+| `.\mtga-pbp.exe watch` | serve the report and keep it live (see below) |
 | `.\mtga-pbp.exe capture` | capture only |
 | `.\mtga-pbp.exe build` | re-derive the whole site from the archive |
 | `.\mtga-pbp.exe stats` | unhandled annotation types and unresolved cards |
+| `.\mtga-pbp.exe keep <matchId>` | never prune this match |
+| `.\mtga-pbp.exe unkeep <matchId>` | allow it to be pruned again |
+
+### Live mode
+
+```powershell
+.\mtga-pbp.exe watch
+```
+
+Leave that running and the report updates itself as you play. It opens
+`http://127.0.0.1:8787/`, polls the log, re-captures when a match ends, and pushes a
+refresh to the open page. Your scroll position and whatever is in the search box both
+survive the update — it swaps the rows rather than reloading.
+
+Pass a different port if 8787 is taken: `.\mtga-pbp.exe watch 9000`. It listens on
+loopback only, so nothing outside your machine can reach it.
+
+This is also the only mode where the ★ buttons work. Opened from disk the page is
+static — browsers block `fetch` on `file://`, which is deliberate in the design — so
+the stars show which matches are kept but cannot change them. Use `keep`/`unkeep`
+from the command line, or run `watch`.
+
+### Keeping the archive from growing forever
+
+Set `"MaxArchivedMatches": 60` in `mtga-pbp.json` and the oldest match is dropped
+whenever a new one arrives, deleting its archive, page and markdown together.
+
+**Starred matches never count against the cap and are never deleted** — a cap of 60
+with 70 kept matches keeps all 70. The cap defaults to `0`, meaning no limit, so
+nothing is ever deleted unless you ask for it.
 
 ### Running it from anywhere
 

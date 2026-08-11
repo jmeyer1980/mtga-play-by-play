@@ -162,9 +162,34 @@ public class RendererTests
     public void Index_embeds_data_rather_than_fetching_it()
     {
         var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample())]);
-        Assert.That(html, Does.Not.Contain("fetch("));
         Assert.That(html, Does.Contain("id=\"data\""));
         Assert.That(html, Does.Contain("PlayerTwo"));
+
+        // The page may fetch when served by `watch`, but never on file:// — browsers
+        // block it there, so anything behind that guard must be pure enhancement.
+        var guard = html.IndexOf("location.protocol.indexOf('http')", StringComparison.Ordinal);
+        Assert.That(guard, Is.GreaterThan(0), "live features must be protocol-guarded");
+        Assert.That(html.IndexOf("fetch(", StringComparison.Ordinal), Is.GreaterThan(guard),
+            "no fetch may run before the http guard");
+    }
+
+    [Test]
+    public void Index_shows_kept_matches_with_a_filled_star()
+    {
+        var kept = IndexRenderer.Summarize(Sample()) with { Favorite = true };
+        var html = IndexRenderer.Render([kept]);
+
+        Assert.That(html, Does.Contain("class=\"star on\""));
+        Assert.That(html, Does.Contain("★"));
+        Assert.That(html, Does.Contain("data-id=\"abc-123\""));
+    }
+
+    [Test]
+    public void Index_shows_unkept_matches_with_an_empty_star()
+    {
+        var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample())]);
+        Assert.That(html, Does.Contain("class=\"star\""));
+        Assert.That(html, Does.Contain("☆"));
     }
 
     [Test]
