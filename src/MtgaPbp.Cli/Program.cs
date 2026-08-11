@@ -10,7 +10,7 @@ public static class Program
     {
         var exeDir = AppContext.BaseDirectory;
         var cfg = Config.Load(exeDir);
-        var command = args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal)) ?? "all";
+        var (command, operands) = Parse(args);
         var open = cfg.OpenAfterBuild || args.Contains("--open");
 
         try
@@ -20,9 +20,9 @@ public static class Program
                 "capture" => Capture(cfg),
                 "build" => Build(cfg, open),
                 "stats" => Stats(cfg),
-                "watch" => Watch(cfg, args),
-                "keep" => Favorite(cfg, Arg(args, 1), on: true),
-                "unkeep" => Favorite(cfg, Arg(args, 1), on: false),
+                "watch" => Watch(cfg, operands),
+                "keep" => Favorite(cfg, operands.FirstOrDefault(), on: true),
+                "unkeep" => Favorite(cfg, operands.FirstOrDefault(), on: false),
                 "all" => Capture(cfg) is var c && c != 0 ? c : Build(cfg, open),
                 _ => Usage()
             };
@@ -34,9 +34,45 @@ public static class Program
         }
     }
 
-    private static string? Arg(string[] args, int index) =>
-        args.Where(a => !a.StartsWith("--", StringComparison.Ordinal))
-            .Skip(index).FirstOrDefault();
+    private static readonly string[] Commands =
+        ["capture", "build", "stats", "watch", "keep", "unkeep"];
+
+    private static readonly string[] Options = ["--open", "--rebuild"];
+
+    /// <summary>
+    /// Splits the arguments into a command and its operands.
+    /// </summary>
+    /// <remarks>
+    /// Tolerates <c>--watch</c> for <c>watch</c>: the dashed form is a natural thing
+    /// to type, and it used to be discarded as an unknown option, which ran a plain
+    /// capture-and-build instead and looked exactly like watch starting and exiting.
+    /// The command and its operands have to be worked out together, because with
+    /// <c>--watch 8793</c> the port is the first positional argument rather than the
+    /// second.
+    /// </remarks>
+    private static (string Command, string[] Operands) Parse(string[] args)
+    {
+        var positional = args
+            .Where(a => !a.StartsWith("--", StringComparison.Ordinal))
+            .ToArray();
+
+        if (positional.Length > 0 && Commands.Contains(positional[0], StringComparer.Ordinal))
+            return (positional[0], positional[1..]);
+
+        var dashed = args.Select(a => a.TrimStart('-'))
+                         .FirstOrDefault(a => Commands.Contains(a, StringComparer.Ordinal));
+        if (dashed is not null) return (dashed, positional);
+
+        // An unrecognised word still goes to the switch, which answers with usage.
+        if (positional.Length > 0) return (positional[0], positional[1..]);
+
+        foreach (var unknown in args.Where(a =>
+                     a.StartsWith("--", StringComparison.Ordinal) &&
+                     !Options.Contains(a, StringComparer.Ordinal)))
+            Console.Error.WriteLine($"warning: ignoring unknown option {unknown}");
+
+        return ("all", []);
+    }
 
     private static int Usage()
     {
@@ -47,6 +83,7 @@ public static class Program
             mtga-pbp build            re-derive the whole site from the archive
             mtga-pbp build --rebuild  same as above (build never caches)
             mtga-pbp stats            unhandled annotations and unresolved cards
+            mtga-pbp watch [port]     serve the report and keep it live (default 8787)
             mtga-pbp keep <matchId>   never prune this match
             mtga-pbp unkeep <matchId> allow it to be pruned again
 
@@ -61,18 +98,29 @@ public static class Program
         return 1;
     }
 
-    private static int Capture(Config cfg)
+    private static int Capture(Config cfg) => CaptureCore(cfg, quiet: false).Exit;
+
+    /// <summary>
+    /// Reads the logs into the archive and reports how many matches were written.
+    /// </summary>
+    /// <returns>
+    /// <c>Written</c> counts matches that were <em>added or updated</em>. A match
+    /// first seen mid-game is archived incomplete and rewritten when it ends, which
+    /// leaves the archive the same size — so callers must not use the match count to
+    /// decide whether anything happened.
+    /// </returns>
+    private static (int Exit, int Written) CaptureCore(Config cfg, bool quiet)
     {
         var archive = new RawArchive(cfg.ArchiveDir);
         var stats = new ScanStats();
-        var added = 0;
+        var written = 0;
         var sawAnyLog = false;
 
         foreach (var log in cfg.LogPaths.Where(File.Exists))
         {
             sawAnyLog = true;
             foreach (var slice in MatchSlicer.Slice(LogScanner.Scan(log, stats)))
-                if (archive.Write(slice)) added++;
+                if (archive.Write(slice)) written++;
         }
 
         if (!sawAnyLog)
@@ -81,15 +129,16 @@ public static class Program
                 "error: no Arena log found. Looked for:\n  " +
                 string.Join("\n  ", cfg.LogPaths) +
                 "\nSet \"LogPaths\" in mtga-pbp.json if Arena is installed elsewhere.");
-            return 2;
+            return (2, 0);
         }
 
-        Console.WriteLine(
-            $"captured {added} new match(es); {stats.JsonLines:N0} json lines read, " +
-            $"{stats.MalformedLines} malformed");
+        if (!quiet)
+            Console.WriteLine(
+                $"captured {written} new match(es); {stats.JsonLines:N0} json lines read, " +
+                $"{stats.MalformedLines} malformed");
 
         Prune(cfg, archive);
-        return 0;
+        return (0, written);
     }
 
     /// <summary>
@@ -126,9 +175,9 @@ public static class Program
     /// so change notifications fire continuously and tell us nothing useful. Length is
     /// the honest signal, and a shrink means Arena restarted and truncated the log.
     /// </remarks>
-    private static int Watch(Config cfg, string[] args)
+    private static int Watch(Config cfg, string[] operands)
     {
-        var port = int.TryParse(Arg(args, 1), out var p) ? p : 8787;
+        var port = int.TryParse(operands.FirstOrDefault(), out var p) ? p : 8787;
         var interval = TimeSpan.FromSeconds(3);
 
         Directory.CreateDirectory(cfg.OutputDir);
@@ -139,7 +188,7 @@ public static class Program
         server.OnFavorite = (id, on) =>
         {
             var ok = new RawArchive(cfg.ArchiveDir).SetFavorite(id, on);
-            if (ok) { Build(cfg, open: false); server.NotifyChanged(); }
+            if (ok) { Build(cfg, open: false, quiet: true); server.NotifyChanged(); }
             return ok;
         };
 
@@ -163,25 +212,27 @@ public static class Program
         var sizes = new Dictionary<string, long>();
         while (!stop.Wait(interval))
         {
-            var changed = false;
+            var grew = false;
             foreach (var log in cfg.LogPaths.Where(File.Exists))
             {
                 var length = new FileInfo(log).Length;
                 if (sizes.TryGetValue(log, out var was) && was == length) continue;
                 sizes[log] = length;
-                changed = true;
+                grew = true;
             }
-            if (!changed) continue;
+            if (!grew) continue;
 
-            var archive = new RawArchive(cfg.ArchiveDir);
-            var before = archive.MatchIds().Count();
+            // Rebuild when the archive was written to, not when it got bigger. A match
+            // that started mid-poll is archived incomplete and rewritten once it ends,
+            // and that rewrite leaves the count unchanged — which is exactly the update
+            // worth showing, since only then does the transcript know how it finished.
+            var (exit, written) = CaptureCore(cfg, quiet: true);
+            if (exit != 0 || written == 0) continue;
 
-            Capture(cfg);
-            if (new RawArchive(cfg.ArchiveDir).MatchIds().Count() == before) continue;
-
-            Build(cfg, open: false);
+            Build(cfg, open: false, quiet: true);
             server.NotifyChanged();
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] new match captured — report updated");
+            Console.WriteLine(
+                $"[{DateTime.Now:HH:mm:ss}] {written} match(es) captured or completed — report updated");
         }
 
         Console.WriteLine("stopped.");
@@ -221,7 +272,7 @@ public static class Program
     /// second, so there is no cache to invalidate. <c>--rebuild</c> is accepted and
     /// documented because that is the guarantee it names, but it changes nothing today.
     /// </summary>
-    private static int Build(Config cfg, bool open)
+    private static int Build(Config cfg, bool open, bool quiet = false)
     {
         var archive = new RawArchive(cfg.ArchiveDir);
         using var cards = OpenCards(cfg, out var dbPath);
@@ -260,13 +311,16 @@ public static class Program
         if (unresolved.Count > 0)
             File.WriteAllLines(Path.Combine(cfg.OutputDir, "unresolved.txt"), unresolved);
 
-        Console.WriteLine($"built {summaries.Count} game(s)");
-        Console.WriteLine();
-        Console.WriteLine($"  report:  {indexPath}");
-        Console.WriteLine($"  cards:   {dbPath}");
-        Console.WriteLine();
-        if (unresolved.Count > 0)
-            Console.WriteLine($"{unresolved.Count} unresolved card id(s) — see unresolved.txt");
+        if (!quiet)
+        {
+            Console.WriteLine($"built {summaries.Count} game(s)");
+            Console.WriteLine();
+            Console.WriteLine($"  report:  {indexPath}");
+            Console.WriteLine($"  cards:   {dbPath}");
+            Console.WriteLine();
+            if (unresolved.Count > 0)
+                Console.WriteLine($"{unresolved.Count} unresolved card id(s) — see unresolved.txt");
+        }
 
         if (open) OpenInBrowser(indexPath);
         return 0;

@@ -114,6 +114,37 @@ public class RawArchiveTests
         Assert.That(a.MatchIds().Count(), Is.EqualTo(3));
     }
 
+    /// <summary>
+    /// Completing a match is a write, but not a new match. Watch mode used to decide
+    /// whether to rebuild by comparing the number of archived matches before and
+    /// after, so a game captured mid-play was never re-rendered once it finished —
+    /// the report sat showing it as still in progress forever.
+    /// </summary>
+    [Test]
+    public void Completing_a_match_is_a_write_even_though_the_count_does_not_change()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1", incomplete: true));
+        var countAfterFirst = a.MatchIds().Count();
+
+        var wrote = a.Write(Slice("m1", incomplete: false));
+
+        Assert.That(wrote, Is.True, "the completed match must be written");
+        Assert.That(a.MatchIds().Count(), Is.EqualTo(countAfterFirst),
+            "and the count is unchanged, which is why it cannot be the rebuild signal");
+        Assert.That(a.Meta("m1")!.Incomplete, Is.False);
+    }
+
+    [Test]
+    public void An_unchanged_in_progress_match_is_not_rewritten_every_poll()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1", incomplete: true));
+
+        Assert.That(a.Write(Slice("m1", incomplete: true)), Is.False,
+            "watch polls every few seconds; a game still in progress must stay quiet");
+    }
+
     [Test]
     public void Favourite_survives_recapturing_the_same_match()
     {
