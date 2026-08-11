@@ -17,6 +17,7 @@
 - The card database is opened **read-only** (`Mode=ReadOnly`). Never write to it.
 - The local player's seat is resolved **per match** and never carried across matches.
 - Test framework is NUnit. Per project policy, `Assert.Warn` is only for documented accepted limitations and must assert the specific known condition.
+- Shell snippets are PowerShell. The `&&` in the commit steps needs PowerShell 7+ (`pwsh`) — Windows PowerShell 5.1 has no pipeline chain operators, so run `git add -A` and `git commit` as two commands there. `dotnet` and `git` take identical arguments under `cmd.exe` and Git Bash; only `.\` prefixes, `Remove-Item`, and `$env:VAR` are PowerShell-specific.
 
 ## File Structure
 
@@ -63,14 +64,14 @@ tests/MtgaPbp.Tests/
 
 - [ ] **Step 1: Create the solution and projects**
 
-```bash
-cd /c/Users/jerio/RiderProjects/MTGA_Play-by
+```powershell
+cd C:\path\to\MTGA_Play-by
 dotnet new sln -n MtgaPbp
 dotnet new classlib -o src/MtgaPbp.Core -f net10.0
 dotnet new classlib -o src/MtgaPbp.Render -f net10.0
 dotnet new console  -o src/MtgaPbp.Cli -f net10.0
 dotnet new nunit    -o tests/MtgaPbp.Tests -f net10.0
-rm -f src/MtgaPbp.Core/Class1.cs src/MtgaPbp.Render/Class1.cs tests/MtgaPbp.Tests/UnitTest1.cs
+Remove-Item -ErrorAction Ignore src/MtgaPbp.Core/Class1.cs, src/MtgaPbp.Render/Class1.cs, tests/MtgaPbp.Tests/UnitTest1.cs
 dotnet sln add src/MtgaPbp.Core src/MtgaPbp.Render src/MtgaPbp.Cli tests/MtgaPbp.Tests
 dotnet add src/MtgaPbp.Core package Microsoft.Data.Sqlite
 dotnet add src/MtgaPbp.Render reference src/MtgaPbp.Core
@@ -343,7 +344,7 @@ Expected: PASS, 5 tests.
 
 - [ ] **Step 7: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: solution scaffold and read-only card database"
 ```
 
@@ -514,7 +515,7 @@ Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: streaming log scanner that never throws on bad input"
 ```
 
@@ -730,7 +731,7 @@ Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: slice log envelopes into per-match groups"
 ```
 
@@ -922,7 +923,7 @@ Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: gzip match archive with idempotent dedupe ledger"
 ```
 
@@ -1349,7 +1350,7 @@ Expected: PASS, 11 tests.
 
 - [ ] **Step 5: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: game state tracker with cycle-safe object id aliasing"
 ```
 
@@ -1937,7 +1938,7 @@ Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: extract typed game events from GRE annotations"
 ```
 
@@ -2191,7 +2192,7 @@ Expected: PASS, 9 tests.
 
 - [ ] **Step 5: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: narrate typed events into readable beats and verbose lines"
 ```
 
@@ -2334,7 +2335,7 @@ Expected: PASS, 4 tests.
 
 - [ ] **Step 5: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: standalone markdown transcript export"
 ```
 
@@ -2485,7 +2486,7 @@ Expected: PASS, 8 tests.
 
 - [ ] **Step 5: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: self-contained per-game HTML page with density toggle"
 ```
 
@@ -2698,7 +2699,7 @@ Expected: PASS, 14 tests.
 
 - [ ] **Step 5: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: searchable index page with embedded match data"
 ```
 
@@ -3005,7 +3006,7 @@ Expected: PASS, all tests green.
 
 - [ ] **Step 6: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "feat: CLI with capture, build, and stats commands"
 ```
 
@@ -3025,7 +3026,7 @@ The fixture is one real archived match with screen names and user IDs replaced b
 
 - [ ] **Step 1: Capture real data and mint the fixture**
 
-```bash
+```powershell
 dotnet run --project src/MtgaPbp.Cli -- capture
 dotnet run --project src/MtgaPbp.Cli -- build
 dotnet run --project src/MtgaPbp.Cli -- stats
@@ -3135,10 +3136,9 @@ Expected: first run FAILS on `Rendered_markdown_matches_the_golden_file` while i
 
 - [ ] **Step 5: Publish a single-file executable and run it end to end**
 
-```bash
-dotnet publish src/MtgaPbp.Cli -c Release -r win-x64 --self-contained \
-  -p:PublishSingleFile=true -o dist
-./dist/MtgaPbp.Cli.exe
+```powershell
+dotnet publish src/MtgaPbp.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o dist
+.\dist\MtgaPbp.Cli.exe
 ```
 
 Expected: `captured N new match(es)`, then `built N game(s)`. Open the generated
@@ -3147,7 +3147,7 @@ with a working density toggle.
 
 - [ ] **Step 6: Commit**
 
-```bash
+```powershell
 git add -A && git commit -m "test: golden-file coverage over a real anonymized match"
 ```
 

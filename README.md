@@ -110,7 +110,13 @@ Open a new terminal afterwards for it to take effect. A winget install would do 
 for you, but the package is not submitted yet — see
 [`packaging/winget/`](packaging/winget/).
 
-Output lands in `%USERPROFILE%\MTGA_PlayByPlay`:
+There is no safe `cmd.exe` one-liner for this — `setx PATH "%PATH%;..."` folds the
+system `PATH` into your user `PATH` and truncates at 1024 characters. From `cmd.exe`,
+either run the PowerShell line above via `powershell -NoProfile -Command "..."` or use
+Windows' *Edit environment variables for your account* dialog.
+
+Output lands in `$env:USERPROFILE\MTGA_PlayByPlay` (`%USERPROFILE%\MTGA_PlayByPlay` in
+`cmd.exe`):
 
 ```
 archive/raw/<matchId>.json.gz    durable source of truth, ~80 KB per match
@@ -195,7 +201,13 @@ resolve this package yet.
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and
 nothing else. Arena does not need to be installed to build or test — only to run.
 
-```bash
+Every command below is shown in PowerShell, and every one of them is byte-identical in
+`cmd.exe` and in Git Bash — the `dotnet` and `git` CLIs take the same arguments in all
+three, and forward slashes in paths are fine on Windows. Only two things in this README
+are shell-specific: the `.\` prefix when running the exe, and `$env:VAR` versus
+`%VAR%`.
+
+```powershell
 git clone https://github.com/jmeyer1980/mtga-play-by-play.git
 cd mtga-play-by-play
 dotnet test
@@ -203,7 +215,7 @@ dotnet test
 
 To produce the same single-file executable the releases ship:
 
-```bash
+```powershell
 dotnet publish src/MtgaPbp.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
 ```
 
@@ -217,7 +229,7 @@ The releases use the self-contained build so downloads just work.
 
 During development you can skip publishing entirely:
 
-```bash
+```powershell
 dotnet run --project src/MtgaPbp.Cli -- --open
 ```
 
@@ -237,7 +249,7 @@ that the name fixture still agrees with what Arena actually returns.
 If you change the sample match, regenerate the name fixture on a machine with Arena
 installed:
 
-```bash
+```powershell
 dotnet test --filter "FullyQualifiedName~CardNameFixtureGenerator" -- NUnit.Explicit=true
 ```
 
