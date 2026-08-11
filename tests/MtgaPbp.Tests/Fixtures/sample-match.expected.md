@@ -17,8 +17,10 @@
 - Opponent plays Plains
 - Opponent casts Ajani's Pridemate
 - Ajani's Pridemate resolves
+- Hinterland Sanctifier's ability triggers
 - Opponent gains 1 life
-- Ajani's Pridemate gets 1 counter
+- Deal Gone Bad triggers
+- Ajani's Pridemate gets 1 +1/+1 counter
 - Opponent attacks with Hinterland Sanctifier
 - You cast Elspeth's Smite
 - Elspeth's Smite deals 3 damage to Hinterland Sanctifier
@@ -29,14 +31,13 @@
 ## Turn 4 — You  (You 20 · Opponent 21)
 - You draw Ghostly Dancers
 - You play Temple of Enlightenment
-- You scry
+- Temple of Enlightenment's ability triggers
+- You scry 1, putting Carrot Cake to the bottom
 
 ## Turn 5 — Opponent  (You 20 · Opponent 21)
 - Opponent plays Plains
 - Opponent casts Hop to It
-- Hop to It creates Rabbit
-- Hop to It creates Rabbit
-- Hop to It creates Rabbit
+- Hop to It creates Rabbit ×3
 - Hop to It resolves
 - Opponent attacks with Ajani's Pridemate
 - Ajani's Pridemate deals 3 damage to You
@@ -47,25 +48,24 @@
 - You draw Caretaker's Talent
 - You cast Carrot Cake
 - Carrot Cake resolves
+- Carrot Cake's ability triggers
 - Carrot Cake's ability creates Rabbit
-- You scry
+- You scry 1, putting Plains to the top
   *You control: Rabbit 1/1*
 
 ## Turn 7 — Opponent  (You 17 · Opponent 21)
 - Opponent casts Leonin Vanguard
 - Leonin Vanguard resolves
+- Leonin Vanguard's ability triggers
 - Opponent gains 1 life
-- Ajani's Pridemate gets 1 counter
+- Deal Gone Bad triggers
+- Ajani's Pridemate gets 1 +1/+1 counter
 - Opponent attacks with Ajani's Pridemate
-- Opponent attacks with Rabbit
-- Opponent attacks with Rabbit
-- Opponent attacks with Rabbit
+- Opponent attacks with Rabbit ×3
 - Rabbit blocks Ajani's Pridemate
 - Ajani's Pridemate deals 4 damage to Rabbit
 - Rabbit deals 1 damage to Ajani's Pridemate
-- Rabbit deals 1 damage to You
-- Rabbit deals 1 damage to You
-- Rabbit deals 1 damage to You
+- Rabbit deals 1 damage to You ×3
 - You lose 3 life
   *Opponent controls: Ajani's Pridemate 4/4 (1 dmg, tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1*
 
@@ -73,28 +73,24 @@
 - You draw Plains
 - You play Plains
 - You cast Hop to It
-- Hop to It creates Rabbit
-- Hop to It creates Rabbit
-- Hop to It creates Rabbit
+- Hop to It creates Rabbit ×3
 - Hop to It resolves
   *You control: Rabbit 1/1, Rabbit 1/1, Rabbit 1/1*
 
 ## Turn 9 — Opponent  (You 14 · Opponent 22)
 - Opponent casts Crowd of True Believers
 - Crowd of True Believers resolves
+- Leonin Vanguard's ability triggers
 - Opponent gains 1 life
-- Ajani's Pridemate gets 1 counter
+- Deal Gone Bad triggers
+- Ajani's Pridemate gets 1 +1/+1 counter
 - Opponent attacks with Ajani's Pridemate
-- Opponent attacks with Rabbit
-- Opponent attacks with Rabbit
-- Opponent attacks with Rabbit
+- Opponent attacks with Rabbit ×3
 - Opponent attacks with Leonin Vanguard
 - Rabbit blocks Ajani's Pridemate
 - Ajani's Pridemate deals 5 damage to Rabbit
 - Rabbit deals 1 damage to Ajani's Pridemate
-- Rabbit deals 1 damage to You
-- Rabbit deals 1 damage to You
-- Rabbit deals 1 damage to You
+- Rabbit deals 1 damage to You ×3
 - You lose 3 life
   *You control: Rabbit 1/1, Rabbit 1/1*
   *Opponent controls: Ajani's Pridemate 5/5 (1 dmg, tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1, Crowd of True Believers 1/2*
@@ -110,9 +106,14 @@
 
 ## Turn 11 — Opponent  (You 11 · Opponent 23)
 - Opponent plays Temple of Plenty
+- Temple of Plenty's ability triggers
+- Opponent scries 1, putting 1 card to the top
 - Opponent casts Dusk Rose Reliquary
 - Dusk Rose Reliquary resolves
+- Dusk Rose Reliquary's ability triggers
 - Ethereal Armor is put into the graveyard
+- Leonin Vanguard's ability triggers
 - Opponent gains 1 life
-- Ajani's Pridemate gets 1 counter
+- Deal Gone Bad triggers
+- Ajani's Pridemate gets 1 +1/+1 counter
 - Opponent wins the match

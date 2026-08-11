@@ -236,6 +236,76 @@ public class NarratorTests
     }
 
     [Test]
+    public void Counters_are_named_when_the_card_database_knows_the_kind()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.CounterChanged) with
+            { TargetName = "Ajani's Pridemate", Amount = 1, Detail = "+1/+1" }), Density.Beats);
+        Assert.That(lines.Single().Text, Is.EqualTo("Ajani's Pridemate gets 1 +1/+1 counter"));
+
+        lines = Narrator.Narrate(T(
+            E(EventKind.CounterChanged) with
+            { TargetName = "Kaito", Amount = 3, Detail = "Loyalty" }), Density.Beats);
+        Assert.That(lines.Single().Text, Is.EqualTo("Kaito gets 3 Loyalty counters"));
+    }
+
+    [Test]
+    public void Counters_fall_back_to_the_bare_word_when_the_kind_is_unknown()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.CounterChanged) with { TargetName = "Thing", Amount = 1 }), Density.Beats);
+        Assert.That(lines.Single().Text, Is.EqualTo("Thing gets 1 counter"));
+    }
+
+    [Test]
+    public void Scry_says_where_the_cards_went()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Scry) with
+            { ActorSeat = 1, Amount = 1, Detail = "Overlord of the Mistmoors to the bottom" }),
+            Density.Beats);
+
+        Assert.That(lines.Single().Text,
+            Is.EqualTo("You scry 1, putting Overlord of the Mistmoors to the bottom"));
+    }
+
+    [Test]
+    public void Scry_without_detail_stays_vague_rather_than_inventing_it()
+    {
+        var lines = Narrator.Narrate(
+            T(E(EventKind.Scry) with { ActorSeat = 2 }), Density.Beats);
+        Assert.That(lines.Single().Text, Is.EqualTo("Opponent scries"));
+    }
+
+    [Test]
+    public void Repeated_lines_collapse_with_a_count()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Triggered, 0) with { SourceName = "Ghostly Dancers's ability" },
+            E(EventKind.Triggered, 1) with { SourceName = "Ghostly Dancers's ability" },
+            E(EventKind.Triggered, 2) with { SourceName = "Ghostly Dancers's ability" },
+            E(EventKind.LandPlayed, 3) with { SourceName = "Plains", ActorSeat = 1 }
+        ), Density.Beats);
+
+        Assert.That(lines.Select(l => l.Text), Is.EqualTo(new[]
+        {
+            "Ghostly Dancers's ability triggers ×3",
+            "You play Plains"
+        }));
+    }
+
+    [Test]
+    public void Turn_headers_are_never_collapsed_into_each_other()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.TurnStart, 0) with { Turn = 3, ActorSeat = 1 },
+            E(EventKind.TurnStart, 1) with { Turn = 3, ActorSeat = 1 }
+        ), Density.Beats);
+
+        Assert.That(lines, Has.Count.EqualTo(2), "two turn headers must stay two lines");
+    }
+
+    [Test]
     public void Narrate_drops_events_it_cannot_phrase_rather_than_emitting_blanks()
     {
         var lines = Narrator.Narrate(

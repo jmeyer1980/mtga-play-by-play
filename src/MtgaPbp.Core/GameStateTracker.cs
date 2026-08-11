@@ -253,6 +253,23 @@ public sealed class GameStateTracker(ICardDb cards)
         return null;
     }
 
+    /// <summary>
+    /// Every int under a detail key. Arena omits <c>valueInt32</c> entirely when the
+    /// list is empty — a scry that bottoms nothing sends a bare {"key":"bottomIds"} —
+    /// so an empty result and a missing key are the same thing here.
+    /// </summary>
+    internal static IReadOnlyList<int> DetailInts(JsonElement annotation, string key)
+    {
+        var result = new List<int>();
+        foreach (var d in Json.Array(annotation, "details"))
+        {
+            if (Json.Str(d, "key") != key) continue;
+            foreach (var n in Json.Array(d, "valueInt32"))
+                if (Json.Int(n) is { } iv) result.Add(iv);
+        }
+        return result;
+    }
+
     internal static string? DetailString(JsonElement annotation, string key)
     {
         foreach (var d in Json.Array(annotation, "details"))

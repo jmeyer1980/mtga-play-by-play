@@ -7,10 +7,8 @@ Turns Magic: The Gathering Arena match logs into readable, searchable, shareable
 text transcripts — plain files on your disk that you can read end to end, search
 across your whole history, and paste into a chat.
 
-**If you just want to read your games, [Arena Tutor](https://draftsim.com/arenatutor/)
-is easier to install and use.** Its log is still more detailed in places: it names
-counter types, tells you what you put on the bottom after a scry, and announces every
-trigger, none of which this does yet.
+[Arena Tutor](https://draftsim.com/arenatutor/) also produces a game log, tracks
+live while you play, and is easier to install — it is a good tool and worth a look.
 
 This exists for a narrower case: **static files you own**. An HTML index across your
 whole match history, a self-contained page per game, and a markdown export — no

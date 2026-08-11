@@ -39,7 +39,6 @@ public sealed class EventExtractor(ICardDb cards)
             ["AnnotationType_TokenCreated"] = EventKind.TokenCreated,
             ["AnnotationType_CounterAdded"] = EventKind.CounterChanged,
             ["AnnotationType_CounterRemoved"] = EventKind.CounterChanged,
-            ["AnnotationType_Scry"] = EventKind.Scry,
             ["AnnotationType_RevealedCardCreated"] = EventKind.Revealed,
             ["AnnotationType_ManaPaid"] = EventKind.ManaPaid,
             // PhaseOrStepModified is handled separately — its phase and step come
@@ -50,7 +49,6 @@ public sealed class EventExtractor(ICardDb cards)
     private static readonly HashSet<string> Ignored = new(StringComparer.Ordinal)
     {
         "AnnotationType_ObjectIdChanged",       // consumed by the tracker as aliasing
-        "AnnotationType_AbilityInstanceCreated",
         "AnnotationType_AbilityInstanceDeleted",
         "AnnotationType_TappedUntappedPermanent",
         "AnnotationType_UserActionTaken",
@@ -309,6 +307,55 @@ public sealed class EventExtractor(ICardDb cards)
                     Detail = category
                 };
             }
+            else if (type == "AnnotationType_AbilityInstanceCreated")
+            {
+                // The ability object resolves to "<source card>'s ability" through its
+                // objectSourceGrpId. Only worth a line when we can name the source.
+                var abilityId = FirstAffected(a);
+                var abilityName = abilityId is { } aid ? tracker.NameOf(aid) : null;
+                if (CardNames.IsPlaceholder(abilityName)) continue;
+
+                ev = Base(tracker, ts, EventKind.Triggered) with
+                {
+                    SourceInstanceId = abilityId,
+                    SourceName = abilityName
+                };
+            }
+            else if (type == "AnnotationType_Scry")
+            {
+                var top = GameStateTracker.DetailInts(a, "topIds");
+                var bottom = GameStateTracker.DetailInts(a, "bottomIds");
+
+                // Our own cards are named; the opponent's are hidden, so say only how
+                // many rather than inventing detail we do not have.
+                string Describe(IReadOnlyList<int> ids, string where)
+                {
+                    var names = ids.Select(tracker.NameOf)
+                                   .Where(n => !CardNames.IsPlaceholder(n)).ToList();
+                    if (names.Count == ids.Count && names.Count > 0)
+                    {
+                        foreach (var n in names) st.SawCard(n);
+                        return $"{string.Join(", ", names)} to the {where}";
+                    }
+                    return ids.Count == 1 ? $"1 card to the {where}"
+                                          : $"{ids.Count} cards to the {where}";
+                }
+
+                var parts = new List<string>();
+                if (top.Count > 0) parts.Add(Describe(top, "top"));
+                if (bottom.Count > 0) parts.Add(Describe(bottom, "bottom"));
+
+                var actor = Json.Int(a, "affectorId") is { } af && af > 2
+                    ? tracker.Get(af)?.ControllerSeat
+                    : null;
+
+                ev = Base(tracker, ts, EventKind.Scry) with
+                {
+                    ActorSeat = actor is > 0 ? actor : tracker.ActiveSeat,
+                    Amount = top.Count + bottom.Count,
+                    Detail = parts.Count > 0 ? string.Join(", ", parts) : null
+                };
+            }
             else if (type == "AnnotationType_PhaseOrStepModified")
             {
                 // The phase and step live on the annotation itself; turnInfo often
@@ -349,9 +396,16 @@ public sealed class EventExtractor(ICardDb cards)
                     _ => tracker.ActiveSeat
                 };
 
+                // Arena numbers counter kinds; the card database names them, so a
+                // planeswalker gains "1 Loyalty counter" rather than "1 counter".
+                var counterName = simple == EventKind.CounterChanged
+                    ? cards.EnumName("CounterType", GameStateTracker.DetailInt(a, "counter_type") ?? 0)
+                    : null;
+
                 ev = Base(tracker, ts, simple) with
                 {
                     ActorSeat = actor,
+                    Detail = counterName,
                     SourceInstanceId = affector,
                     SourceName = sourceName,
                     // Seats 1 and 2 are players; anything larger is an object instance id.

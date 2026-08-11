@@ -68,6 +68,7 @@
     }
   },
   "Enums": {
+    "CounterType:1": "\u002B1/\u002B1",
     "Phase:1": "Beginning",
     "Phase:2": "1st Main",
     "Phase:3": "Combat",

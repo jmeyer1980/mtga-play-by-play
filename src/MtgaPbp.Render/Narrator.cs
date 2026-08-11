@@ -28,7 +28,31 @@ public static class Narrator
                 e.Kind == EventKind.TurnStart,
                 e.Kind == EventKind.BoardSnapshot));
         }
-        return lines;
+        return Collapse(lines);
+    }
+
+    /// <summary>
+    /// Folds runs of the identical line into one with a count. A single card can
+    /// trigger nine times in a row or make four tokens back to back, and printing
+    /// each is how a transcript turns into a wall. Turn headers are never folded.
+    /// </summary>
+    private static List<Line> Collapse(List<Line> lines)
+    {
+        var result = new List<Line>(lines.Count);
+        for (var i = 0; i < lines.Count;)
+        {
+            var line = lines[i];
+            var run = 1;
+            while (!line.IsTurnHeader &&
+                   i + run < lines.Count &&
+                   lines[i + run].Text == line.Text &&
+                   lines[i + run].IsTurnHeader == line.IsTurnHeader)
+                run++;
+
+            result.Add(run == 1 ? line : line with { Text = $"{line.Text} ×{run}" });
+            i += run;
+        }
+        return result;
     }
 
     /// <summary>
@@ -128,8 +152,11 @@ public static class Narrator
             $"{e.SourceName ?? "An effect"} creates {e.TargetName}",
 
         EventKind.CounterChanged when e.TargetName is not null && e.Amount != 0 =>
-            $"{e.TargetName} {(e.Amount > 0 ? "gets" : "loses")} {Math.Abs(e.Amount)} counter" +
+            $"{e.TargetName} {(e.Amount > 0 ? "gets" : "loses")} {Math.Abs(e.Amount)} " +
+            $"{(e.Detail is null ? "" : e.Detail + " ")}counter" +
             $"{(Math.Abs(e.Amount) == 1 ? "" : "s")}",
+
+        EventKind.Triggered when e.SourceName is not null => $"{e.SourceName} triggers",
 
         EventKind.Attack when e.SourceName is not null && e.TargetName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "attack", "attacks", t)} " +
@@ -141,6 +168,9 @@ public static class Narrator
             $"{e.SourceName} blocks {e.TargetName}",
         EventKind.Block when e.SourceName is not null => $"{e.SourceName} blocks",
 
+        EventKind.Scry when e.Detail is not null =>
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "scry", "scries", t)} {e.Amount}, " +
+            $"putting {e.Detail}",
         EventKind.Scry => $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "scry", "scries", t)}",
         EventKind.Revealed when e.SourceName is not null => $"{e.SourceName} is revealed",
 

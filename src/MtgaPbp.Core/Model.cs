@@ -47,7 +47,7 @@ public enum EventKind
     Drew, Discarded, Destroyed, Sacrificed, Exiled, Returned,
     StateBasedAction, ZoneMove, Milled, Surveilled,
     Damage, LifeChanged, TokenCreated, CounterChanged,
-    Scry, Revealed, ManaPaid, Attack, Block, BoardSnapshot, GameEnd, Unknown
+    Scry, Revealed, ManaPaid, Attack, Block, BoardSnapshot, Triggered, GameEnd, Unknown
 }
 
 /// <summary>
