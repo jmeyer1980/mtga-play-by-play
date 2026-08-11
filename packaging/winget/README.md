@@ -20,8 +20,27 @@ own. `winget uninstall jmeyer1980.MtgaPlayByPlay` removes it cleanly.
 
 ## Status
 
-Not yet submitted to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs),
-so `winget install jmeyer1980.MtgaPlayByPlay` will not resolve until it is.
+Not submitted to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs), so
+`winget install jmeyer1980.MtgaPlayByPlay` does not resolve. **This is a decision, not
+an unfinished step**, and the manifests are kept current and validated regardless.
+
+The executable is unsigned, so Windows raises SmartScreen the first time it runs. A zip
+you download and check against a published `.sha256`, from a project that says plainly
+it is unsigned, is honest about that. A package manager entry that installs silently
+and *then* trips SmartScreen is a worse deal for the person installing it.
+
+Signing was priced rather than assumed. Azure Trusted Signing — renamed Azure Artifact
+Signing in 2026 — is about $9.99/month and now open to individual developers, so cost
+is not really the obstacle. Reputation is: it accrues gradually the way it does for an
+OV certificate, rather than granting the instant pass old EV certificates did. Paying
+would not reliably spare early adopters the prompt, which is the whole reason to sign.
+Individual signups have also run into an Entra ID P2 licence requirement for creating
+the signing role.
+
+Revisit if the binary ever gets signed and builds reputation. Note that the usual
+automation for this — [winget-releaser](https://github.com/vedantmgoyal9/winget-releaser)
+— only automates *updates*: it needs one version already published upstream to use as a
+template, so it could not be the first step in any case.
 
 Verified against v0.2.0:
 
@@ -51,7 +70,9 @@ mtga-pbp                       # should resolve on PATH in a new shell
 winget uninstall jmeyer1980.MtgaPlayByPlay
 ```
 
-## Submitting upstream
+## Submitting upstream, if that is ever revisited
+
+Kept here so the route is known, not because it is queued — see Status above.
 
 No registration is needed beyond a GitHub account — no fee, no Microsoft Partner
 signup. Submission is a pull request that goes through automated validation (a bot
@@ -62,14 +83,14 @@ opens the PR for you:
 
 ```powershell
 winget install Microsoft.WingetCreate
-wingetcreate update jmeyer1980.MtgaPlayByPlay --version 0.1.0 --urls <installer-url> --submit
+wingetcreate update jmeyer1980.MtgaPlayByPlay --version 0.2.0 --urls <installer-url> --submit
 ```
 
 Two things worth expecting:
 
-- The binary is **unsigned**, so users will see a SmartScreen prompt on first run.
-  Automated validation tolerates this; a code-signing certificate is the only real
-  fix, and it costs a few hundred dollars a year.
+- Automated validation tolerates an unsigned binary, so it is not what would block a
+  submission — the SmartScreen prompt users meet afterwards is the reason this is on
+  hold.
 - Once merged, the PR and package are permanently public under your GitHub name.
 
 ## Updating for a new release
