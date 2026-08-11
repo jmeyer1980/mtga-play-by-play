@@ -207,6 +207,11 @@ three, and forward slashes in paths are fine on Windows. Only two things in this
 are shell-specific: the `.\` prefix when running the exe, and `$env:VAR` versus
 `%VAR%`.
 
+**Run every `dotnet` command from the repo root** — the folder holding `MtgaPbp.slnx`.
+Paths like `src/MtgaPbp.Cli` are relative to it, so running one from inside
+`src\MtgaPbp.Cli` fails with `MSB1009: Project file does not exist`. `cd` back to the
+root and it works.
+
 ```powershell
 git clone https://github.com/jmeyer1980/mtga-play-by-play.git
 cd mtga-play-by-play
