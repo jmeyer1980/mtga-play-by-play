@@ -26,6 +26,8 @@ public sealed class EventExtractor(ICardDb cards)
         ["Sacrifice"] = EventKind.Sacrificed,
         ["Exile"] = EventKind.Exiled,
         ["Return"] = EventKind.Returned,
+        ["Mill"] = EventKind.Milled,
+        ["Surveil"] = EventKind.Surveilled,
     };
 
     private static readonly Dictionary<string, EventKind> SimpleAnnotationKinds =
@@ -93,7 +95,7 @@ public sealed class EventExtractor(ICardDb cards)
 
         public void SawCard(string? name)
         {
-            if (name is not null && !name.StartsWith('#')) CardsSeen.Add(name);
+            if (!CardNames.IsPlaceholder(name)) CardsSeen.Add(name!);
         }
     }
 
@@ -288,11 +290,22 @@ public sealed class EventExtractor(ICardDb cards)
                 // unknown; whoever's turn it is did it.
                 var controller = objId is { } id2 ? tracker.Get(id2)?.ControllerSeat : null;
 
+                // What caused the move. Present on every Destroy, Exile, Return, Mill
+                // and Countered in the sample archive, and it is the difference
+                // between "Hare Apparent is destroyed" and "Split Up destroys Hare
+                // Apparent". Seats 1 and 2 are players, not objects.
+                var cause = Json.Int(a, "affectorId");
+                var causeName = cause is > 2 ? tracker.NameOf(cause.Value) : null;
+                if (CardNames.IsPlaceholder(causeName)) causeName = null;
+                st.SawCard(causeName);
+
                 ev = Base(tracker, ts, kind) with
                 {
                     SourceInstanceId = objId,
                     SourceName = name,
                     ActorSeat = controller is > 0 ? controller : tracker.ActiveSeat,
+                    CauseInstanceId = causeName is null ? null : cause,
+                    CauseName = causeName,
                     Detail = category
                 };
             }

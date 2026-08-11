@@ -386,6 +386,64 @@ public class EventExtractorTests
     }
 
     [Test]
+    public void Zone_transfers_record_what_caused_them()
+    {
+        // Every Destroy, Exile, Return, Mill and Countered in the sample archive
+        // carries affectorId. This is the effect's source, not a declared target.
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 700, "grpId": 8, "name": 1000, "type": "GameObjectType_Card" },
+            { "instanceId": 800, "grpId": 9, "name": 1001, "type": "GameObjectType_Card" } ],
+          "annotations": [ { "id": 1, "affectorId": 700, "affectedIds": [ 800 ],
+            "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+              { "key": "category", "valueString": [ "Destroy" ] } ] } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Destroyed);
+        Assert.That(e.SourceName, Is.EqualTo("Llanowar Elves"), "the card that moved");
+        Assert.That(e.CauseName, Is.EqualTo("Lightning Bolt"), "what moved it");
+        Assert.That(t.CardsSeen, Does.Contain("Lightning Bolt"));
+    }
+
+    [Test]
+    public void A_player_seat_is_not_recorded_as_a_cause()
+    {
+        // affectorId 1 and 2 are players, not objects; "You discards X" is nonsense.
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ { "instanceId": 800, "grpId": 9, "name": 1001,
+                             "type": "GameObjectType_Card" } ],
+          "annotations": [ { "id": 1, "affectorId": 2, "affectedIds": [ 800 ],
+            "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+              { "key": "category", "valueString": [ "Discard" ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Discarded).CauseName, Is.Null);
+    }
+
+    [Test]
+    public void Mill_and_surveil_are_recognised_rather_than_generic_zone_moves()
+    {
+        foreach (var (category, expected) in new[]
+        {
+            ("Mill", EventKind.Milled),
+            ("Surveil", EventKind.Surveilled),
+        })
+        {
+            var t = Run(RoomLine, MulliganLine, Gre($$"""
+            { "type": "GameStateType_Full",
+              "gameObjects": [ { "instanceId": 800, "grpId": 9, "name": 1001,
+                                 "type": "GameObjectType_Card" } ],
+              "annotations": [ { "id": 1, "affectedIds": [ 800 ],
+                "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+                  { "key": "category", "valueString": [ "{{category}}" ] } ] } ] }
+            """));
+            Assert.That(t.Events.Select(x => x.Kind), Does.Contain(expected));
+        }
+    }
+
+    [Test]
     public void Extract_never_throws_on_malformed_annotations()
     {
         Assert.DoesNotThrow(() => Run(RoomLine, Gre("""

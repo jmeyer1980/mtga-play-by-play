@@ -7,11 +7,10 @@ Turns Magic: The Gathering Arena match logs into readable, searchable, shareable
 text transcripts — plain files on your disk that you can read end to end, search
 across your whole history, and paste into a chat.
 
-**If you just want to read your games, use
-[Arena Tutor](https://draftsim.com/arenatutor/) instead.** It is easier to install
-and use, and its game log is genuinely detailed — it names counter types, tells you
-what you put on the bottom after a scry, and attributes every trigger, none of which
-this does today.
+**If you just want to read your games, [Arena Tutor](https://draftsim.com/arenatutor/)
+is easier to install and use.** Its log is still more detailed in places: it names
+counter types, tells you what you put on the bottom after a scry, and announces every
+trigger, none of which this does yet.
 
 This exists for a narrower case: **static files you own**. An HTML index across your
 whole match history, a self-contained page per game, and a markdown export — no
@@ -121,10 +120,13 @@ became visible.
 
 **It does not have** the opponent's hand or library, their decklist beyond what they
 actually played, or **declared targets** — Arena sends target choices only to the
-player making them. Interactions are therefore reported as observed effects
-("Lightning Bolt resolves — Llanowar Elves destroyed") rather than declared intent.
-That is symmetric across both players and records what happened rather than what was
-announced.
+player making them, so there is no way to know what a countered spell was aimed at.
+
+What it does have is the *cause* of every effect, which is usually what you wanted
+anyway: transcripts say `Deadly Cover-Up exiles Toby, Beastie Befriender` and
+`Split Up destroys Unstoppable Slasher` rather than reporting a card vanishing on its
+own. That is symmetric across both players and records what happened rather than what
+was announced.
 
 ## Install
 

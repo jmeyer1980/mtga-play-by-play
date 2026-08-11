@@ -5,6 +5,20 @@ namespace MtgaPbp.Core;
 public sealed record CardInfo(
     int GrpId, string Name, string Types, string? Power, string? Toughness, bool IsToken);
 
+/// <summary>Names <see cref="GameStateTracker.NameOf"/> falls back to when it cannot resolve.</summary>
+public static class CardNames
+{
+    /// <summary>
+    /// True for the two fallbacks: "#123" when the object is unknown, and
+    /// "Card #76729" when its grpId is not in the card database. Checking only the
+    /// first of those let the second leak into search indexes and transcripts.
+    /// </summary>
+    public static bool IsPlaceholder(string? name) =>
+        name is null
+        || name.StartsWith('#')
+        || name.StartsWith("Card #", StringComparison.Ordinal);
+}
+
 public interface ICardDb
 {
     string? NameForLocId(int locId);
@@ -31,7 +45,7 @@ public enum EventKind
     GameStart, Mulligan, TurnStart, PhaseChange,
     LandPlayed, SpellCast, Resolved, Countered,
     Drew, Discarded, Destroyed, Sacrificed, Exiled, Returned,
-    StateBasedAction, ZoneMove,
+    StateBasedAction, ZoneMove, Milled, Surveilled,
     Damage, LifeChanged, TokenCreated, CounterChanged,
     Scry, Revealed, ManaPaid, Attack, Block, BoardSnapshot, GameEnd, Unknown
 }
@@ -61,6 +75,14 @@ public sealed record GameEvent
     public int Amount { get; init; }
     public string? Detail { get; init; }
     public string? RawType { get; init; }
+
+    /// <summary>
+    /// What caused this to happen, when the log says so — the spell that destroyed a
+    /// creature, the ability that exiled it. Distinct from the actor, who is the
+    /// player, and from declared targets, which Arena never sends.
+    /// </summary>
+    public int? CauseInstanceId { get; init; }
+    public string? CauseName { get; init; }
 
     /// <summary>Life totals by seat, carried on TurnStart so a turn header can show
     /// the score entering the turn. Zero when not applicable.</summary>

@@ -38,7 +38,8 @@ public static class Narrator
     /// stays visible when debugging.
     /// </summary>
     private static bool IsUnnamed(GameEvent e) =>
-        e.SourceName?.StartsWith('#') == true || e.TargetName?.StartsWith('#') == true;
+        (e.SourceName is not null && CardNames.IsPlaceholder(e.SourceName))
+        || (e.TargetName is not null && CardNames.IsPlaceholder(e.TargetName));
 
     /// <summary>Life totals entering the turn, always ordered you-first.</summary>
     private static string LifeScore(GameEvent e, Transcript t)
@@ -70,7 +71,11 @@ public static class Narrator
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "cast", "casts", t)} {e.SourceName}",
 
         EventKind.Resolved when e.SourceName is not null => $"{e.SourceName} resolves",
-        EventKind.Countered when e.SourceName is not null => $"{e.SourceName} is countered",
+
+        EventKind.Countered when e.SourceName is not null =>
+            e.CauseName is not null
+                ? $"{e.CauseName} counters {e.SourceName}"
+                : $"{e.SourceName} is countered",
 
         EventKind.Drew when e.SourceName is not null && e.ActorSeat == t.You?.Seat =>
             $"You draw {e.SourceName}",
@@ -79,10 +84,33 @@ public static class Narrator
         EventKind.Discarded when e.SourceName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "discard", "discards", t)} {e.SourceName}",
 
-        EventKind.Destroyed when e.SourceName is not null => $"{e.SourceName} is destroyed",
-        EventKind.Sacrificed when e.SourceName is not null => $"{e.SourceName} is sacrificed",
-        EventKind.Exiled when e.SourceName is not null => $"{e.SourceName} is exiled",
-        EventKind.Returned when e.SourceName is not null => $"{e.SourceName} returns to hand",
+        // Naming what caused it is the difference between a list of things that
+        // happened and a transcript you can follow.
+        EventKind.Destroyed when e.SourceName is not null =>
+            e.CauseName is not null
+                ? $"{e.CauseName} destroys {e.SourceName}"
+                : $"{e.SourceName} is destroyed",
+
+        EventKind.Exiled when e.SourceName is not null =>
+            e.CauseName is not null
+                ? $"{e.CauseName} exiles {e.SourceName}"
+                : $"{e.SourceName} is exiled",
+
+        EventKind.Returned when e.SourceName is not null =>
+            e.CauseName is not null
+                ? $"{e.CauseName} returns {e.SourceName} to hand"
+                : $"{e.SourceName} returns to hand",
+
+        EventKind.Sacrificed when e.SourceName is not null =>
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "sacrifice", "sacrifices", t)} {e.SourceName}",
+
+        EventKind.Milled when e.SourceName is not null =>
+            e.CauseName is not null
+                ? $"{e.CauseName} mills {e.SourceName}"
+                : $"{e.SourceName} is milled",
+
+        EventKind.Surveilled when e.SourceName is not null =>
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "surveil", "surveils", t)} {e.SourceName}",
         EventKind.StateBasedAction when e.SourceName is not null =>
             $"{e.SourceName} is put into the graveyard",
 

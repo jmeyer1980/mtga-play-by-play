@@ -196,6 +196,46 @@ public class NarratorTests
     }
 
     [Test]
+    public void Effects_name_what_caused_them_when_the_log_says_so()
+    {
+        (EventKind Kind, string Expected)[] cases =
+        [
+            (EventKind.Destroyed, "Split Up destroys Hare Apparent"),
+            (EventKind.Exiled,    "Split Up exiles Hare Apparent"),
+            (EventKind.Returned,  "Split Up returns Hare Apparent to hand"),
+            (EventKind.Milled,    "Split Up mills Hare Apparent"),
+            (EventKind.Countered, "Split Up counters Hare Apparent"),
+        ];
+
+        foreach (var (kind, expected) in cases)
+        {
+            var lines = Narrator.Narrate(T(
+                E(kind) with { SourceName = "Hare Apparent", CauseName = "Split Up" }),
+                Density.Beats);
+            Assert.That(lines.Single().Text, Is.EqualTo(expected));
+        }
+    }
+
+    [Test]
+    public void Effects_fall_back_to_the_passive_form_without_a_cause()
+    {
+        (EventKind Kind, string Expected)[] cases =
+        [
+            (EventKind.Destroyed, "Hare Apparent is destroyed"),
+            (EventKind.Exiled,    "Hare Apparent is exiled"),
+            (EventKind.Returned,  "Hare Apparent returns to hand"),
+            (EventKind.Countered, "Hare Apparent is countered"),
+        ];
+
+        foreach (var (kind, expected) in cases)
+        {
+            var lines = Narrator.Narrate(
+                T(E(kind) with { SourceName = "Hare Apparent" }), Density.Beats);
+            Assert.That(lines.Single().Text, Is.EqualTo(expected));
+        }
+    }
+
+    [Test]
     public void Narrate_drops_events_it_cannot_phrase_rather_than_emitting_blanks()
     {
         var lines = Narrator.Narrate(

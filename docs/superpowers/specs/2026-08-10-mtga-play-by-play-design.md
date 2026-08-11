@@ -218,9 +218,16 @@ visible.
   therefore unavailable for the opponent and asymmetric for the user.
 - **The opponent's decklist** — only the cards they actually played.
 
+**Do not confuse this with effect attribution, which Arena does send.** Every
+`ZoneTransfer` of category `Destroy`, `Exile`, `Return`, `Mill` and `Countered` in the
+sample archive carries `affectorId` — 100% of them — naming the card or ability that
+caused the move. Reading it is the difference between "Hare Apparent is destroyed" and
+"Split Up destroys Hare Apparent". An earlier version of this parser read `affectorId`
+for damage and life but discarded it for zone transfers, which made the transcripts
+look far more limited than the data actually is.
+
 The targeting gap is handled by reporting **observed effects instead of declared
-intent**, attributed via `DamageDealt.affectorId` and the annotations that follow
-`ResolutionStart`:
+intent**, attributed via `affectorId`:
 
 ```
 Casts Lightning Bolt
