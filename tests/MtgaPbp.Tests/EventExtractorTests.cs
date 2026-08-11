@@ -212,6 +212,36 @@ public class EventExtractorTests
         Assert.That(t.CardsSeen, Does.Contain("Lightning Bolt"));
     }
 
+    /// <summary>
+    /// A name that could not be resolved used to be dropped on the floor: SawCard
+    /// filtered placeholders out of CardsSeen, and every consumer then looked for
+    /// them *in* CardsSeen — so `stats` reported "(none)" while 79 of 111 real pages
+    /// carried a raw id. Counting them is what makes the diagnostic able to fail.
+    /// </summary>
+    [Test]
+    public void Extract_counts_a_name_it_could_not_resolve()
+    {
+        var t = UnseenObjectDies();
+        Assert.That(t.UnresolvedNames, Does.ContainKey("Unknown card"));
+        Assert.That(t.UnresolvedNames["Unknown card"], Is.GreaterThan(0));
+    }
+
+    [Test]
+    public void Extract_keeps_an_unresolved_name_out_of_the_search_index()
+    {
+        // Searching for "unknown" should not match every match that ever had a card
+        // the client could not see.
+        Assert.That(UnseenObjectDies().CardsSeen, Is.Empty);
+    }
+
+    private static Transcript UnseenObjectDies() =>
+        Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full", "gameObjects": [],
+          "annotations": [ { "id": 1, "affectedIds": [ 348 ],
+            "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+              { "key": "category", "valueString": [ "SBA_Damage" ] } ] } ] }
+        """));
+
     [Test]
     public void Extract_emits_an_attack_when_a_creature_is_declared()
     {

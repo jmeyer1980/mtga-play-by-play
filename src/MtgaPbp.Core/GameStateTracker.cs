@@ -216,7 +216,7 @@ public sealed class GameStateTracker(ICardDb cards)
     public string NameOf(int instanceId)
     {
         var o = Get(instanceId);
-        if (o is null) return $"#{instanceId}";
+        if (o is null) return CardNames.Unknown;
 
         if (o.NameLocId is { } loc && cards.NameForLocId(loc) is { } byLoc) return byLoc;
         if (cards.CardForGrpId(o.GrpId) is { } card) return card.Name;

@@ -9,14 +9,27 @@ public sealed record CardInfo(
 public static class CardNames
 {
     /// <summary>
-    /// True for the two fallbacks: "#123" when the object is unknown, and
-    /// "Card #76729" when its grpId is not in the card database. Checking only the
-    /// first of those let the second leak into search indexes and transcripts.
+    /// What an object the client never saw is called. Arena reports that object 348
+    /// changed zones without ever having sent its state — genuine fog of war, so
+    /// there is nothing to look up. The internal id is not a phrase: on screen it
+    /// says nothing, and a synthesiser reads "#348 is put into the graveyard" as
+    /// "number three hundred forty-eight is put into the graveyard". This reads as a
+    /// card name because every sentence template treats names as proper nouns, so it
+    /// needs no article and works mid-sentence as well as at the start.
+    /// </summary>
+    public const string Unknown = "Unknown card";
+
+    /// <summary>
+    /// True for the three fallbacks: <see cref="Unknown"/> when the object was never
+    /// seen, "Card #76729" when its grpId is not in the card database, and a bare
+    /// "#123" from any caller predating <see cref="Unknown"/>. Checking only the
+    /// first of those let the others leak into search indexes and transcripts.
     /// </summary>
     public static bool IsPlaceholder(string? name) =>
         name is null
         || name.StartsWith('#')
-        || name.StartsWith("Card #", StringComparison.Ordinal);
+        || name.StartsWith("Card #", StringComparison.Ordinal)
+        || string.Equals(name, Unknown, StringComparison.Ordinal);
 }
 
 public interface ICardDb

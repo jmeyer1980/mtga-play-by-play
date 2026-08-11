@@ -74,10 +74,13 @@ public class GoldenFileTests
     [Test]
     public void Real_match_names_are_resolved_not_placeholders()
     {
-        var placeholders = Extract().CardsSeen
-            .Where(c => c.StartsWith("Card #", StringComparison.Ordinal)).ToList();
-        Assert.That(placeholders, Is.Empty,
-            $"unresolved card names: {string.Join(", ", placeholders)}");
+        // Read from UnresolvedNames, not CardsSeen. SawCard strips placeholders out of
+        // CardsSeen, so the old form of this test looked for them in the one set they
+        // could never be in and passed no matter how many the parser emitted.
+        var byGrpId = Extract().UnresolvedNames
+            .Where(p => p.Key.StartsWith("Card #", StringComparison.Ordinal)).ToList();
+        Assert.That(byGrpId, Is.Empty,
+            $"grpIds missing from the card database: {string.Join(", ", byGrpId.Select(p => $"{p.Key} x{p.Value}"))}");
     }
 
     [Test]

@@ -40,7 +40,8 @@ public class RendererTests
             new GameEvent { Seq = 3, Kind = EventKind.GameEnd, Detail = "You win the match" },
         ],
         new Dictionary<string, int>(),
-        new HashSet<string> { "Plains", "Lightning Bolt" });
+        new HashSet<string> { "Plains", "Lightning Bolt" },
+        new Dictionary<string, int>());
 
     [Test]
     public void Match_times_render_in_the_configured_time_zone()

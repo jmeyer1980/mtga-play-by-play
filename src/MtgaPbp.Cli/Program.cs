@@ -301,8 +301,7 @@ public static class Program
                 Favorite = archive.Meta(matchId)?.Favorite ?? false
             });
 
-            foreach (var c in transcript.CardsSeen.Where(
-                         c => c.StartsWith("Card #", StringComparison.Ordinal)))
+            foreach (var c in transcript.UnresolvedNames.Keys)
                 unresolved.Add(c);
         }
 
@@ -363,9 +362,8 @@ public static class Program
             var t = extractor.Extract(matchId, lines);
             foreach (var (k, v) in t.UnknownAnnotations)
                 unknown[k] = unknown.GetValueOrDefault(k) + v;
-            foreach (var c in t.CardsSeen.Where(
-                         c => c.StartsWith("Card #", StringComparison.Ordinal)))
-                unresolved[c] = unresolved.GetValueOrDefault(c) + 1;
+            foreach (var (c, n) in t.UnresolvedNames)
+                unresolved[c] = unresolved.GetValueOrDefault(c) + n;
         }
 
         Console.WriteLine($"{matches} match(es) in archive\n");

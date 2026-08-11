@@ -97,6 +97,17 @@ public class GameStateTrackerTests
     }
 
     [Test]
+    public void NameOf_names_an_object_it_never_saw_instead_of_printing_its_id()
+    {
+        // Fog of war: Arena says object 348 changed zones without ever having sent
+        // its state, so there is nothing to look up. The internal id is not a phrase
+        // — on screen it means nothing, and a synthesiser reads "#348" as "number
+        // three hundred forty-eight is put into the graveyard".
+        var t = NewTracker();
+        Assert.That(t.NameOf(348), Is.EqualTo("Unknown card"));
+    }
+
+    [Test]
     public void Resolve_follows_a_single_id_change()
     {
         var t = NewTracker();

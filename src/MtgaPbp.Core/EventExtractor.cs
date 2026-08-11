@@ -10,7 +10,8 @@ public sealed record Transcript(
     int? WinningTeamId, int GamesWon, int GamesLost, bool Incomplete,
     IReadOnlyList<GameEvent> Events,
     IReadOnlyDictionary<string, int> UnknownAnnotations,
-    IReadOnlySet<string> CardsSeen);
+    IReadOnlySet<string> CardsSeen,
+    IReadOnlyDictionary<string, int> UnresolvedNames);
 
 public sealed class EventExtractor(ICardDb cards)
 {
@@ -91,9 +92,23 @@ public sealed class EventExtractor(ICardDb cards)
 
         public void Add(GameEvent e) => Events.Add(e with { Seq = Seq++ });
 
+        /// <summary>Names that could not be resolved, by how often each was emitted.</summary>
+        public readonly Dictionary<string, int> Unresolved = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// A placeholder is counted rather than discarded. It still stays out of
+        /// CardsSeen — nobody wants "unknown" matching every game in the search box —
+        /// but silently dropping it left `mtga-pbp stats` structurally unable to
+        /// report anything, since it looked for placeholders in the very set this
+        /// method had already removed them from.
+        /// </summary>
         public void SawCard(string? name)
         {
-            if (!CardNames.IsPlaceholder(name)) CardsSeen.Add(name!);
+            if (name is null) return;
+            if (CardNames.IsPlaceholder(name))
+                Unresolved[name] = Unresolved.GetValueOrDefault(name) + 1;
+            else
+                CardsSeen.Add(name);
         }
     }
 
@@ -177,7 +192,7 @@ public sealed class EventExtractor(ICardDb cards)
         return new Transcript(
             matchId, started, ended, eventName, you, opp,
             winningTeam, won, lost, Incomplete: !sawFinal,
-            st.Events, st.Unknown, st.CardsSeen);
+            st.Events, st.Unknown, st.CardsSeen, st.Unresolved);
     }
 
     /// <summary>
@@ -298,8 +313,11 @@ public sealed class EventExtractor(ICardDb cards)
                 // Apparent". Seats 1 and 2 are players, not objects.
                 var cause = Json.Int(a, "affectorId");
                 var causeName = cause is > 2 ? tracker.NameOf(cause.Value) : null;
-                if (CardNames.IsPlaceholder(causeName)) causeName = null;
+                // Counted before it is suppressed. An unnameable cause is dropped from
+                // the sentence — "Hare Apparent is destroyed" beats naming a cause we
+                // cannot name — but it is still a resolution gap worth reporting.
                 st.SawCard(causeName);
+                if (CardNames.IsPlaceholder(causeName)) causeName = null;
 
                 ev = Base(tracker, ts, kind) with
                 {
