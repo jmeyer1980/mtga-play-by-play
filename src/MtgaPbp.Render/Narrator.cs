@@ -92,7 +92,8 @@ public static class Narrator
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "play", "plays", t)} {e.SourceName}",
 
         EventKind.SpellCast when e.SourceName is not null =>
-            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "cast", "casts", t)} {e.SourceName}",
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "cast", "casts", t)} {e.SourceName}"
+            + (e.TargetName is not null ? $", targeting {e.TargetName}" : ""),
 
         EventKind.Resolved when e.SourceName is not null => $"{e.SourceName} resolves",
 

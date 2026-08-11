@@ -130,22 +130,24 @@ public class GoldenFileTests
         Assert.That(actual, Is.EqualTo(File.ReadAllText(GoldenPath).ReplaceLineEndings("\n")));
     }
 
+    /// <summary>
+    /// This test used to assert the opposite, on the belief that Arena never sends
+    /// targets. It does — as AnnotationType_TargetSpec inside persistentAnnotations,
+    /// an array the parser did not read. That was a stale assumption, not an accepted
+    /// limitation, so the test is inverted rather than warned about.
+    /// </summary>
     [Test]
-    public void Declared_targets_are_reported_as_effects_not_targets()
+    public void Spells_report_what_they_targeted()
     {
-        // Accepted limitation, not a regression: SelectTargetsReq is sent only to the
-        // player who must choose, and PlayerSubmittedTargets carries no target ids, so
-        // the opponent's declared targets are simply not in the log. Interactions are
-        // reported as observed effects instead. If Arena ever starts emitting target
-        // ids, the first assertion is what will tell us.
-        var hasTargetWording = Narrator.Narrate(Extract(), Density.Beats)
-            .Any(l => l.Text.Contains("targeting", StringComparison.OrdinalIgnoreCase));
+        var withTargets = Extract().Events
+            .Where(e => e.Kind == EventKind.SpellCast && e.TargetName is not null)
+            .ToList();
 
-        Assert.That(hasTargetWording, Is.False,
-            "transcript should phrase interactions as effects, not declared targets");
-        Assert.Warn(
-            "Declared targets are unavailable from the Arena log; interactions are " +
-            "reported as observed effects. See docs/superpowers/specs/" +
-            "2026-08-10-mtga-play-by-play-design.md.");
+        Assert.That(withTargets, Is.Not.Empty,
+            "the sample match casts targeted spells; TargetSpec should name their targets");
+
+        var lines = Narrator.Narrate(Extract(), Density.Beats);
+        Assert.That(lines.Any(l => l.Text.Contains("targeting", StringComparison.Ordinal)),
+            Is.True, "targets should reach the transcript");
     }
 }

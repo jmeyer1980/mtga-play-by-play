@@ -203,20 +203,29 @@ event list, not a second parse. Beats excludes `PhaseChange`, `ManaPaid`,
 
 Stating this plainly because it bounds the product.
 
-**Can:** both players' plays, resolutions, damage, life, counters, tokens, combat
-(who attacked, who blocked what), board state at any point (power, toughness, damage
-marked, tapped, loyalty), your hand and draws, and any opponent card that becomes
-visible.
+**Can:** both players' plays, resolutions, damage, life, counters (named by kind),
+tokens, combat (who attacked, who blocked what), board state at any point (power,
+toughness, damage marked, tapped, loyalty), your hand and draws, any opponent card
+that becomes visible, what each effect hit, **what each spell targeted**, scry
+destinations, triggered abilities, and how the match ended (concede, timeout, or
+losing on board).
 
 **Cannot:**
 
 - **The opponent's hand and library.** The log contains only what the client was
   told. Transcripts are fog-of-war by nature — a game annotated by one player, not a
   god's-eye replay.
-- **Declared targets.** `SelectTargetsReq` lists *legal* targets and is sent only to
-  the choosing player; `PlayerSubmittedTargets` carries no target IDs. Targets are
-  therefore unavailable for the opponent and asymmetric for the user.
 - **The opponent's decklist** — only the cards they actually played.
+
+> **Correction.** Earlier versions of this spec listed declared targets here, on the
+> grounds that `SelectTargetsReq` is sent only to the choosing player and
+> `PlayerSubmittedTargets` carries no target IDs. Both of those are true, and the
+> conclusion drawn from them was still wrong: targets arrive as
+> `AnnotationType_TargetSpec` inside `gameStateMessage.persistentAnnotations` — an
+> array the parser never read — with `affectorId` as the source and `affectedIds` as
+> the targets, for both players. 300 of them appear across 63 of 75 archived matches.
+> The lesson is that "the two places I looked do not have it" is not the same as "it
+> is not there".
 
 **Do not confuse this with effect attribution, which Arena does send.** Every
 `ZoneTransfer` of category `Destroy`, `Exile`, `Return`, `Mill` and `Countered` in the

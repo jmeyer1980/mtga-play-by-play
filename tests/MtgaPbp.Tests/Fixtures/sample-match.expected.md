@@ -22,7 +22,7 @@
 - Deal Gone Bad triggers
 - Ajani's Pridemate gets 1 +1/+1 counter
 - Opponent attacks with Hinterland Sanctifier
-- You cast Elspeth's Smite
+- You cast Elspeth's Smite, targeting Hinterland Sanctifier
 - Elspeth's Smite deals 3 damage to Hinterland Sanctifier
 - Elspeth's Smite resolves
 - Hinterland Sanctifier is put into the graveyard
@@ -100,7 +100,7 @@
 - You play Plains
 - You cast Caretaker's Talent
 - Caretaker's Talent resolves
-- You cast Ethereal Armor
+- You cast Ethereal Armor, targeting Rabbit
 - Ethereal Armor resolves
   *You control: Rabbit 3/3, Rabbit 1/1*
 
@@ -116,4 +116,4 @@
 - Opponent gains 1 life
 - Deal Gone Bad triggers
 - Ajani's Pridemate gets 1 +1/+1 counter
-- Opponent wins the match
+- You concede — opponent wins the match

@@ -31,6 +31,7 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly Dictionary<int, int> _alias = [];   // old id -> new id
     private readonly Dictionary<int, int> _life = [];
     private readonly Dictionary<int, string> _zoneTypes = [];
+    private readonly Dictionary<int, List<int>> _targets = [];   // source id -> target ids
 
     public int Turn { get; private set; }
     public int ActiveSeat { get; private set; }
@@ -95,6 +96,20 @@ public sealed class GameStateTracker(ICardDb cards)
         }
 
         foreach (var go in Json.Array(gsm, "gameObjects")) UpsertObject(go);
+
+        // Targets live here, not in `annotations`. AnnotationType_TargetSpec names what
+        // a spell or ability was aimed at — affectorId is the source, affectedIds are
+        // the targets. Missing this array is why targeting looked unavailable.
+        foreach (var pa in Json.Array(gsm, "persistentAnnotations"))
+        {
+            if (!HasType(pa, "AnnotationType_TargetSpec")) continue;
+            if (Json.Int(pa, "affectorId") is not { } src) continue;
+
+            var targets = new List<int>();
+            foreach (var x in Json.Array(pa, "affectedIds"))
+                if (Json.Int(x) is { } t) targets.Add(t);
+            if (targets.Count > 0) _targets[src] = targets;
+        }
 
         // Aliases must be applied before EventExtractor reads this message's annotations.
         foreach (var a in Json.Array(gsm, "annotations"))
@@ -211,6 +226,17 @@ public sealed class GameStateTracker(ICardDb cards)
     }
 
     public string SeatName(int seat) => seat == LocalSeat ? "You" : "Opponent";
+
+    /// <summary>
+    /// What a spell or ability was aimed at, from AnnotationType_TargetSpec. Empty
+    /// when it targeted nothing, or when Arena did not tell us.
+    /// </summary>
+    public IReadOnlyList<int> TargetsOf(int instanceId)
+    {
+        if (_targets.TryGetValue(instanceId, out var direct)) return direct;
+        var resolved = Resolve(instanceId);
+        return _targets.TryGetValue(resolved, out var viaAlias) ? viaAlias : [];
+    }
 
     /// <summary>
     /// Creatures a seat currently controls on the battlefield, in a stable order.

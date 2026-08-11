@@ -108,6 +108,7 @@ public sealed class EventExtractor(ICardDb cards)
         int? localSeat = null, fallbackSeat = null, winningTeam = null;
         int gamesForTeam1 = 0, gamesForTeam2 = 0;
         var sawFinal = false;
+        string? endReason = null;
 
         foreach (var raw in rawLines)
         {
@@ -125,7 +126,8 @@ public sealed class EventExtractor(ICardDb cards)
                 if (Json.Obj(info, "finalMatchResult") is { } fmr)
                 {
                     sawFinal = true;
-                    ReadResults(fmr, ref winningTeam, ref gamesForTeam1, ref gamesForTeam2);
+                    ReadResults(fmr, ref winningTeam, ref gamesForTeam1, ref gamesForTeam2,
+                                ref endReason);
                 }
             }
 
@@ -149,6 +151,8 @@ public sealed class EventExtractor(ICardDb cards)
             }
         }
 
+        FillTargets(tracker, st);
+
         var you = (localSeat ?? fallbackSeat) is { } seat && seatMeta.TryGetValue(seat, out var y)
             ? y : null;
         var opp = you is null ? null : seatMeta.Values.FirstOrDefault(p => p.Seat != you.Seat);
@@ -165,8 +169,8 @@ public sealed class EventExtractor(ICardDb cards)
                 TimestampMs = ended,
                 Kind = EventKind.GameEnd,
                 Amount = winningTeam ?? 0,
-                Detail = winningTeam is null ? null
-                    : winningTeam == yourTeam ? "You win the match" : "Opponent wins the match"
+                Detail = EndLine(winningTeam, yourTeam, endReason),
+                RawType = endReason
             });
         }
 
@@ -500,11 +504,16 @@ public sealed class EventExtractor(ICardDb cards)
     }
 
     private static void ReadResults(
-        JsonElement fmr, ref int? winningTeam, ref int team1Games, ref int team2Games)
+        JsonElement fmr, ref int? winningTeam, ref int team1Games, ref int team2Games,
+        ref string? reason)
     {
         foreach (var r in Json.Array(fmr, "resultList"))
         {
             var scope = Json.Str(r, "scope");
+            // How it ended: a concede, a timeout, or actually losing the game. Most
+            // matches end in a concede, which "wins the match" hides entirely.
+            if (Json.Str(r, "reason") is { } why && why != "ResultReason_Game")
+                reason ??= why;
             if (Json.Int(r, "winningTeamId") is not { } team) continue;
             if (scope == "MatchScope_Match") winningTeam = team;
             else if (scope == "MatchScope_Game")
@@ -513,6 +522,46 @@ public sealed class EventExtractor(ICardDb cards)
                 else if (team == 2) team2Games++;
             }
         }
+    }
+
+    /// <summary>
+    /// Attaches targets to spells once the whole match has been read. TargetSpec
+    /// usually arrives in a later message than the cast it belongs to, so this cannot
+    /// be done while the cast is being emitted — at that moment the target is not yet
+    /// known.
+    /// </summary>
+    private static void FillTargets(GameStateTracker tracker, Emit st)
+    {
+        for (var i = 0; i < st.Events.Count; i++)
+        {
+            var e = st.Events[i];
+            if (e.Kind != EventKind.SpellCast || e.SourceInstanceId is not { } id) continue;
+
+            var named = tracker.TargetsOf(id)
+                .Select(tracker.NameOf)
+                .Where(n => !CardNames.IsPlaceholder(n))
+                .ToList();
+            if (named.Count == 0) continue;
+
+            foreach (var n in named) st.SawCard(n);
+            st.Events[i] = e with { TargetName = string.Join(" and ", named) };
+        }
+    }
+
+    /// <summary>How the match ended, naming a concede or timeout rather than hiding it.</summary>
+    private static string? EndLine(int? winningTeam, int? yourTeam, string? reason)
+    {
+        if (winningTeam is null) return null;
+        var youWon = winningTeam == yourTeam;
+        var loser = youWon ? "Opponent" : "You";
+        var verb = youWon ? "concedes" : "concede";
+
+        return reason switch
+        {
+            "ResultReason_Concede" => $"{loser} {verb} — {(youWon ? "you win" : "opponent wins")} the match",
+            "ResultReason_Timeout" => $"{loser} {(youWon ? "runs" : "run")} out of time — {(youWon ? "you win" : "opponent wins")} the match",
+            _ => youWon ? "You win the match" : "Opponent wins the match"
+        };
     }
 
     private static long ReadTimestamp(JsonElement root) =>

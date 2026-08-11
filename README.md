@@ -41,24 +41,43 @@ network requests.
 
 ## Use
 
-```bash
-mtga-pbp
+**Double-clicking `mtga-pbp.exe` is the simplest way** — the shipped `mtga-pbp.json`
+sets `"OpenAfterBuild": true`, so it captures, builds, and opens the report. The
+console window closes too fast to read, which is exactly why that setting exists.
+
+From a terminal, `cd` to the folder the exe is in first. **PowerShell will not run a
+program from the current directory without the `.\` prefix:**
+
+```powershell
+cd C:\path\to\mtga-pbp
+.\mtga-pbp.exe --open
 ```
 
-That captures any new matches and rebuilds the site. Run it whenever you feel like
-it — after a session, at the end of the day.
+`mtga-pbp` on its own only works once the folder is on your `PATH` — see below. In
+`cmd.exe` the `.\` is optional; in PowerShell it is not.
 
 | Command | Does |
 |---|---|
-| `mtga-pbp` | capture new matches, then rebuild the site |
-| `mtga-pbp --open` | ... and open the report in your browser |
-| `mtga-pbp capture` | capture only |
-| `mtga-pbp build` | re-derive the whole site from the archive |
-| `mtga-pbp stats` | unhandled annotation types and unresolved cards |
+| `.\mtga-pbp.exe` | capture new matches, then rebuild the site |
+| `.\mtga-pbp.exe --open` | ... and open the report in your browser |
+| `.\mtga-pbp.exe capture` | capture only |
+| `.\mtga-pbp.exe build` | re-derive the whole site from the archive |
+| `.\mtga-pbp.exe stats` | unhandled annotation types and unresolved cards |
 
-If you launch by double-clicking the exe, the console window closes before you can
-read anything — set `"OpenAfterBuild": true` in `mtga-pbp.json` and the report opens
-every time, no flag needed.
+### Running it from anywhere
+
+To type `mtga-pbp` from any directory, add its folder to your `PATH` once:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+    'Path',
+    [Environment]::GetEnvironmentVariable('Path', 'User') + ';C:\path\to\mtga-pbp',
+    'User')
+```
+
+Open a new terminal afterwards for it to take effect. A winget install would do this
+for you, but the package is not submitted yet — see
+[`packaging/winget/`](packaging/winget/).
 
 Output lands in `%USERPROFILE%\MTGA_PlayByPlay`:
 
@@ -116,15 +135,14 @@ nature — a game annotated by one player, not a god's-eye replay.
 (who attacked, who blocked what), your hand and draws, and any opponent card that
 became visible.
 
-**It does not have** the opponent's hand or library, their decklist beyond what they
-actually played, or **declared targets** — Arena sends target choices only to the
-player making them, so there is no way to know what a countered spell was aimed at.
+**It does not have** the opponent's hand or library, or their decklist beyond the
+cards they actually played.
 
-What it does have is the *cause* of every effect, which is usually what you wanted
-anyway: transcripts say `Deadly Cover-Up exiles Toby, Beastie Befriender` and
-`Split Up destroys Unstoppable Slasher` rather than reporting a card vanishing on its
-own. That is symmetric across both players and records what happened rather than what
-was announced.
+Everything else you would want is there, for both players: what each spell targeted
+(`Opponent casts Bitter Triumph, targeting Ghostly Dancers`), what caused each effect
+(`Deadly Cover-Up exiles Toby, Beastie Befriender`), where scried cards went, which
+abilities triggered, and how the match really ended — a concede and a timeout no
+longer look the same as losing on board.
 
 ## Install
 
