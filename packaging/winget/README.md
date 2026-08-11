@@ -4,10 +4,15 @@ Manifests for the Windows Package Manager, kept here so they're version-controll
 and reviewable before anything is submitted upstream.
 
 ```
-jmeyer1980.MtgaPlayByPlay.yaml               version manifest
-jmeyer1980.MtgaPlayByPlay.installer.yaml     installer + hash
-jmeyer1980.MtgaPlayByPlay.locale.en-US.yaml  description, license, tags
+manifests/jmeyer1980.MtgaPlayByPlay.yaml               version manifest
+manifests/jmeyer1980.MtgaPlayByPlay.installer.yaml     installer + hash
+manifests/jmeyer1980.MtgaPlayByPlay.locale.en-US.yaml  description, license, tags
 ```
+
+They sit in their own directory because `winget validate` parses **every** file in
+the directory it is given. With this README beside them it tried to read prose as
+YAML and failed on the colon in "portable zip:" — a confusing error that says
+nothing about the manifests, which were fine all along.
 
 The package is a **portable zip**: winget extracts it and puts `mtga-pbp` on your
 PATH, so there is no installer, no elevation and no uninstall entry beyond winget's
@@ -18,11 +23,12 @@ own. `winget uninstall jmeyer1980.MtgaPlayByPlay` removes it cleanly.
 Not yet submitted to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs),
 so `winget install jmeyer1980.MtgaPlayByPlay` will not resolve until it is.
 
-Verified so far, against v0.1.0:
+Verified against v0.2.0:
 
-- `winget validate --manifest packaging/winget` → succeeds
-- installer URL returns HTTP 200 unauthenticated
-- `InstallerSha256` matches the published zip
+- `winget validate --manifest packaging/winget/manifests` → succeeds
+- installer URL returns HTTP 200 unauthenticated, 34,274,077 bytes
+- `InstallerSha256` matches the published zip, hashed from the downloaded
+  artifact rather than trusting the workflow's own `.sha256`
 - `RelativeFilePath: mtga-pbp.exe` matches the zip's actual layout
 
 **Not** verified: an end-to-end `winget install`. That needs
@@ -40,7 +46,7 @@ winget settings --enable LocalManifestFiles
 Then, from the repository root:
 
 ```powershell
-winget install --manifest packaging/winget
+winget install --manifest packaging/winget/manifests
 mtga-pbp                       # should resolve on PATH in a new shell
 winget uninstall jmeyer1980.MtgaPlayByPlay
 ```
@@ -71,4 +77,7 @@ Two things worth expecting:
 Bump `PackageVersion` in all three files, and in the installer manifest update
 `InstallerUrl`, `InstallerSha256` and `ReleaseDate`. The hash is printed by the
 release workflow and published as `<zip>.sha256` on the release; winget wants it
-uppercase. Then re-run `winget validate --manifest packaging/winget`.
+uppercase. Then re-run `winget validate --manifest packaging/winget/manifests`.
+
+This has to happen **after** the release publishes, not before — the hash can only be
+computed from the built zip, and a guessed one is worse than a stale one.
