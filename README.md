@@ -45,6 +45,10 @@ network requests.
 sets `"OpenAfterBuild": true`, so it captures, builds, and opens the report. The
 console window closes too fast to read, which is exactly why that setting exists.
 
+If you would rather have a window that stays open — and a report that keeps updating
+while you play — make a desktop shortcut that runs `watch`. No terminal needed:
+[A desktop shortcut that runs it](#a-desktop-shortcut-that-runs-it).
+
 From a terminal, `cd` to the folder the exe is in first. **PowerShell will not run a
 program from the current directory without the `.\` prefix:**
 
@@ -85,6 +89,38 @@ This is also the only mode where the ★ buttons work. Opened from disk the page
 static — browsers block `fetch` on `file://`, which is deliberate in the design — so
 the stars show which matches are kept but cannot change them. Use `keep`/`unkeep`
 from the command line, or run `watch`.
+
+#### A desktop shortcut that runs it
+
+Double-clicking the exe itself works, but the console window closes the moment the
+build finishes — too fast to read. A shortcut that runs `watch` stays open instead,
+because `watch` keeps running until you stop it.
+
+1. Right-click `mtga-pbp.exe` → **Send to** → **Desktop (create shortcut)**
+2. Right-click the new shortcut → **Properties**
+3. In **Target**, add ` watch` to the end — *after* the closing quote
+
+The result looks like this, quotes and all:
+
+```
+"C:\path\to\mtga-pbp\mtga-pbp.exe" watch
+```
+
+Double-click it and you get the live report, the ★ buttons, and a window you can
+actually read. Press Ctrl+C in that window, or just close it, when you are done.
+
+Two things that trip people up:
+
+- **The space and the argument go outside the quotes.** `"...\mtga-pbp.exe watch"` is
+  wrong — everything inside the quotes is treated as the filename, so Windows looks for
+  a file called `mtga-pbp.exe watch` and cannot find it.
+- **Leave the quotes alone otherwise.** They are optional if no folder in the path has
+  a space, and required the moment one does. Windows adds them for you when it creates
+  the shortcut; keeping them means the shortcut still works after you move the folder.
+
+Add a port the same way if you need one: `"...\mtga-pbp.exe" watch 9000`. The
+**Start in** field can be left as Windows set it — `mtga-pbp.json` is read from the
+folder the exe is in, not from the working directory.
 
 ### Keeping the archive from growing forever
 
