@@ -315,4 +315,21 @@ installed:
 dotnet test --filter "FullyQualifiedName~CardNameFixtureGenerator" -- NUnit.Explicit=true
 ```
 
+## Contributing
+
+Bug reports are welcome, especially "the transcript said something that did not happen" —
+that is the failure mode that matters most here.
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — building, testing, and the rules about fixtures
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- [SECURITY.md](SECURITY.md) — what this program touches, and where to report privately
+
+**If you file an issue, include the build stamp** from the bottom of any report page. It
+answers "am I looking at output from the version I think I am", which is the most common
+cause of a report that cannot be reproduced.
+
+One rule worth repeating outside that file: **never paste another player's Arena screen
+name** into an issue, and never commit one in a fixture. This repository is public and
+the logs are full of real handles.
+
 Design and implementation notes: [`docs/superpowers/specs/`](docs/superpowers/specs/).

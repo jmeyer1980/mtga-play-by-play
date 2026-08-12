@@ -1,0 +1,17 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Accessibility — screen reader testing
+    url: https://github.com/jmeyer1980/mtga-play-by-play/issues/1
+    about: >-
+      There is an open checklist for screen reader testing. Heading navigation and list
+      semantics are confirmed with NVDA and Narrator; most other controls are not. If you
+      use a screen reader, findings there are especially welcome.
+  - name: Security issue
+    url: https://github.com/jmeyer1980/mtga-play-by-play/security/advisories/new
+    about: Report privately rather than in a public issue. See SECURITY.md for scope.
+  - name: Looking for a live overlay instead?
+    url: https://draftsim.com/arenatutor/
+    about: >-
+      Arena Tutor tracks live while you play and is easier to install. This tool is for
+      static files you own — an offline archive, one page per game, no application
+      running. If you want the former, that is the better fit and no hard feelings.
