@@ -4,6 +4,44 @@ namespace MtgaPbp.Core;
 
 public sealed record PlayerInfo(int Seat, string UserId, string ScreenName, string Platform);
 
+/// <summary>
+/// One game of a match. A Bo1 has exactly one of these; a Bo3 has two or three, each
+/// with its own opening, its own turn one and its own result.
+/// </summary>
+/// <remarks>
+/// Arena numbers turns from one again in every game and hands out instance ids that
+/// collide with the previous game's, so almost nothing about a game is meaningful
+/// outside it. That is what this record is for: it is the unit the transcript is
+/// actually divided into, and the reason the renderer can say "Turn 1" twice on one
+/// page without lying.
+/// </remarks>
+public sealed record GameRecord(
+    int Number,
+
+    /// <summary>
+    /// How this game began. Games after the first have no die roll — the loser of the
+    /// previous game chooses who begins — so the opening for one of those carries a
+    /// <see cref="Opening.ChoosingSeat"/> instead of rolls.
+    /// </summary>
+    Opening? Opening,
+
+    /// <summary>The highest turn number this game reached, counting from its own turn one.</summary>
+    int Turns,
+
+    /// <summary>
+    /// Which team won this game, from Arena's own per-game result, or null when the log
+    /// stopped before it said. Team id equals seat in every observed match.
+    /// </summary>
+    int? WinningTeamId,
+
+    /// <summary>
+    /// How this game ended, in the same words the match-end line uses — "You concede —
+    /// opponent wins game 1". Null when the result is unknown. Rendered only at a
+    /// boundary between games: for the last game the match-end line already says it,
+    /// and a single-game match would only be told twice.
+    /// </summary>
+    string? ResultLine);
+
 public sealed record Transcript(
     string MatchId, long StartedAtMs, long EndedAtMs, string EventName,
     PlayerInfo? You, PlayerInfo? Opponent,
@@ -29,13 +67,22 @@ public sealed record Transcript(
     IReadOnlyList<DeckEntry> Deck,
 
     /// <summary>
-    /// The die roll and the opening hands, or null when the log carried none of it.
-    /// Kept off the event stream on purpose: these facts arrive scattered across the
-    /// first few messages and are only complete once the first turn opens, so they
-    /// cannot be emitted in sequence without disturbing the sequence numbers that the
-    /// board, label and target passes all index by.
+    /// The die roll and the opening hands of the <em>first</em> game, or null when the
+    /// log carried none of it. Kept off the event stream on purpose: these facts arrive
+    /// scattered across the first few messages and are only complete once the first turn
+    /// opens, so they cannot be emitted in sequence without disturbing the sequence
+    /// numbers that the board, label and target passes all index by.
     /// </summary>
-    Opening? Opening = null);
+    Opening? Opening = null)
+{
+    /// <summary>
+    /// One record per game the log carried, in the order they were played. Always at
+    /// least one for a transcript that came out of the extractor; empty only on a
+    /// transcript built by hand, which is why the renderers treat "no records" as
+    /// "one game" rather than as "no games".
+    /// </summary>
+    public IReadOnlyList<GameRecord> Games { get; init; } = [];
+}
 
 public sealed class EventExtractor(ICardDb cards)
 {
@@ -120,6 +167,20 @@ public sealed class EventExtractor(ICardDb cards)
         public readonly Dictionary<int, string> LastBoard = [];
 
         /// <summary>
+        /// Forgets everything that was only true of the game that just ended. Turn
+        /// numbers restart at one in every game, so a carried-over <see cref="LastTurn"/>
+        /// is what made a second game's turn one render as a thirteenth turn; and a
+        /// carried-over <see cref="LastBoard"/> could silence a new game's first board
+        /// line for matching a board that no longer exists.
+        /// </summary>
+        public void StartGame()
+        {
+            LastTurn = 0;
+            LastTurnStarted = 0;
+            LastBoard.Clear();
+        }
+
+        /// <summary>
         /// The creatures each board line lists, and the statline and flags already
         /// worked out for each, keyed by the line's sequence number. Held aside because
         /// only the tracker knows what was in play at that moment, while only the
@@ -154,9 +215,40 @@ public sealed class EventExtractor(ICardDb cards)
         }
     }
 
+    /// <summary>
+    /// One game's worth of extraction state: its own tracker, its own opening, and where
+    /// its events sit in the match-wide stream.
+    /// </summary>
+    /// <remarks>
+    /// The tracker is per game and not per match because Arena reuses instance ids across
+    /// the games of a Bo3 — 58 of the game objects in the one Bo3 the archive holds are
+    /// described under an id the other game also used. One tracker for the whole match
+    /// therefore ends up holding game two's objects under game one's ids,
+    /// and since <see cref="NamePermanents"/>, <see cref="NameBoards"/> and
+    /// <see cref="FillTargets"/> all run after the last message and re-read the tracker,
+    /// every one of those passes named game one's cards after game two's. That is how a
+    /// Swamp came to be reported as a 6/6.
+    /// </remarks>
+    private sealed class GameRun(int number, GameStateTracker tracker, int firstSeq)
+    {
+        public int Number { get; } = number;
+        public GameStateTracker Tracker { get; } = tracker;
+
+        /// <summary>Sequence number of this game's first event.</summary>
+        public int FirstSeq { get; } = firstSeq;
+
+        /// <summary>One past this game's last event, set when the game closes.</summary>
+        public int EndSeq { get; set; }
+
+        public readonly List<DieRoll> Rolls = [];
+        public readonly Dictionary<int, int> Mulligans = [];
+    }
+
+    /// <summary>What Arena said about one finished game.</summary>
+    private readonly record struct GameOutcome(int? WinningTeamId, string? Reason);
+
     public Transcript Extract(string matchId, IReadOnlyList<string> rawLines)
     {
-        var tracker = new GameStateTracker(cards);
         var st = new Emit();
         var seatMeta = new Dictionary<int, PlayerInfo>();
 
@@ -173,12 +265,17 @@ public sealed class EventExtractor(ICardDb cards)
         // against yet when it goes past.
         var decks = new List<(int? Seat, IReadOnlyList<int> GrpIds)>();
 
-        // The opening, gathered as it goes past. The roll lands in the third message of
-        // the match and the mulligans over the several after it, but who is on the play
-        // is not settled until the first turn opens, so none of it can be turned into a
-        // sentence here.
-        var rolls = new List<DieRoll>();
-        var mulligans = new Dictionary<int, int>();
+        // How each finished game went, in game order. Arena states this twice: the
+        // gameInfo of every message carries the results so far, and finalMatchResult
+        // repeats the lot at the end. Both are read and the longer list kept, so a match
+        // whose log stops in the middle still knows how its earlier games went.
+        var outcomes = new List<GameOutcome>();
+
+        // The games, each with its own tracker and its own opening. The first is opened
+        // here rather than on sight of a gameNumber, because the die roll arrives in the
+        // same envelope as the first game state and nothing has said "game one" yet.
+        var games = new List<GameRun> { new(1, new GameStateTracker(cards), 0) };
+        var game = games[0];
 
         foreach (var raw in rawLines)
         {
@@ -202,6 +299,8 @@ public sealed class EventExtractor(ICardDb cards)
                     sawFinal = true;
                     ReadResults(fmr, ref winningTeam, ref gamesForTeam1, ref gamesForTeam2,
                                 ref endReason);
+                    var final = ReadGameOutcomes(fmr, "resultList");
+                    if (final.Count > outcomes.Count) outcomes = final;
                 }
             }
 
@@ -218,19 +317,42 @@ public sealed class EventExtractor(ICardDb cards)
                 else if (type is "GREMessageType_ConnectResp" &&
                          DeckList.ReadMessage(m) is { } announced)
                     decks.Add(announced);
-                // The first one only. A match carries exactly one in every archived log,
-                // and if a re-roll ever produced a second it is the roll that was played
-                // on that matters, not the one that was thrown out.
-                else if (type is "GREMessageType_DieRollResultsResp" && rolls.Count == 0)
-                    rolls.AddRange(Openings.ReadRolls(m));
+                // The first one of the game only. A game carries exactly one in every
+                // archived log, and if a re-roll ever produced a second it is the roll
+                // that was played on that matters, not the one that was thrown out.
+                else if (type is "GREMessageType_DieRollResultsResp" && game.Rolls.Count == 0)
+                    game.Rolls.AddRange(Openings.ReadRolls(m));
 
                 if (Json.Obj(m, "gameStateMessage") is not { } gsm) continue;
 
+                if (Json.Obj(gsm, "gameInfo") is { } gameInfo)
+                {
+                    var sofar = ReadGameOutcomes(gameInfo, "results");
+                    if (sofar.Count > outcomes.Count) outcomes = sofar;
+
+                    // A new game. Everything the old tracker holds is about the game that
+                    // just ended, and its instance ids are about to be handed out again,
+                    // so the game gets a tracker of its own rather than inheriting one.
+                    if (Json.Int(gameInfo, "gameNumber") is { } number && number != game.Number)
+                    {
+                        game.EndSeq = st.Seq;
+                        // A log that opens mid-match announces game two before game one
+                        // ever emits anything. An empty game is not a game.
+                        if (game.EndSeq == game.FirstSeq) games.RemoveAt(games.Count - 1);
+
+                        game = new GameRun(number, new GameStateTracker(cards), st.Seq);
+                        games.Add(game);
+                        st.StartGame();
+                    }
+                }
+
+                var tracker = game.Tracker;
+
                 // Only until the first turn number arrives. Mulligans are over by then —
                 // all 29 increments in the archive land while the turn is still unset —
-                // and stopping there keeps a later game's counts, in a Bo3 the archive
-                // has yet to see, from being read as this game's opening hands.
-                if (tracker.Turn == 0) Openings.ReadMulligans(gsm, mulligans);
+                // and the count is per game, so a later game's mulligans are read as its
+                // own opening hands rather than folded into the first game's.
+                if (tracker.Turn == 0) Openings.ReadMulligans(gsm, game.Mulligans);
 
                 tracker.Apply(gsm, st.Seq);
                 EmitCombat(tracker, ts, st);
@@ -240,35 +362,42 @@ public sealed class EventExtractor(ICardDb cards)
             }
         }
 
-        // Turn boundaries, plus the end of the match so the last turn is looked at too.
-        var boundaries = st.Events
-            .Where(e => e.Kind == EventKind.TurnStart)
-            .Select(e => e.Seq)
-            .Append(st.Seq)
-            .ToList();
+        games[^1].EndSeq = st.Seq;
 
-        var labels = PermanentLabels.Build(tracker, cards, boundaries);
-        NamePermanents(tracker, labels, st);
-        NameBoards(tracker, labels, st);
-        FillTargets(tracker, labels, st);
+        // Per game, because every one of these passes asks the tracker what a permanent
+        // is called and what size it was, and neither question has an answer that spans
+        // games — the ids are reused and the statline history starts over.
+        foreach (var g in games)
+        {
+            var labels = PermanentLabels.Build(g.Tracker, cards, Boundaries(st, g));
+            NamePermanents(g.Tracker, labels, st, g);
+            NameBoards(g.Tracker, labels, st, g);
+            FillTargets(g.Tracker, labels, st, g);
+        }
 
         var you = (localSeat ?? fallbackSeat) is { } seat && seatMeta.TryGetValue(seat, out var y)
             ? y : null;
         var opp = you is null ? null : seatMeta.Values.FirstOrDefault(p => p.Seat != you.Seat);
-        tracker.LocalSeat = you?.Seat ?? 0;
+        foreach (var g in games) g.Tracker.LocalSeat = you?.Seat ?? 0;
 
         var yourTeam = you?.Seat;   // teamId equals seat in every observed match
         var won = yourTeam == 1 ? gamesForTeam1 : gamesForTeam2;
         var lost = yourTeam == 1 ? gamesForTeam2 : gamesForTeam1;
+
+        var records = BuildGames(games, outcomes, yourTeam, st);
 
         if (sawFinal)
         {
             st.Add(new GameEvent
             {
                 TimestampMs = ended,
+                // The last game's number, not zero: the renderer reads a change of game
+                // number as a boundary, and a match-end line filed under "game 0" would
+                // open a game that never existed.
+                GameNumber = games[^1].Number,
                 Kind = EventKind.GameEnd,
                 Amount = winningTeam ?? 0,
-                Detail = EndLine(winningTeam, yourTeam, endReason),
+                Detail = EndLine(winningTeam, yourTeam, endReason, "the match"),
                 RawType = endReason
             });
         }
@@ -277,11 +406,83 @@ public sealed class EventExtractor(ICardDb cards)
             matchId, started, ended, eventName, you, opp,
             winningTeam, won, lost, Incomplete: !sawFinal,
             st.Events, st.Unknown, st.CardsSeen, st.Unresolved, gaps,
-            BuildDeck(decks, you, tracker), BuildOpening(rolls, mulligans, st));
+            BuildDeck(decks, you, games), records.Count > 0 ? records[0].Opening : null)
+        {
+            Games = records
+        };
     }
 
     /// <summary>
-    /// The opening, or null when the log carried none of it.
+    /// Turn boundaries within one game, plus its end so its last turn is looked at too.
+    /// </summary>
+    private static List<int> Boundaries(Emit st, GameRun g)
+    {
+        var boundaries = new List<int>();
+        for (var i = g.FirstSeq; i < g.EndSeq; i++)
+            if (st.Events[i].Kind == EventKind.TurnStart)
+                boundaries.Add(i);
+        boundaries.Add(g.EndSeq);
+        return boundaries;
+    }
+
+    /// <summary>
+    /// One record per game, carrying its opening, how far it ran and how it ended.
+    /// </summary>
+    /// <remarks>
+    /// Outcomes are matched to games by game number rather than by position, because a
+    /// log that begins mid-match holds game two's events alongside game one's result and
+    /// lining those up by index would credit the wrong game with the wrong ending.
+    /// </remarks>
+    private static List<GameRecord> BuildGames(
+        List<GameRun> games, List<GameOutcome> outcomes, int? yourTeam, Emit st)
+    {
+        GameOutcome? Outcome(int number) =>
+            number >= 1 && number <= outcomes.Count ? outcomes[number - 1] : null;
+
+        var records = new List<GameRecord>(games.Count);
+        foreach (var g in games)
+        {
+            // Nobody rolls a die after game one: the loser of the previous game chooses
+            // who begins. Arena does address ChooseStartingPlayerReq to a seat, but it
+            // only ever addresses messages to the local client, so the rule is what
+            // identifies the chooser and a game whose predecessor has no recorded winner
+            // gets no claim about who chose.
+            var chooser = g.Number >= 2 && Outcome(g.Number - 1)?.WinningTeamId is { } previous
+                ? previous switch { 1 => 2, 2 => 1, _ => (int?)null }
+                : null;
+
+            var turns = 0;
+            for (var i = g.FirstSeq; i < g.EndSeq; i++)
+                turns = Math.Max(turns, st.Events[i].Turn);
+
+            var outcome = Outcome(g.Number);
+            records.Add(new GameRecord(
+                g.Number,
+                BuildOpening(g, st, chooser),
+                turns,
+                outcome?.WinningTeamId,
+                EndLine(outcome?.WinningTeamId, yourTeam, outcome?.Reason, $"game {g.Number}")));
+        }
+        return records;
+    }
+
+    /// <summary>
+    /// The per-game entries of one of Arena's result lists, in game order. Both
+    /// <c>gameInfo.results</c> and <c>finalMatchResult.resultList</c> have this shape.
+    /// </summary>
+    private static List<GameOutcome> ReadGameOutcomes(JsonElement owner, string property)
+    {
+        var results = new List<GameOutcome>();
+        foreach (var r in Json.Array(owner, property))
+        {
+            if (Json.Str(r, "scope") != "MatchScope_Game") continue;
+            results.Add(new GameOutcome(Json.Int(r, "winningTeamId"), Json.Str(r, "reason")));
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// How one game opened, or null when the log carried none of it.
     /// </summary>
     /// <remarks>
     /// Who is on the play is taken from the turn-one header this same run emitted,
@@ -292,16 +493,19 @@ public sealed class EventExtractor(ICardDb cards)
     /// number: the turn is announced, the player concedes during the mulligan, and the
     /// extractor's own turn-one rule recovers the seat anyway.
     /// </remarks>
-    private static Opening? BuildOpening(
-        List<DieRoll> rolls, Dictionary<int, int> mulligans, Emit st)
+    private static Opening? BuildOpening(GameRun g, Emit st, int? chooser)
     {
         int? firstPlayer = null;
-        if (st.Events.FirstOrDefault(e => e.Kind == EventKind.TurnStart) is { } opener &&
-            (opener.ActorSeat ?? opener.ActiveSeat) is > 0 and var seat)
-            firstPlayer = seat;
+        for (var i = g.FirstSeq; i < g.EndSeq; i++)
+        {
+            var opener = st.Events[i];
+            if (opener.Kind != EventKind.TurnStart) continue;
+            if ((opener.ActorSeat ?? opener.ActiveSeat) is > 0 and var seat) firstPlayer = seat;
+            break;
+        }
 
-        return rolls.Count > 0 || mulligans.Count > 0 || firstPlayer is not null
-            ? new Opening(rolls, firstPlayer, mulligans)
+        return g.Rolls.Count > 0 || g.Mulligans.Count > 0 || firstPlayer is not null
+            ? new Opening(g.Rolls, firstPlayer, g.Mulligans, chooser)
             : null;
     }
 
@@ -321,7 +525,7 @@ public sealed class EventExtractor(ICardDb cards)
     /// </remarks>
     private IReadOnlyList<DeckEntry> BuildDeck(
         List<(int? Seat, IReadOnlyList<int> GrpIds)> decks, PlayerInfo? you,
-        GameStateTracker tracker)
+        List<GameRun> games)
     {
         if (you is null) return [];
 
@@ -330,8 +534,10 @@ public sealed class EventExtractor(ICardDb cards)
 
         // Owning a game object is the client's own record of having held the card.
         // A card that stayed in the library the whole match never gets one, which is
-        // precisely the distinction worth drawing.
-        var seen = tracker.Objects.Values
+        // precisely the distinction worth drawing. Across every game, because the mark
+        // says "all match" and a card drawn only in game two was still drawn.
+        var seen = games
+            .SelectMany(g => g.Tracker.Objects.Values)
             .Where(o => o.OwnerSeat == you.Seat && o.GrpId > 0)
             .Select(o => o.GrpId)
             .ToHashSet();
@@ -765,9 +971,9 @@ public sealed class EventExtractor(ICardDb cards)
     /// out of. <see cref="PermanentLabels"/> holds the rule.
     /// </summary>
     private static void NamePermanents(
-        GameStateTracker tracker, PermanentLabels labels, Emit st)
+        GameStateTracker tracker, PermanentLabels labels, Emit st, GameRun g)
     {
-        for (var i = 0; i < st.Events.Count; i++)
+        for (var i = g.FirstSeq; i < g.EndSeq; i++)
         {
             var e = st.Events[i];
             // A counter event reports the change itself, so it names the size the
@@ -812,10 +1018,12 @@ public sealed class EventExtractor(ICardDb cards)
     /// creatures apart. The statlines and flags were worked out when the line was
     /// emitted, because only then was that state still around to read.
     /// </summary>
-    private static void NameBoards(GameStateTracker tracker, PermanentLabels labels, Emit st)
+    private static void NameBoards(
+        GameStateTracker tracker, PermanentLabels labels, Emit st, GameRun g)
     {
         foreach (var (seq, creatures) in st.Boards)
         {
+            if (seq < g.FirstSeq || seq >= g.EndSeq) continue;
             st.Events[seq] = st.Events[seq] with
             {
                 Detail = string.Join(", ", creatures.Select(c =>
@@ -830,9 +1038,10 @@ public sealed class EventExtractor(ICardDb cards)
     /// belongs to, so this cannot be done while the cast is being emitted — at that
     /// moment the target is not yet known, and neither is what it became.
     /// </summary>
-    private static void FillTargets(GameStateTracker tracker, PermanentLabels labels, Emit st)
+    private static void FillTargets(
+        GameStateTracker tracker, PermanentLabels labels, Emit st, GameRun g)
     {
-        for (var i = 0; i < st.Events.Count; i++)
+        for (var i = g.FirstSeq; i < g.EndSeq; i++)
         {
             var e = st.Events[i];
             if (e.Kind != EventKind.SpellCast || e.SourceInstanceId is not { } id) continue;
@@ -842,7 +1051,7 @@ public sealed class EventExtractor(ICardDb cards)
 
             // Layers are applied in the message that carries the resolution, not in the
             // one that carries the cast, so the "after" only exists from there on.
-            var settled = ResolvedAt(tracker, st, e) ?? e.Seq;
+            var settled = ResolvedAt(tracker, st, e, g.EndSeq) ?? e.Seq;
 
             var named = new List<string>();
             foreach (var target in targets)
@@ -864,12 +1073,17 @@ public sealed class EventExtractor(ICardDb cards)
     /// instance id through the alias map. Null when it never resolved — countered, or a
     /// log that stops mid-match — in which case there is no "after" to report.
     /// </summary>
-    private static int? ResolvedAt(GameStateTracker tracker, Emit st, GameEvent cast)
+    /// <param name="end">
+    /// Where this game's events stop. The search cannot run past it: instance ids are
+    /// handed out again in the next game, so a spell that was countered would otherwise
+    /// be reported as resolving whenever the next game happened to reuse its id.
+    /// </param>
+    private static int? ResolvedAt(GameStateTracker tracker, Emit st, GameEvent cast, int end)
     {
         if (cast.SourceInstanceId is not { } id) return null;
         var spell = tracker.Resolve(id);
 
-        for (var i = cast.Seq + 1; i < st.Events.Count; i++)
+        for (var i = cast.Seq + 1; i < end; i++)
         {
             var e = st.Events[i];
             if (e.Kind == EventKind.Resolved && e.SourceInstanceId is { } other &&
@@ -879,8 +1093,15 @@ public sealed class EventExtractor(ICardDb cards)
         return null;
     }
 
-    /// <summary>How the match ended, naming a concede or timeout rather than hiding it.</summary>
-    private static string? EndLine(int? winningTeam, int? yourTeam, string? reason)
+    /// <summary>
+    /// How something ended, naming a concede or timeout rather than hiding it.
+    /// </summary>
+    /// <param name="what">
+    /// What was won — "the match", or "game 2". One sentence for both, because a game of
+    /// a Bo3 ends exactly the way a match does and saying it two different ways would
+    /// only invite the two wordings to drift apart.
+    /// </param>
+    private static string? EndLine(int? winningTeam, int? yourTeam, string? reason, string what)
     {
         if (winningTeam is null) return null;
         var youWon = winningTeam == yourTeam;
@@ -889,9 +1110,9 @@ public sealed class EventExtractor(ICardDb cards)
 
         return reason switch
         {
-            "ResultReason_Concede" => $"{loser} {verb} — {(youWon ? "you win" : "opponent wins")} the match",
-            "ResultReason_Timeout" => $"{loser} {(youWon ? "runs" : "run")} out of time — {(youWon ? "you win" : "opponent wins")} the match",
-            _ => youWon ? "You win the match" : "Opponent wins the match"
+            "ResultReason_Concede" => $"{loser} {verb} — {(youWon ? "you win" : "opponent wins")} {what}",
+            "ResultReason_Timeout" => $"{loser} {(youWon ? "runs" : "run")} out of time — {(youWon ? "you win" : "opponent wins")} {what}",
+            _ => youWon ? $"You win {what}" : $"Opponent wins {what}"
         };
     }
 

@@ -115,10 +115,12 @@ public static class GamePageRenderer
         var slug = beats ? "beats" : "verbose";
         var label = beats ? "Readable transcript" : "Verbose transcript";
 
-        // Both sections carry every turn, so only one may own the `t{n}` anchors or the
+        // Both sections carry every heading, so only one may own the bare anchors or the
         // page would have duplicate ids. The readable section is the one that is
-        // visible by default, so it keeps the short names.
-        var prefix = beats ? "t" : "v-t";
+        // visible by default, so it keeps the short names. The rest of each anchor comes
+        // from the narrator, which is the only layer that knows whether a turn number
+        // needs a game to tell it from the same turn number in the next game.
+        var prefix = beats ? "" : "v-";
 
         sb.Append($"""
             <section id="{slug}" data-density="{slug}" aria-label="{label}"{(beats ? "" : " hidden=\"hidden\"")}>
@@ -130,7 +132,7 @@ public static class GamePageRenderer
             if (line.IsTurnHeader)
             {
                 if (open) { sb.Append("</ol>"); open = false; }
-                sb.Append($"""<h2 id="{prefix}{line.Turn}">{Speech(line.Text)}</h2>""");
+                sb.Append($"""<h2 id="{prefix}{line.Anchor}">{Speech(line.Text)}</h2>""");
                 continue;
             }
 

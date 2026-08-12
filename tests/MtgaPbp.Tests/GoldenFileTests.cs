@@ -25,16 +25,28 @@ public class GoldenFileTests
     [OneTimeTearDown]
     public void RestoreTimeZone() => TranscriptSummary.DisplayTimeZone = _originalZone;
 
-    private static string FixtureDir =>
+    internal static string FixtureDir =>
         Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures");
 
-    // Stored gzipped: 1.1 MB of raw engine traffic compresses to 56 KB, which is a
-    // reasonable thing to check in.
-    private static string SamplePath => Path.Combine(FixtureDir, "sample-match.json.gz");
+    /// <summary>
+    /// The single-game sample, and the id it is extracted under. Stored gzipped: 1.1 MB
+    /// of raw engine traffic compresses to 56 KB, which is a reasonable thing to check in.
+    /// </summary>
+    internal const string SampleFixture = "sample-match.json.gz";
+    internal const string SampleMatchId = "sample-match-0001";
 
-    internal static string[] ReadFixture()
+    /// <summary>
+    /// The Bo3 sample. Scrubbed the same way <see cref="SampleFixture"/> was — both
+    /// screen names, both user ids, both session ids and the match id are replaced —
+    /// and otherwise byte-for-byte the traffic Arena wrote, because the whole point of
+    /// it is that multi-game behaviour was previously guessed at rather than observed.
+    /// </summary>
+    internal const string Bo3Fixture = "bo3-match.json.gz";
+    internal const string Bo3MatchId = "sample-bo3-0001";
+
+    internal static string[] ReadFixture(string fileName = SampleFixture)
     {
-        using var fs = File.OpenRead(SamplePath);
+        using var fs = File.OpenRead(Path.Combine(FixtureDir, fileName));
         using var gz = new System.IO.Compression.GZipStream(
             fs, System.IO.Compression.CompressionMode.Decompress);
         using var reader = new StreamReader(gz);
@@ -43,6 +55,14 @@ public class GoldenFileTests
             if (line.Length > 0) lines.Add(line);
         return lines.ToArray();
     }
+
+    /// <summary>
+    /// Extracts one of the checked-in fixtures against the checked-in card names, so
+    /// every end-to-end test runs on CI rather than only where Arena is installed.
+    /// </summary>
+    internal static Transcript ExtractFixture(string fileName, string matchId) =>
+        new EventExtractor(FixtureCardDb.Load(FixtureDir))
+            .Extract(matchId, ReadFixture(fileName));
 
     // The golden file lives beside the source, not in the copied output directory,
     // so regenerating it updates the checked-in copy.
@@ -56,9 +76,7 @@ public class GoldenFileTests
     /// the game installed. <see cref="CardDbIntegrationTests"/> covers the real
     /// database separately.
     /// </summary>
-    private static Transcript Extract() =>
-        new EventExtractor(FixtureCardDb.Load(FixtureDir))
-            .Extract("sample-match-0001", ReadFixture());
+    private static Transcript Extract() => ExtractFixture(SampleFixture, SampleMatchId);
 
     [Test]
     public void Real_match_produces_a_transcript_with_both_players_and_a_result()

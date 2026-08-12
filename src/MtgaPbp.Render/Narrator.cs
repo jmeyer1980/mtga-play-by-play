@@ -4,8 +4,32 @@ namespace MtgaPbp.Render;
 
 public enum Density { Beats, Verbose }
 
+/// <summary>One narrated line, or one of the headings the lines hang under.</summary>
+/// <param name="IsTurnHeader">
+/// True for every heading the narrator emits, not only turn headings — the opening and,
+/// in a multi-game match, the game headings are all headings to the renderers.
+/// </param>
+/// <param name="Game">
+/// Which game this line belongs to, or zero on a transcript that carries no game
+/// records. Only used to keep <see cref="Narrator.Collapse"/> from folding a line at the
+/// end of one game into the identical line at the start of the next.
+/// </param>
+/// <param name="Anchor">
+/// The heading's id, less the prefix that tells the two densities apart. Empty on
+/// everything that is not a heading.
+/// <para>
+/// Every heading is an <c>h2</c>, game headings included. Nesting a game's turns under
+/// it as <c>h3</c> would describe the document more truthfully, but the page's styling
+/// deliberately shrinks <c>h2</c> below the browser default, so an unstyled <c>h3</c>
+/// turn heading would come out larger than the game heading above it — and the style
+/// rule that would fix that sits in a stylesheet shared by every page, including the
+/// single-game ones that must not change. A flat run of headings still walks correctly
+/// from heading to heading, passing "Game 2" on the way into the second game's turn one.
+/// </para>
+/// </param>
 public sealed record Line(
-    int Turn, int Indent, string Text, bool IsTurnHeader, bool IsBoard = false);
+    int Turn, int Indent, string Text, bool IsTurnHeader, bool IsBoard = false,
+    int Game = 0, string Anchor = "");
 
 public static class Narrator
 {
@@ -23,6 +47,12 @@ public static class Narrator
     private const string OpeningHeading = "Opening";
 
     /// <summary>
+    /// The anchor the opening takes in a single-game match. Turn zero's, which no turn
+    /// can ever claim — Arena numbers turns from one — so it needs no scheme of its own.
+    /// </summary>
+    private const string OpeningAnchor = "t0";
+
+    /// <summary>
     /// Hand sizes as words. The rest of a line is prose, and "mulligan to 6" reads like
     /// a stat where "mulligan to six" reads like the sentence a player would say. It is
     /// also one less number for a synthesiser to run together with the die roll's.
@@ -31,25 +61,50 @@ public static class Narrator
     private static readonly string[] CardCounts =
         ["zero", "one", "two", "three", "four", "five", "six", "seven"];
 
+    /// <summary>
+    /// The whole transcript as lines. A single-game match narrates exactly as it always
+    /// has: one opening, then its turns. A match with more than one game gets a heading
+    /// per game, each with its own opening and its own turn one, and the result of every
+    /// game but the last stated where that game ends — the match-end line already says
+    /// how the last one went.
+    /// </summary>
     public static IReadOnlyList<Line> Narrate(Transcript t, Density density)
     {
         var lines = new List<Line>();
 
+        // More than one game is what changes the shape of the page, so it is what the
+        // extra structure keys off. A Bo3 that only ever reached game one is a
+        // single-game transcript, and reads like one.
+        var multi = t.Games.Count > 1;
+
         // Both densities get the opening. Nothing about it is detail you would want
         // hidden, and the two views are meant to be the same match at two zoom levels.
-        if (OpeningLines(t) is { Count: > 0 } opening)
-        {
-            lines.Add(new Line(0, 0, OpeningHeading, IsTurnHeader: true));
-            foreach (var text in opening)
-                lines.Add(new Line(0, 1, text, IsTurnHeader: false));
-        }
+        if (!multi) AppendOpening(lines, t, t.Opening, game: 0, OpeningAnchor);
 
         // Only the turns worth remarking on, so a header carries a duration where that
         // is the interesting thing about the turn and stays quiet everywhere else.
         var longTurns = TurnClock.LongTurns(t);
 
+        var game = 0;
+
         foreach (var e in t.Events.OrderBy(x => x.Seq))
         {
+            if (multi && e.GameNumber != game)
+            {
+                // The game that just ended says how it ended, where it ended. Only a game
+                // with another after it ever reaches here, which is exactly right: the
+                // last game's ending is the match's ending, and the match-end event says
+                // it a few lines later.
+                if (t.Games.FirstOrDefault(g => g.Number == game)?.ResultLine is { } ending)
+                    lines.Add(new Line(0, 1, ending, IsTurnHeader: false, Game: game));
+
+                game = e.GameNumber;
+                var record = t.Games.FirstOrDefault(g => g.Number == game);
+                lines.Add(new Line(0, 0, $"Game {game}", IsTurnHeader: true, Game: game,
+                                   Anchor: $"g{game}"));
+                AppendOpening(lines, t, record?.Opening, game, $"g{game}-open");
+            }
+
             if (density == Density.Beats && VerboseOnly.Contains(e.Kind)) continue;
             if (density == Density.Beats && IsUnnamed(e)) continue;
             var text = Phrase(e, t);
@@ -59,14 +114,32 @@ public static class Narrator
             // kind of event reads and has no business knowing the clock.
             if (e.Kind == EventKind.TurnStart) text += Elapsed(e, longTurns);
 
+            var header = e.Kind == EventKind.TurnStart;
             lines.Add(new Line(
                 e.Turn,
-                e.Kind == EventKind.TurnStart ? 0 : 1,
+                header ? 0 : 1,
                 text,
-                e.Kind == EventKind.TurnStart,
-                e.Kind == EventKind.BoardSnapshot));
+                header,
+                e.Kind == EventKind.BoardSnapshot,
+                Game: e.GameNumber,
+                Anchor: header ? (multi ? $"g{game}-t{e.Turn}" : $"t{e.Turn}") : ""));
         }
         return Collapse(lines);
+    }
+
+    /// <summary>
+    /// The opening heading and its lines, or nothing at all when the log carried none of
+    /// it — which is what keeps a game with no opening from growing an empty heading.
+    /// </summary>
+    private static void AppendOpening(
+        List<Line> lines, Transcript t, Opening? opening, int game, string anchor)
+    {
+        if (OpeningLines(t, opening) is not { Count: > 0 } texts) return;
+
+        lines.Add(new Line(0, 0, OpeningHeading, IsTurnHeader: true, Game: game,
+                           Anchor: anchor));
+        foreach (var text in texts)
+            lines.Add(new Line(0, 1, text, IsTurnHeader: false, Game: game));
     }
 
     /// <summary>
@@ -74,6 +147,14 @@ public static class Narrator
     /// trigger nine times in a row or make four tokens back to back, and printing
     /// each is how a transcript turns into a wall. Turn headers are never folded.
     /// </summary>
+    /// <remarks>
+    /// A run never crosses a game boundary, even where the two games would supply
+    /// identical text. Two games of the same deck really can end and begin on the same
+    /// sentence, and "You play Plains ×2" spanning a game boundary would report one
+    /// thing happening twice in a row when it was two things in two different games.
+    /// The game headings between them already break every run in practice; the check is
+    /// here so that stays true of the fold itself rather than of the layout around it.
+    /// </remarks>
     private static List<Line> Collapse(List<Line> lines)
     {
         var result = new List<Line>(lines.Count);
@@ -84,7 +165,8 @@ public static class Narrator
             while (!line.IsTurnHeader &&
                    i + run < lines.Count &&
                    lines[i + run].Text == line.Text &&
-                   lines[i + run].IsTurnHeader == line.IsTurnHeader)
+                   lines[i + run].IsTurnHeader == line.IsTurnHeader &&
+                   lines[i + run].Game == line.Game)
                 run++;
 
             result.Add(run == 1 ? line : line with { Text = $"{line.Text} ×{run}" });
@@ -108,10 +190,17 @@ public static class Narrator
     /// is on the play, then the opening hands. Empty when the log carried none of it,
     /// which is what keeps a match with no opening from growing an empty heading.
     /// </summary>
-    private static List<string> OpeningLines(Transcript t)
+    /// <remarks>
+    /// A game after the first opens differently and has to say so. There is no die roll
+    /// — the loser of the previous game chooses who begins — so the sentence names the
+    /// chooser and what they chose, in the same shape the roll winner's does. Nothing
+    /// says what they lost, because the line that ends the previous game, two lines
+    /// above, has just said it.
+    /// </remarks>
+    private static List<string> OpeningLines(Transcript t, Opening? opening)
     {
         var lines = new List<string>();
-        if (t.Opening is not { } o) return lines;
+        if (opening is not { } o) return lines;
 
         if (o.WinnerSeat is { } winner)
         {
@@ -134,6 +223,24 @@ public static class Narrator
                 // player it is about — the reader has to come away with the right
                 // player on the play, and that is the clause that must not be skimmed.
                 lines.Add($"{roll} and {Verb(winner, "choose", "chooses", t)} to draw");
+                lines.Add(OnThePlay(first, t));
+            }
+        }
+        else if (o.ChoosingSeat is { } chooser)
+        {
+            var chose = $"{Who(chooser, t)} {Verb(chooser, "choose", "chooses", t)}";
+
+            if (o.FirstPlayerSeat is not { } first)
+                // Somebody chose, but the game never opened a turn, so what they chose
+                // is genuinely unknown. Saying only what was seen.
+                lines.Add($"{chose} who begins");
+            else if (first == chooser)
+                lines.Add($"{chose} to play first");
+            else
+            {
+                // Split for the same reason the die roll's is: the reader has to come
+                // away with the right player on the play.
+                lines.Add($"{chose} to draw");
                 lines.Add(OnThePlay(first, t));
             }
         }

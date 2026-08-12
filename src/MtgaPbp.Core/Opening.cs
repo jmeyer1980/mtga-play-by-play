@@ -34,7 +34,16 @@ public sealed record Opening(
     /// its state was actually read before the first turn; a seat that is absent is one
     /// we know nothing about, which is a different thing from one that kept its hand.
     /// </summary>
-    IReadOnlyDictionary<int, int> Mulligans)
+    IReadOnlyDictionary<int, int> Mulligans,
+
+    /// <summary>
+    /// Who chose who begins, when nobody rolled for it. Only the first game of a match
+    /// opens with a die roll; in every game after it the loser of the previous game
+    /// chooses, so that seat plays the part <see cref="WinnerSeat"/> plays in game one.
+    /// Null for a first game, and for any later game whose predecessor has no recorded
+    /// winner — the choice was still made, but by nobody this log can name.
+    /// </summary>
+    int? ChoosingSeat = null)
 {
     /// <summary>
     /// Cards dealt at the start of a game, and after each mulligan. Seven in every

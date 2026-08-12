@@ -1,22 +1,44 @@
 {
   "Locs": {
+    "361": "Goblin",
     "648": "Plains",
+    "653": "Swamp",
+    "1250": "Mountain",
     "6506": "Rabbit",
+    "12837": "Blood Crypt",
     "18841": "Ajani\u0027s Pridemate",
+    "40788": "Krenko, Mob Boss",
     "40935": "Ethereal Armor",
     "44192": "Temple of Enlightenment",
     "44198": "Temple of Plenty",
+    "181801": "Fanatical Firebrand",
     "229409": "Leonin Vanguard",
     "701836": "Elspeth\u0027s Smite",
+    "731664": "Torch the Tower",
+    "731999": "Agatha\u0027s Soul Cauldron",
     "737054": "Dusk Rose Reliquary",
     "810948": "Caretaker\u0027s Talent",
     "810954": "Carrot Cake",
     "810992": "Hop to It",
+    "812253": "Dollmaker\u0027s Shop // Porcelain Gallery",
+    "812256": "Dollmaker\u0027s Shop",
+    "812257": "Porcelain Gallery",
     "812286": "Ghostly Dancers",
     "812323": "Overlord of the Mistmoors",
+    "812357": "Split Up",
     "812369": "Toby, Beastie Befriender",
+    "813181": "Blazemire Verge",
     "823098": "Hinterland Sanctifier",
-    "1117188": "Crowd of True Believers"
+    "823196": "Hare Apparent",
+    "823434": "Searslicer Goblin",
+    "1071240": "Abandoned Air Temple",
+    "1078819": "Boggart Mischief",
+    "1078829": "Champion of the Weird",
+    "1078904": "Requiting Hex",
+    "1079199": "Boggart Cursecrafter",
+    "1113825": "The Great Goblin",
+    "1117188": "Crowd of True Believers",
+    "1118173": "Dark Fortress"
   },
   "Cards": {
     "84261": {
@@ -33,8 +55,22 @@
       "Toughness": "",
       "IsToken": false
     },
+    "86974": {
+      "Name": "Agatha\u0027s Soul Cauldron",
+      "Types": "1",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
     "87141": {
       "Name": "Dusk Rose Reliquary",
+      "Types": "1",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "88956": {
+      "Name": "Wrench",
       "Types": "1",
       "Power": "",
       "Toughness": "",
@@ -138,11 +174,46 @@
       "Toughness": "1",
       "IsToken": false
     },
+    "93728": {
+      "Name": "Hare Apparent",
+      "Types": "2",
+      "Power": "2",
+      "Toughness": "2",
+      "IsToken": false
+    },
+    "93806": {
+      "Name": "Searslicer Goblin",
+      "Types": "2",
+      "Power": "2",
+      "Toughness": "1",
+      "IsToken": false
+    },
     "93848": {
       "Name": "Ajani\u0027s Pridemate",
       "Types": "2",
       "Power": "2",
       "Toughness": "2",
+      "IsToken": false
+    },
+    "93850": {
+      "Name": "Authority of the Consuls",
+      "Types": "3",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "93908": {
+      "Name": "Fanatical Firebrand",
+      "Types": "2",
+      "Power": "1",
+      "Toughness": "1",
+      "IsToken": false
+    },
+    "93917": {
+      "Name": "Krenko, Mob Boss",
+      "Types": "2",
+      "Power": "3",
+      "Toughness": "3",
       "IsToken": false
     },
     "94008": {
@@ -173,6 +244,20 @@
       "Toughness": "",
       "IsToken": false
     },
+    "94160": {
+      "Name": "Rabbit",
+      "Types": "2",
+      "Power": "1",
+      "Toughness": "1",
+      "IsToken": true
+    },
+    "94173": {
+      "Name": "Goblin",
+      "Types": "2",
+      "Power": "1",
+      "Toughness": "1",
+      "IsToken": true
+    },
     "95526": {
       "Name": "Elspeth, Storm Slayer",
       "Types": "8",
@@ -194,16 +279,52 @@
       "Toughness": "",
       "IsToken": false
     },
+    "98411": {
+      "Name": "Boggart Mischief",
+      "Types": "11,3",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "98414": {
+      "Name": "Champion of the Weird",
+      "Types": "2",
+      "Power": "5",
+      "Toughness": "5",
+      "IsToken": false
+    },
+    "98528": {
+      "Name": "Boggart Cursecrafter",
+      "Types": "2",
+      "Power": "2",
+      "Toughness": "3",
+      "IsToken": false
+    },
+    "103538": {
+      "Name": "The Great Goblin",
+      "Types": "2",
+      "Power": "3",
+      "Toughness": "2",
+      "IsToken": false
+    },
     "104905": {
       "Name": "Crowd of True Believers",
       "Types": "2",
       "Power": "1",
       "Toughness": "2",
       "IsToken": false
+    },
+    "105275": {
+      "Name": "Plains",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
     }
   },
   "Enums": {
     "CounterType:1": "\u002B1/\u002B1",
+    "CounterType:2": "-1/-1",
     "Phase:1": "Beginning",
     "Phase:2": "1st Main",
     "Phase:3": "Combat",
@@ -211,6 +332,7 @@
     "Phase:5": "Ending",
     "Step:1": "Untap",
     "Step:10": "Cleanup",
+    "Step:11": "First Strike Damage",
     "Step:2": "Upkeep",
     "Step:3": "Draw",
     "Step:5": "Declare Attackers",

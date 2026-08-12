@@ -114,7 +114,11 @@ public sealed class GameStateTracker(ICardDb cards)
         {
             // Levels are remembered per game. Arena hands out instance ids afresh for
             // each game of a match, so a level carried over would let game one's
-            // Caretaker's Talent silence game two's.
+            // Caretaker's Talent silence game two's. Reuse turned out to run far deeper
+            // than levels — objects, aliases, targets and statline history collide too —
+            // so EventExtractor now gives each game a tracker of its own and this clear
+            // fires on an already-empty map. It stays because a tracker that is handed
+            // two games has to survive it, and because it is what documents the reuse.
             if (gnv != GameNumber) _classLevels.Clear();
             GameNumber = gnv;
         }

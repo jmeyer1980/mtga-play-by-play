@@ -59,10 +59,21 @@ public class CardNameFixtureGenerator
         using var real = new CardDb(dbPath!);
         var recorder = new RecordingCardDb(real);
 
-        var transcript = new EventExtractor(recorder)
-            .Extract("sample-match-0001", GoldenFileTests.ReadFixture());
+        // Every match fixture, into one file. They ask for overlapping cards and the
+        // lookups are by id, so a shared file cannot answer either of them differently
+        // from the real database — and one file is one thing to keep in step.
+        foreach (var (file, matchId) in new[]
+        {
+            (GoldenFileTests.SampleFixture, GoldenFileTests.SampleMatchId),
+            (GoldenFileTests.Bo3Fixture, GoldenFileTests.Bo3MatchId),
+        })
+        {
+            var transcript = new EventExtractor(recorder)
+                .Extract(matchId, GoldenFileTests.ReadFixture(file));
 
-        Assert.That(transcript.Events, Is.Not.Empty, "extraction produced nothing to record");
+            Assert.That(transcript.Events, Is.Not.Empty,
+                $"extracting {file} produced nothing to record");
+        }
 
         var data = new FixtureCardDb.Data(
             recorder.Locs.OrderBy(k => k.Key).ToDictionary(k => k.Key, v => v.Value),

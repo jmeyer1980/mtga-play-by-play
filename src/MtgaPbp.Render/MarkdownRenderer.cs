@@ -123,9 +123,15 @@ public static class TranscriptSummary
     /// match keeps the turn count alone, because <see cref="TurnClock.MatchLength"/>
     /// declines to measure one and a subtitle is no place to explain why.
     /// </summary>
+    /// <remarks>
+    /// A multi-game match says how many games, because without it the turn count reads
+    /// as one long game — and "30 turns" against a page whose highest turn heading says
+    /// 17 looks like an error until you know there were two.
+    /// </remarks>
     public static string Subtitle(Transcript t)
     {
         var turns = $"{Turns(t)} turns";
+        if (t.Games.Count > 1) turns += $" across {t.Games.Count} games";
         if (TurnClock.MatchLength(t) is { } length)
             turns += $" in {TurnClock.Spoken(length)}";
         return $"{t.EventName} · {Date(t):yyyy-MM-dd HH:mm} · {Result(t)} · {turns}";
@@ -161,5 +167,16 @@ public static class TranscriptSummary
         TimeZoneInfo.ConvertTime(
             DateTimeOffset.FromUnixTimeMilliseconds(t.StartedAtMs), DisplayTimeZone);
 
-    public static int Turns(Transcript t) => t.Events.Count == 0 ? 0 : t.Events.Max(e => e.Turn);
+    /// <summary>
+    /// How many turns were played, across every game of the match.
+    /// </summary>
+    /// <remarks>
+    /// The sum and not the maximum. Turn numbers restart at one in each game of a Bo3,
+    /// so the highest one on the page is the length of the longest game — it was
+    /// reporting 17 for a match that ran 13 turns and then 17 more. The fallback covers
+    /// a transcript built by hand rather than extracted, which carries no game records.
+    /// </remarks>
+    public static int Turns(Transcript t) =>
+        t.Games.Count > 0 ? t.Games.Sum(g => g.Turns)
+        : t.Events.Count == 0 ? 0 : t.Events.Max(e => e.Turn);
 }
