@@ -33,6 +33,11 @@ internal static class Json
         return null;
     }
 
+    public static long? Long(JsonElement parent, string property) =>
+        parent.ValueKind == JsonValueKind.Object && parent.TryGetProperty(property, out var el)
+            ? Long(el)
+            : null;
+
     public static string? Str(JsonElement parent, string property) =>
         parent.ValueKind == JsonValueKind.Object &&
         parent.TryGetProperty(property, out var el) &&

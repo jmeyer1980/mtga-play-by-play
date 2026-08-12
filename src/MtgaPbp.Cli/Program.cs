@@ -137,6 +137,22 @@ public static class Program
                 $"captured {written} new match(es); {stats.JsonLines:N0} json lines read, " +
                 $"{stats.MalformedLines} malformed");
 
+        // Said out loud even when nothing new was captured: it is the one condition
+        // under which a transcript that looks finished is not, and a count buried in a
+        // stats subcommand nobody runs is the same as no warning at all.
+        var withheld = stats.SummarizedMessages + stats.TornEnvelopes;
+        if (!quiet && withheld > 0)
+        {
+            var causes = new List<string>();
+            if (stats.SummarizedMessages > 0)
+                causes.Add($"{stats.SummarizedMessages} message(s) the log summarized instead of recording");
+            if (stats.TornEnvelopes > 0)
+                causes.Add($"{stats.TornEnvelopes} line(s) that ended mid-message");
+            Console.WriteLine(
+                $"warning: {string.Join(" and ", causes)}. The matches involved are " +
+                "marked as missing data in the report.");
+        }
+
         Prune(cfg, archive);
         return (0, written);
     }
@@ -353,6 +369,8 @@ public static class Program
         var unknown = new Dictionary<string, int>(StringComparer.Ordinal);
         var unresolved = new Dictionary<string, int>(StringComparer.Ordinal);
         var matches = 0;
+        var gaps = new List<LogGap>();
+        var matchesWithGaps = 0;
 
         foreach (var matchId in archive.MatchIds())
         {
@@ -364,9 +382,12 @@ public static class Program
                 unknown[k] = unknown.GetValueOrDefault(k) + v;
             foreach (var (c, n) in t.UnresolvedNames)
                 unresolved[c] = unresolved.GetValueOrDefault(c) + n;
+            if (t.Gaps.Count > 0) matchesWithGaps++;
+            gaps.AddRange(t.Gaps);
         }
 
         Console.WriteLine($"{matches} match(es) in archive\n");
+        ReportGaps(gaps, matchesWithGaps, matches);
         Console.WriteLine("unhandled annotation types:");
         foreach (var (k, v) in unknown.OrderByDescending(x => x.Value))
             Console.WriteLine($"  {v,6}  {k}");
@@ -377,5 +398,32 @@ public static class Program
             Console.WriteLine($"  {v,6}  {k}");
         if (unresolved.Count == 0) Console.WriteLine("  (none)");
         return 0;
+    }
+
+    /// <summary>
+    /// Reports what the log did not account for. Printed first and phrased as a
+    /// fraction of the archive, because this is the only number here that says a
+    /// transcript may be wrong rather than merely thin — the two lists below are
+    /// things the renderer handled imperfectly, this is something it never saw.
+    /// </summary>
+    private static void ReportGaps(List<LogGap> gaps, int affected, int matches)
+    {
+        Console.WriteLine($"matches missing data: {affected} of {matches}");
+        if (gaps.Count == 0)
+        {
+            Console.WriteLine("  (none — every archived match is accounted for)\n");
+            return;
+        }
+
+        var summarized = gaps.Where(g => g.Kind == LogGapKind.Summarized).ToList();
+        var torn = gaps.Count - summarized.Count;
+        if (summarized.Count > 0)
+            Console.WriteLine(
+                $"  {summarized.Count,6}  message(s) summarized by Arena instead of logged " +
+                $"({summarized.Sum(g => g.GameObjects)} game objects, " +
+                $"{summarized.Sum(g => g.Annotations)} annotations withheld)");
+        if (torn > 0)
+            Console.WriteLine($"  {torn,6}  envelope(s) that ended mid-message");
+        Console.WriteLine();
     }
 }

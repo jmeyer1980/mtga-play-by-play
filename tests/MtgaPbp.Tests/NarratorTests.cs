@@ -12,7 +12,7 @@ public class NarratorTests
         new PlayerInfo(2, "THEM", "PlayerTwo", "iPhone"),
         WinningTeamId: 1, GamesWon: 2, GamesLost: 0, Incomplete: false,
         events, new Dictionary<string, int>(), new HashSet<string>(),
-        new Dictionary<string, int>());
+        new Dictionary<string, int>(), []);
 
     private static GameEvent E(EventKind kind, int seq = 0) =>
         new() { Seq = seq, Kind = kind, Turn = 1, ActiveSeat = 1 };

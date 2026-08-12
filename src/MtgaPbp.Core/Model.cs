@@ -51,7 +51,13 @@ public sealed record MatchSlice(
     long StartedAtMs,
     long EndedAtMs,
     IReadOnlyList<string> RawLines,
-    bool Incomplete);
+    bool Incomplete,
+    /// <summary>
+    /// How many <see cref="LogGap"/> records this slice carries. Kept alongside the
+    /// lines so the archive can tell that a re-capture learned something a stored copy
+    /// does not know, without re-parsing thousands of lines to find out.
+    /// </summary>
+    int Gaps = 0);
 
 public enum EventKind
 {

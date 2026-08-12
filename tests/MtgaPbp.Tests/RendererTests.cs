@@ -40,7 +40,16 @@ public class RendererTests
         ]
     };
 
-    internal static Transcript Sample(bool incomplete = false) => new(
+    /// <summary>
+    /// A gap standing for a game-state update Arena declined to log. Synthetic, but
+    /// shaped from the two real occurrences found in Player-prev.log, which reported
+    /// 77 and 55 game objects against limits of 50.
+    /// </summary>
+    internal static LogGap SummarizedGap(long line = 10486) =>
+        new(LogGapKind.Summarized, line, GameObjects: 77, Annotations: 3,
+            Messages: ["GameStateMessage", "ActionsAvailableReq"]);
+
+    internal static Transcript Sample(bool incomplete = false, IReadOnlyList<LogGap>? gaps = null) => new(
         "abc-123", 1786326812781, 1786327812781, "Ladder",
         new PlayerInfo(1, "ME", "PlayerOne", "SteamWindows"),
         new PlayerInfo(2, "THEM", "PlayerTwo", "iPhone"),
@@ -55,7 +64,8 @@ public class RendererTests
         ],
         new Dictionary<string, int>(),
         new HashSet<string> { "Plains", "Lightning Bolt" },
-        new Dictionary<string, int>());
+        new Dictionary<string, int>(),
+        gaps ?? []);
 
     [Test]
     public void Match_times_render_in_the_configured_time_zone()
@@ -276,8 +286,9 @@ public class RendererTests
     // garnish. What they cannot cover is how a given synthesiser sounds; see the
     // per-test notes where the browser or the AT gets the final say.
 
-    private static string IndexHtml(bool incomplete = false) =>
-        IndexRenderer.Render([IndexRenderer.Summarize(Sample(incomplete))]);
+    private static string IndexHtml(bool incomplete = false, bool gaps = false) =>
+        IndexRenderer.Render(
+            [IndexRenderer.Summarize(Sample(incomplete, gaps ? [SummarizedGap()] : null))]);
 
     private static string GameHtml() => GamePageRenderer.Render(Sample());
 
@@ -293,6 +304,10 @@ public class RendererTests
         Assert.DoesNotThrow(() => Markup.Parse(IndexRenderer.Render([])));
         Assert.DoesNotThrow(() => Markup.Parse(GameHtml()));
         Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Sample(incomplete: true))));
+        Assert.DoesNotThrow(() => Markup.Parse(IndexHtml(gaps: true)));
+        Assert.DoesNotThrow(() => Markup.Parse(IndexHtml(incomplete: true, gaps: true)));
+        Assert.DoesNotThrow(() => Markup.Parse(
+            GamePageRenderer.Render(Sample(incomplete: true, gaps: [SummarizedGap()]))));
         Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Repeating())));
         Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Buffed())));
     }
@@ -303,7 +318,14 @@ public class RendererTests
         // The game page renders every turn twice, once per density. Both copies used
         // to claim id="t5", which makes the anchor ambiguous and gives the toggle two
         // nodes to point at.
-        foreach (var html in new[] { IndexHtml(), GameHtml(), IndexRenderer.Render([]) })
+        foreach (var html in new[]
+                 {
+                     IndexHtml(), GameHtml(), IndexRenderer.Render([]),
+                     // The warning banners and their footnotes carry ids of their own,
+                     // and only appear on the variants that need them.
+                     IndexHtml(incomplete: true, gaps: true),
+                     GamePageRenderer.Render(Sample(incomplete: true, gaps: [SummarizedGap()])),
+                 })
         {
             var ids = Markup.Parse(html).Descendants()
                 .Select(e => e.Attribute("id")?.Value)
@@ -497,6 +519,114 @@ public class RendererTests
         Assert.That(IndexHtml(), Does.Not.Contain("incomplete-note"));
     }
 
+    // ---------- Withheld data ----------
+    //
+    // Arena drops whole message bodies past 50 game objects or 50 annotations, leaving
+    // one line of prose behind. Two of the 152 archived matches are affected. The point
+    // of every test below is that such a match must never read as a full account of
+    // itself: telling someone how they lost is the whole job, and a confident
+    // transcript with a hole in it is worse than no transcript.
+
+    [Test]
+    public void Game_page_says_data_is_missing_without_calling_the_match_incomplete()
+    {
+        // Two different failures. "The log was rotated" sends a reader looking for a
+        // missing ending; "the log skipped things" tells them the ending may be right
+        // there while the reason for it is not. Conflating them misdirects.
+        var html = GamePageRenderer.Render(Sample(gaps: [SummarizedGap()]));
+
+        Assert.That(html, Does.Contain("id=\"gap-warning\""));
+        Assert.That(html, Does.Contain("Part of this match is missing"));
+        Assert.That(html, Does.Not.Contain("rotated"),
+            "nothing was rotated here, and saying so would send the reader to the wrong place");
+
+        // A clean match keeps quiet.
+        Assert.That(GameHtml(), Does.Not.Contain("gap-warning"));
+    }
+
+    [Test]
+    public void Game_page_shows_both_warnings_when_a_match_has_both_faults()
+    {
+        var root = Markup.Parse(
+            GamePageRenderer.Render(Sample(incomplete: true, gaps: [SummarizedGap()])));
+        var warnings = root.Descendants("p")
+            .Where(p => p.Attribute("class")?.Value == "warn")
+            .ToList();
+
+        Assert.That(warnings, Has.Count.EqualTo(2));
+        Assert.That(warnings.Select(w => w.Value),
+            Has.One.Contains("rotated").And.One.Contains("Part of this match is missing"));
+    }
+
+    [Test]
+    public void Copying_a_transcript_takes_every_warning_with_it()
+    {
+        // Asserted against the source text rather than by running the script, since
+        // there is no JS engine here. It is still worth pinning: the copy button read
+        // querySelector('.warn'), which silently takes the first banner only — so a
+        // match that is both cut short and missing data would paste as merely cut
+        // short, and the pasted transcript is the one that gets shared.
+        Assert.That(GameHtml(), Does.Contain("querySelectorAll('.warn')"));
+    }
+
+    [Test]
+    public void Markdown_carries_the_missing_data_warning_too()
+    {
+        // The markdown is what gets pasted into Discord or read by a screen reader
+        // outside the browser; a warning that lives only in HTML has not been given.
+        var md = MarkdownRenderer.Render(Sample(gaps: [SummarizedGap()]));
+
+        Assert.That(md, Does.Contain("> Part of this match is missing"));
+        Assert.That(MarkdownRenderer.Render(Sample()), Does.Not.Contain("missing"));
+    }
+
+    [Test]
+    public void Missing_data_is_counted_in_words_not_just_marked_with_a_dagger()
+    {
+        var root = Markup.Parse(IndexHtml(gaps: true));
+        var cell = root.Descendants("td")
+            .Single(td => td.Attribute("class")?.Value is "win" or "loss");
+
+        Assert.That(Markup.Spoken(cell), Is.EqualTo("Won 2-1 (missing data)"));
+        Assert.That(cell.Value, Does.Contain("†"), "the dagger still has to be there to look at");
+        Assert.That(
+            root.Descendants().Single(e => e.Attribute("id")?.Value == "gaps-note").Value,
+            Does.Contain("not a complete account"));
+
+        Assert.That(IndexHtml(), Does.Not.Contain("gaps-note"));
+    }
+
+    [Test]
+    public void The_two_index_footnotes_do_not_share_a_symbol()
+    {
+        // A match can be both, and if both marks were asterisks the row would read
+        // "Won 2-1 **" against two footnotes with no way to tell which applied.
+        var cell = Markup.Parse(IndexHtml(incomplete: true, gaps: true))
+            .Descendants("td").Single(td => td.Attribute("class")?.Value is "win" or "loss");
+
+        Assert.That(Markup.Spoken(cell), Is.EqualTo("Won 2-1 (incomplete) (missing data)"));
+        Assert.That(cell.Value, Does.Contain("*").And.Contain("†"));
+    }
+
+    [Test]
+    public void The_warning_counts_what_was_missed_and_agrees_with_itself()
+    {
+        // One gap and several read differently, and "1 game-state updates" undermines
+        // the credibility of the only sentence on the page whose job is to be believed.
+        Assert.That(MarkdownRenderer.Render(Sample(gaps: [SummarizedGap()])),
+            Does.Contain("1 game-state update out of the log"));
+
+        Assert.That(MarkdownRenderer.Render(Sample(gaps: [SummarizedGap(), SummarizedGap(20)])),
+            Does.Contain("2 game-state updates out of the log"));
+
+        // A torn envelope is a different sentence, because it is a different cause:
+        // Arena refused to write one, the other never arrived intact.
+        var both = MarkdownRenderer.Render(Sample(gaps:
+            [SummarizedGap(), new LogGap(LogGapKind.Torn, 99, 0, 0, [])]));
+        Assert.That(both, Does.Contain("1 game-state update out of the log"));
+        Assert.That(both, Does.Contain("1 log line ended mid-message"));
+    }
+
     [Test]
     public void GamePage_groups_each_turn_into_a_list_that_keeps_its_role()
     {
@@ -561,8 +691,10 @@ public class RendererTests
         foreach (var html in new[]
                  {
                      IndexHtml(), IndexHtml(incomplete: true),
+                     IndexHtml(incomplete: true, gaps: true),
                      GameHtml(), GamePageRenderer.Render(Repeating()),
                      GamePageRenderer.Render(Buffed()),
+                     GamePageRenderer.Render(Sample(gaps: [SummarizedGap()])),
                  })
         {
             foreach (var (before, after) in Markup.Seams(Markup.Parse(html)))

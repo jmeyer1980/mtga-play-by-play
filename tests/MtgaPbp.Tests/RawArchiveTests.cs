@@ -172,6 +172,52 @@ public class RawArchiveTests
         Assert.That(new RawArchive(_root).SetFavorite("nope", true), Is.False);
     }
 
+    /// <summary>
+    /// Gap detection arrived after 152 matches had already been archived, and the
+    /// markers proving two of them lost data still sit in a Player-prev.log that has
+    /// not rotated. Without this, those matches would keep claiming to be complete
+    /// forever, which is the exact failure the detection exists to prevent.
+    /// </summary>
+    [Test]
+    public void A_recapture_that_finds_withheld_data_replaces_a_complete_match()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1", incomplete: false));
+
+        var wrote = a.Write(Slice("m1", incomplete: false) with { Gaps = 1 });
+
+        Assert.That(wrote, Is.True);
+        Assert.That(a.Meta("m1")!.Gaps, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void A_match_whose_gaps_are_already_known_is_not_rewritten_every_capture()
+    {
+        // Gaps only ever accumulate, so a healed match settles after one rewrite. If
+        // this rewrote on every pass, `watch` would rebuild the whole site every three
+        // seconds for as long as the log holding the marker survived.
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1", incomplete: false) with { Gaps = 1 });
+
+        Assert.That(a.Write(Slice("m1", incomplete: false) with { Gaps = 1 }), Is.False);
+    }
+
+    [Test]
+    public void Finding_gaps_never_trades_a_finished_match_for_a_partial_one()
+    {
+        // A match spanning both logs is seen incomplete in one of them. Learning about
+        // a gap from that partial view must not cost us the ending we already have —
+        // losing the result to gain a warning is a bad trade in both directions.
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1", incomplete: false, """{"full":1}"""));
+
+        var wrote = a.Write(Slice("m1", incomplete: true, """{"partial":1}""") with { Gaps = 1 });
+
+        Assert.That(wrote, Is.False);
+        Assert.That(a.Meta("m1")!.Incomplete, Is.False);
+        Assert.That(a.ReadLines("m1"), Is.EqualTo(new[] { """{"full":1}""" }));
+    }
+
     [Test]
     public void Written_payload_is_gzip_compressed()
     {

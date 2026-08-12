@@ -11,7 +11,14 @@ public sealed record Transcript(
     IReadOnlyList<GameEvent> Events,
     IReadOnlyDictionary<string, int> UnknownAnnotations,
     IReadOnlySet<string> CardsSeen,
-    IReadOnlyDictionary<string, int> UnresolvedNames);
+    IReadOnlyDictionary<string, int> UnresolvedNames,
+    /// <summary>
+    /// Everything the log did not account for. Non-empty means this transcript is an
+    /// incomplete record of the match and has to say so, which is a different claim
+    /// from <c>Incomplete</c>: that one means the log stopped, this one means the log
+    /// kept going and left things out of the middle.
+    /// </summary>
+    IReadOnlyList<LogGap> Gaps);
 
 public sealed class EventExtractor(ICardDb cards)
 {
@@ -137,12 +144,17 @@ public sealed class EventExtractor(ICardDb cards)
         int gamesForTeam1 = 0, gamesForTeam2 = 0;
         var sawFinal = false;
         string? endReason = null;
+        var gaps = new List<LogGap>();
 
         foreach (var raw in rawLines)
         {
             JsonElement root;
             try { root = JsonDocument.Parse(raw).RootElement.Clone(); }
             catch (JsonException) { continue; }
+
+            // Recorded by the scanner in place of a message the log did not keep. It
+            // carries no game state by definition, so it is collected and skipped.
+            if (LogGaps.Read(root) is { } gap) { gaps.Add(gap); continue; }
 
             var ts = ReadTimestamp(root);
             if (ts > 0) { if (started == 0) started = ts; ended = ts; }
@@ -215,7 +227,7 @@ public sealed class EventExtractor(ICardDb cards)
         return new Transcript(
             matchId, started, ended, eventName, you, opp,
             winningTeam, won, lost, Incomplete: !sawFinal,
-            st.Events, st.Unknown, st.CardsSeen, st.Unresolved);
+            st.Events, st.Unknown, st.CardsSeen, st.Unresolved, gaps);
     }
 
     /// <summary>

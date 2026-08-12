@@ -33,6 +33,13 @@ public static class GamePageRenderer
         if (t.Incomplete)
             sb.Append("""<p class="warn">This match is incomplete — the log was rotated before it finished.</p>""");
 
+        // Shares `.warn` with the banner above: both say "do not read this as the whole
+        // story", and that rule's colours are the ones measured against 1.4.11. What
+        // separates them is the sentence and the id, not a second palette entry nobody
+        // checked. Both can appear at once, and a match can genuinely have both faults.
+        if (TranscriptSummary.GapWarning(t) is { } gap)
+            sb.Append($"""<p class="warn" id="gap-warning">{E(gap)}</p>""");
+
         AppendSection(sb, t, Density.Beats);
         AppendSection(sb, t, Density.Verbose);
 
@@ -222,12 +229,15 @@ public static class GamePageRenderer
 
             var title = document.querySelector('header h1');
             var sub = document.querySelector('header .sub');
-            var warn = document.querySelector('.warn');
+            // All of them, not the first: a match can be both cut short and missing
+            // messages from its middle, and a copied transcript that mentions only one
+            // of those is a copied transcript that misleads.
+            var warns = document.querySelectorAll('.warn');
             var out = [];
 
             if (title) out.push('# ' + textOf(title), '');
             if (sub) out.push('*' + textOf(sub) + '*', '');
-            if (warn) out.push('> ' + textOf(warn), '');
+            for (var w = 0; w < warns.length; w++) out.push('> ' + textOf(warns[w]), '');
 
             var nodes = section.querySelectorAll('h2, li.beat, li.board');
             for (var i = 0; i < nodes.length; i++) {

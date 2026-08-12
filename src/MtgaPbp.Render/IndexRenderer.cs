@@ -7,7 +7,7 @@ namespace MtgaPbp.Render;
 public sealed record MatchSummary(
     string MatchId, string Date, long SortKey, string EventName,
     string Opponent, string Result, int Turns, bool Incomplete,
-    IReadOnlyList<string> Cards, bool Favorite = false);
+    IReadOnlyList<string> Cards, bool Favorite = false, bool HasGaps = false);
 
 public static class IndexRenderer
 {
@@ -20,7 +20,8 @@ public static class IndexRenderer
         TranscriptSummary.Result(t),
         TranscriptSummary.Turns(t),
         t.Incomplete,
-        t.CardsSeen.OrderBy(c => c, StringComparer.Ordinal).ToList());
+        t.CardsSeen.OrderBy(c => c, StringComparer.Ordinal).ToList(),
+        HasGaps: t.Gaps.Count > 0);
 
     /// <summary>
     /// Rows are rendered statically rather than built by script: the page then works
@@ -80,7 +81,7 @@ public static class IndexRenderer
                         ><span aria-hidden="true">{(r.Favorite ? "★" : "☆")}</span></button></td>
                     <th scope="row"><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></th>
                     <td>{E(r.EventName)}</td><td>{E(r.Opponent)}</td>
-                    <td class="{cls}">{E(r.Result)}{Incomplete(r)}</td>
+                    <td class="{cls}">{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
                     <td>{r.Turns}</td></tr>
                     """);
             }
@@ -91,6 +92,17 @@ public static class IndexRenderer
                 body.Append("""
                     <p class="note" id="incomplete-note"><span aria-hidden="true">*</span>
                     Incomplete — the log was rotated before the match finished.</p>
+                    """);
+            }
+
+            // A separate mark and a separate footnote, because this is a separate
+            // failure: the match above ran out of log, this one ran out of truth.
+            if (ordered.Any(r => r.HasGaps))
+            {
+                body.Append("""
+                    <p class="note" id="gaps-note"><span aria-hidden="true">†</span>
+                    Missing data — the log left out part of the match, so the transcript
+                    is not a complete account of it.</p>
                     """);
             }
 
@@ -126,6 +138,15 @@ public static class IndexRenderer
     /// </summary>
     private static string Incomplete(MatchSummary r) => r.Incomplete
         ? """<span aria-hidden="true"> *</span><span class="vh"> (incomplete)</span>"""
+        : "";
+
+    /// <summary>
+    /// A dagger rather than a second asterisk, so the two footnotes stay tellable
+    /// apart at a glance; and the spoken form says what it means, for the same reason
+    /// the asterisk above does.
+    /// </summary>
+    private static string Gaps(MatchSummary r) => r.HasGaps
+        ? """<span aria-hidden="true"> †</span><span class="vh"> (missing data)</span>"""
         : "";
 
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");

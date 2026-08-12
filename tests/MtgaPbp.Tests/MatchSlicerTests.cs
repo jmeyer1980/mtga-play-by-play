@@ -144,4 +144,39 @@ public class MatchSlicerTests
             """;
         Assert.That(MatchSlicer.Slice([Env(1, 100, diff)]), Is.Empty);
     }
+
+    /// <summary>
+    /// A gap stands in for a message the engine sent and the log did not keep, so it
+    /// has to inherit the match in progress exactly as a Diff does. Its own line says
+    /// nothing about which match it belongs to — and the one match that needs the
+    /// warning is precisely the one that would never get it if this were dropped.
+    /// </summary>
+    [Test]
+    public void Slice_attributes_a_gap_to_the_match_in_progress()
+    {
+        var gap = LogGaps.ToEnvelope(
+            new LogGap(LogGapKind.Summarized, 42, 77, 3, ["GameStateMessage"]));
+
+        var slices = MatchSlicer.Slice([
+            Env(1, 100, GreWithMatch("aaa")),
+            new LogEnvelope(2, 0, gap),
+            Env(3, 300, RoomFinal("aaa")),
+        ]);
+
+        var s = slices.Single();
+        Assert.That(s.Gaps, Is.EqualTo(1));
+        Assert.That(s.RawLines, Has.Count.EqualTo(3), "the gap is archived like any other line");
+
+        // A gap carries no timestamp, and must not drag the match's start back to 1970.
+        Assert.That(s.StartedAtMs, Is.EqualTo(100));
+    }
+
+    [Test]
+    public void Slice_drops_a_gap_seen_while_no_match_is_in_progress()
+    {
+        // Arena summarizes messages outside matches too. One that belongs to no
+        // transcript should not be pinned to whichever match happens to be nearby.
+        var gap = LogGaps.ToEnvelope(new LogGap(LogGapKind.Summarized, 1, 0, 0, []));
+        Assert.That(MatchSlicer.Slice([new LogEnvelope(1, 0, gap)]), Is.Empty);
+    }
 }

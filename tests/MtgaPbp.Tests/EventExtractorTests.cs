@@ -483,4 +483,43 @@ public class EventExtractorTests
           { "id": 3, "type": [ "AnnotationType_ZoneTransfer" ] } ] }
         """)));
     }
+
+    /// <summary>
+    /// A gap is found while scanning, but the transcript is rebuilt from the archive
+    /// long afterwards — so it has to survive being written to a gzip file and read
+    /// back as text, or the warning would exist only on the run that discovered it.
+    /// </summary>
+    [Test]
+    public void Extract_carries_a_gap_from_the_archive_into_the_transcript()
+    {
+        var line = LogGaps.ToEnvelope(
+            new LogGap(LogGapKind.Summarized, 10486, 77, 3, ["GameStateMessage"])).GetRawText();
+
+        var t = Run(RoomLine, line);
+
+        Assert.That(t.Gaps, Has.Count.EqualTo(1));
+        Assert.That(t.Gaps[0].GameObjects, Is.EqualTo(77));
+        Assert.That(t.Gaps[0].Messages, Is.EqualTo(new[] { "GameStateMessage" }));
+    }
+
+    [Test]
+    public void Extract_does_not_read_a_gap_as_something_that_happened()
+    {
+        // It records an absence. Letting it reach the tracker would turn "we do not
+        // know what happened here" into a made-up event, which is the lie in miniature.
+        var line = LogGaps.ToEnvelope(new LogGap(LogGapKind.Torn, 5, 0, 0, [])).GetRawText();
+
+        var t = Run(RoomLine, line);
+
+        Assert.That(t.Events, Is.Empty);
+        Assert.That(t.Gaps.Single().Kind, Is.EqualTo(LogGapKind.Torn));
+    }
+
+    [Test]
+    public void A_match_with_nothing_withheld_reports_no_gaps()
+    {
+        // The default has to be silence: 150 of the 152 archived matches are clean, and
+        // a banner on any of them would teach the reader to ignore all of them.
+        Assert.That(Run(RoomLine, MulliganLine).Gaps, Is.Empty);
+    }
 }

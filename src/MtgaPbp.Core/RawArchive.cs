@@ -4,7 +4,8 @@ using System.Text.Json;
 namespace MtgaPbp.Core;
 
 public sealed record ArchiveEntry(
-    string MatchId, long StartedAtMs, long EndedAtMs, bool Incomplete, bool Favorite = false);
+    string MatchId, long StartedAtMs, long EndedAtMs, bool Incomplete, bool Favorite = false,
+    int Gaps = 0);
 
 public sealed class RawArchive
 {
@@ -31,15 +32,30 @@ public sealed class RawArchive
         _ledger.TryGetValue(matchId, out var e) ? e : null;
 
     /// <summary>
-    /// Writes a match. Returns false when an equally-or-more complete copy is
-    /// already archived. An incomplete entry is replaced by a complete one so a
-    /// match split across Player-prev.log and Player.log heals on the next run.
+    /// Writes a match. Returns false when the archived copy already knows at least as
+    /// much. An incomplete entry is replaced by a complete one so a match split across
+    /// Player-prev.log and Player.log heals on the next run.
+    /// <para>
+    /// A capture that found gaps the stored copy has none of also wins, even when both
+    /// are complete. Gap detection arrived after matches had already been archived, and
+    /// the markers that prove them sit in logs that have not rotated yet — so without
+    /// this, the only matches known to be missing data would stay silent forever, which
+    /// is precisely the outcome the detection exists to prevent. Gaps only ever
+    /// increase, so a healed match settles after one rewrite instead of churning.
+    /// </para>
     /// </summary>
     public bool Write(MatchSlice slice)
     {
-        if (_ledger.TryGetValue(slice.MatchId, out var existing) &&
-            (!existing.Incomplete || slice.Incomplete))
-            return false;
+        _ledger.TryGetValue(slice.MatchId, out var existing);
+        if (existing is not null)
+        {
+            // Never trade a finished capture for a partial one, whatever else it found.
+            if (slice.Incomplete && !existing.Incomplete) return false;
+
+            var completesTheMatch = existing.Incomplete && !slice.Incomplete;
+            var revealsNewGaps = slice.Gaps > existing.Gaps;
+            if (!completesTheMatch && !revealsNewGaps) return false;
+        }
 
         // Re-capturing a match must not silently unfavourite it.
         var favorite = existing?.Favorite ?? false;
@@ -53,7 +69,8 @@ public sealed class RawArchive
         }
 
         _ledger[slice.MatchId] = new ArchiveEntry(
-            slice.MatchId, slice.StartedAtMs, slice.EndedAtMs, slice.Incomplete, favorite);
+            slice.MatchId, slice.StartedAtMs, slice.EndedAtMs, slice.Incomplete, favorite,
+            Gaps: slice.Gaps);
         SaveLedger();
         return true;
     }

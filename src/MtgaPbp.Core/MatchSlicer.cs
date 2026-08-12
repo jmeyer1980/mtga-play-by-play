@@ -9,6 +9,7 @@ public static class MatchSlicer
         public long Start = long.MaxValue;
         public long End = long.MinValue;
         public bool SawFinalResult;
+        public int Gaps;
         public readonly List<string> Lines = [];
     }
 
@@ -46,6 +47,7 @@ public static class MatchSlicer
             }
 
             b.Lines.Add(env.Root.GetRawText());
+            if (LogGaps.IsGap(env.Root)) b.Gaps++;
             if (env.TimestampMs > 0)
             {
                 if (env.TimestampMs < b.Start) b.Start = env.TimestampMs;
@@ -67,13 +69,24 @@ public static class MatchSlicer
                 b.Start == long.MaxValue ? 0 : b.Start,
                 b.End == long.MinValue ? 0 : b.End,
                 b.Lines,
-                Incomplete: !b.SawFinalResult);
+                Incomplete: !b.SawFinalResult,
+                Gaps: b.Gaps);
         }).ToList();
     }
 
-    /// <summary>Game-engine traffic, which belongs to whichever match is in progress.</summary>
+    /// <summary>
+    /// Game-engine traffic, which belongs to whichever match is in progress.
+    /// <para>
+    /// A gap counts as engine traffic because that is exactly what it stands in for: a
+    /// message the engine sent and the log did not keep. It has to be attributed the
+    /// same sticky way, or the one match that needs the warning is the one match that
+    /// never gets it. A gap seen while no match is in progress is dropped with the rest
+    /// of the unattributable traffic — it belongs to nobody's transcript.
+    /// </para>
+    /// </summary>
     private static bool IsEngineTraffic(JsonElement root) =>
-        root.ValueKind == JsonValueKind.Object && root.TryGetProperty("greToClientEvent", out _);
+        root.ValueKind == JsonValueKind.Object &&
+        (root.TryGetProperty("greToClientEvent", out _) || LogGaps.IsGap(root));
 
     private static string? ExtractMatchId(JsonElement root)
     {
