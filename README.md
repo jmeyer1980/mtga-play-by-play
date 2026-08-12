@@ -176,6 +176,15 @@ your hand and draws, and any opponent card that became visible.
 **It does not have** the opponent's hand or library, or their decklist beyond the
 cards they actually played.
 
+**Turn times are wall clock, not thinking time.** A turn that ran over a minute is
+marked with how long it took, measured from that turn starting to the next one
+starting. That span holds the active player's decisions, the opponent's responses and
+every animation in between, and nothing in the log separates them — so it says a turn
+was slow, never who was slow. Arena does report a per-seat timer, but it goes
+unreported on a third of turns and accounts for about half the clock when it does
+appear, which is why it is not the number shown. The last turn of a game is left
+unmarked, because its span would run into the result screen rather than into a turn.
+
 Everything else you would want is there, for both players: what each spell targeted
 (`Opponent casts Bitter Triumph, targeting Ghostly Dancers`), what caused each effect
 (`Deadly Cover-Up exiles Toby, Beastie Befriender`), where scried cards went, which

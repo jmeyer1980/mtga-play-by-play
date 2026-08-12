@@ -44,12 +44,21 @@ public static class Narrator
                 lines.Add(new Line(0, 1, text, IsTurnHeader: false));
         }
 
+        // Only the turns worth remarking on, so a header carries a duration where that
+        // is the interesting thing about the turn and stays quiet everywhere else.
+        var longTurns = TurnClock.LongTurns(t);
+
         foreach (var e in t.Events.OrderBy(x => x.Seq))
         {
             if (density == Density.Beats && VerboseOnly.Contains(e.Kind)) continue;
             if (density == Density.Beats && IsUnnamed(e)) continue;
             var text = Phrase(e, t);
             if (string.IsNullOrWhiteSpace(text)) continue;
+
+            // Appended here rather than inside Phrase, which is a switch over how each
+            // kind of event reads and has no business knowing the clock.
+            if (e.Kind == EventKind.TurnStart) text += Elapsed(e, longTurns);
+
             lines.Add(new Line(
                 e.Turn,
                 e.Kind == EventKind.TurnStart ? 0 : 1,
@@ -190,6 +199,17 @@ public static class Narrator
 
     private static string Verb(int? seat, string youForm, string theyForm, Transcript t) =>
         seat == t.You?.Seat ? youForm : theyForm;
+
+    /// <summary>
+    /// How long the turn ran, on the turns long enough for that to be the point. The
+    /// sentence is about the turn and never about a player: the span covers whoever
+    /// was deciding, whoever was responding, and the animations in between, and
+    /// <see cref="TurnClock"/> cannot tell those apart. "Opponent took 1m 48s" would
+    /// be an accusation the log does not support; "1 minute 48 seconds elapsed" is
+    /// what was actually measured.
+    /// </summary>
+    private static string Elapsed(GameEvent e, IReadOnlyDictionary<int, TimeSpan> longTurns) =>
+        longTurns.TryGetValue(e.Seq, out var d) ? $" · {TurnClock.Spoken(d)} elapsed" : "";
 
     private static string? Phrase(GameEvent e, Transcript t) => e.Kind switch
     {

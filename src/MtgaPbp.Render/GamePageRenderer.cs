@@ -40,6 +40,12 @@ public static class GamePageRenderer
         if (TranscriptSummary.GapWarning(t) is { } gap)
             sb.Append($"""<p class="warn" id="gap-warning">{E(gap)}</p>""");
 
+        // Not a `.warn`: nothing is wrong with the match, only with the reading a
+        // duration invites. It sits above the transcript so the one place that explains
+        // the annotation is findable from any turn carrying one.
+        if (TranscriptSummary.TimingNote(t) is { } timing)
+            sb.Append($"""<p class="note" id="timing-note">{E(timing)}</p>""");
+
         AppendDeck(sb, t);
         AppendSection(sb, t, Density.Beats);
         AppendSection(sb, t, Density.Verbose);
@@ -287,6 +293,11 @@ public static class GamePageRenderer
             if (title) out.push('# ' + textOf(title), '');
             if (sub) out.push('*' + textOf(sub) + '*', '');
             for (var w = 0; w < warns.length; w++) out.push('> ' + textOf(warns[w]), '');
+
+            // In the same place the markdown export puts it, and in the same style: a
+            // pasted transcript that carries turn durations has to carry what they mean.
+            var timing = document.getElementById('timing-note');
+            if (timing) out.push('*' + textOf(timing) + '*', '');
 
             // Copied whether or not it is expanded, and in the same place the markdown
             // export puts it: the two are meant to be the same document, and a reader

@@ -1,6 +1,6 @@
 # PlayerOne vs PlayerTwo
 
-*Ladder · 2026-08-10 03:23 · Lost 0-1 · 11 turns*
+*Ladder · 2026-08-10 03:23 · Lost 0-1 · 11 turns in 3 minutes 25 seconds*
 
 ## Your deck (60 cards)
 

@@ -7,7 +7,15 @@ namespace MtgaPbp.Render;
 public sealed record MatchSummary(
     string MatchId, string Date, long SortKey, string EventName,
     string Opponent, string Result, int Turns, bool Incomplete,
-    IReadOnlyList<string> Cards, bool Favorite = false, bool HasGaps = false);
+    IReadOnlyList<string> Cards, bool Favorite = false, bool HasGaps = false,
+
+    /// <summary>
+    /// How long the match ran, or null when the log does not know — which is every
+    /// incomplete match. Carried as a <see cref="TimeSpan"/> rather than pre-formatted
+    /// because the table needs it twice, abbreviated for the column and spelled out for
+    /// a synthesiser, and a single string could only ever be one of those.
+    /// </summary>
+    TimeSpan? Length = null);
 
 public static class IndexRenderer
 {
@@ -21,7 +29,8 @@ public static class IndexRenderer
         TranscriptSummary.Turns(t),
         t.Incomplete,
         t.CardsSeen.OrderBy(c => c, StringComparer.Ordinal).ToList(),
-        HasGaps: t.Gaps.Count > 0);
+        HasGaps: t.Gaps.Count > 0,
+        Length: TurnClock.MatchLength(t));
 
     /// <summary>
     /// Rows are rendered statically rather than built by script: the page then works
@@ -58,7 +67,8 @@ public static class IndexRenderer
                 <caption class="vh">Archived matches, most recent first</caption>
                 <thead><tr><th scope="col">Keep</th><th scope="col">Date</th>
                 <th scope="col">Event</th><th scope="col">Opponent</th>
-                <th scope="col">Result</th><th scope="col">Turns</th></tr></thead><tbody id="data">
+                <th scope="col">Result</th><th scope="col">Turns</th>
+                <th scope="col">Length</th></tr></thead><tbody id="data">
                 """);
             foreach (var r in ordered)
             {
@@ -82,7 +92,7 @@ public static class IndexRenderer
                     <th scope="row"><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></th>
                     <td>{E(r.EventName)}</td><td>{E(r.Opponent)}</td>
                     <td class="{cls}">{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
-                    <td>{r.Turns}</td></tr>
+                    <td>{r.Turns}</td><td>{Length(r)}</td></tr>
                     """);
             }
             body.Append("</tbody></table>");
@@ -148,6 +158,23 @@ public static class IndexRenderer
     private static string Gaps(MatchSummary r) => r.HasGaps
         ? """<span aria-hidden="true"> †</span><span class="vh"> (missing data)</span>"""
         : "";
+
+    /// <summary>
+    /// How long the match ran. The column shows "12m 4s" because a table column has to
+    /// stay narrow; speech gets "12 minutes 4 seconds", because the abbreviation is a
+    /// run of letters and digits sitting immediately after a turn count, and a
+    /// synthesiser running the two together produces a number that is in the table
+    /// nowhere. Same split as the decklist's "4×".
+    /// <para>
+    /// An incomplete match leaves the cell empty rather than showing how much of it was
+    /// captured. That figure is a real one, but it is not the match's length, and in a
+    /// column headed "Length" it would be read as one.
+    /// </para>
+    /// </summary>
+    private static string Length(MatchSummary r) => r.Length is not { } d
+        ? ""
+        : $"""<span aria-hidden="true">{E(TurnClock.Format(d))}</span>""" +
+          $"""<span class="vh">{E(TurnClock.Spoken(d))}</span>""";
 
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 

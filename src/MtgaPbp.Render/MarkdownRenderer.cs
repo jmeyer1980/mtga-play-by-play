@@ -19,6 +19,9 @@ public static class MarkdownRenderer
         if (TranscriptSummary.GapWarning(t) is { } gap)
             sb.AppendLine($"> {gap}").AppendLine();
 
+        if (TranscriptSummary.TimingNote(t) is { } timing)
+            sb.AppendLine($"*{timing}*").AppendLine();
+
         // Before the turns, not after: it is the thing you check while reading the
         // transcript, and it is what the copy button puts here too, so a pasted
         // transcript and the exported file stay the same document.
@@ -113,8 +116,39 @@ public static class TranscriptSummary
         return $"{(won ? "Won" : "Lost")} {t.GamesWon}-{t.GamesLost}";
     }
 
-    public static string Subtitle(Transcript t) =>
-        $"{t.EventName} · {Date(t):yyyy-MM-dd HH:mm} · {Result(t)} · {Turns(t)} turns";
+    /// <summary>
+    /// How long the match ran, folded into the turn count rather than added as another
+    /// bare field. "13 turns in 4 minutes" says which number is which; "13 turns · 4
+    /// minutes" leaves a reader to guess what the second one counts. An incomplete
+    /// match keeps the turn count alone, because <see cref="TurnClock.MatchLength"/>
+    /// declines to measure one and a subtitle is no place to explain why.
+    /// </summary>
+    public static string Subtitle(Transcript t)
+    {
+        var turns = $"{Turns(t)} turns";
+        if (TurnClock.MatchLength(t) is { } length)
+            turns += $" in {TurnClock.Spoken(length)}";
+        return $"{t.EventName} · {Date(t):yyyy-MM-dd HH:mm} · {Result(t)} · {turns}";
+    }
+
+    /// <summary>
+    /// What a turn's elapsed time means, or null when no turn ran long enough to carry
+    /// one and the note would be explaining something the reader cannot see.
+    /// </summary>
+    /// <remarks>
+    /// It sits with the warnings rather than at the foot of the page because it is the
+    /// same kind of sentence: read this number with a caveat. The caveat is the whole
+    /// reason it exists — a duration on the opponent's turn invites being read as the
+    /// opponent's thinking time, and it is not that. It cannot be, because the span
+    /// also holds your own blocking decisions and every animation Arena played.
+    /// </remarks>
+    public static string? TimingNote(Transcript t) =>
+        TurnClock.LongTurns(t).Count > 0 ? TimingNoteText : null;
+
+    public const string TimingNoteText =
+        "A turn's elapsed time is wall clock, from that turn starting to the next one " +
+        "starting. It covers both players' decisions along with animation and network " +
+        "time, so it is not any one player's thinking time.";
 
     /// <summary>
     /// Zone match times are rendered in. Local by default, because you want to see

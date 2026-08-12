@@ -43,6 +43,27 @@ public class RendererTests
     };
 
     /// <summary>
+    /// A transcript with a turn slow enough to be worth remarking on, so the duration on
+    /// a turn header and the note explaining it face the structural and accessibility
+    /// sweeps rather than only their own tests. Turn two runs 1m 48s and turn three 22s,
+    /// which is also the pair that proves only the slow one is marked.
+    /// </summary>
+    internal static Transcript Timed() => Sample(opening: false) with
+    {
+        Events =
+        [
+            new GameEvent { Seq = 0, Kind = EventKind.TurnStart, Turn = 1, ActorSeat = 1,
+                            TimestampMs = 1786326812781 },
+            new GameEvent { Seq = 1, Kind = EventKind.LandPlayed, Turn = 1,
+                            ActorSeat = 1, SourceName = "Plains" },
+            new GameEvent { Seq = 2, Kind = EventKind.TurnStart, Turn = 2, ActorSeat = 2,
+                            TimestampMs = 1786326812781 + 108_000 },
+            new GameEvent { Seq = 3, Kind = EventKind.TurnStart, Turn = 3, ActorSeat = 1,
+                            TimestampMs = 1786326812781 + 130_000 },
+        ]
+    };
+
+    /// <summary>
     /// A gap standing for a game-state update Arena declined to log. Synthetic, but
     /// shaped from the two real occurrences found in Player-prev.log, which reported
     /// 77 and 55 game objects against limits of 50.
@@ -343,6 +364,7 @@ public class RendererTests
             GamePageRenderer.Render(Sample(incomplete: true, gaps: [SummarizedGap()]))));
         Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Repeating())));
         Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Buffed())));
+        Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Timed())));
         Assert.DoesNotThrow(() => Markup.Parse(GameDeckHtml()));
     }
 
@@ -359,8 +381,10 @@ public class RendererTests
                      // and only appear on the variants that need them.
                      IndexHtml(incomplete: true, gaps: true),
                      GamePageRenderer.Render(Sample(incomplete: true, gaps: [SummarizedGap()])),
-                     // The decklist owns an id so the copy button can find it.
+                     // The decklist owns an id so the copy button can find it, and so
+                     // does the note explaining a turn duration.
                      GameDeckHtml(),
+                     GamePageRenderer.Render(Timed()),
                  })
         {
             var ids = Markup.Parse(html).Descendants()
@@ -439,7 +463,7 @@ public class RendererTests
         var root = Markup.Parse(IndexHtml());
         var columns = root.Descendants("thead").Single().Descendants("th").ToList();
 
-        Assert.That(columns, Has.Count.EqualTo(6));
+        Assert.That(columns, Has.Count.EqualTo(7));
         foreach (var th in columns)
         {
             Assert.That(th.Attribute("scope")?.Value, Is.EqualTo("col"));
@@ -738,6 +762,7 @@ public class RendererTests
                      GameHtml(), GamePageRenderer.Render(Repeating()),
                      GamePageRenderer.Render(Buffed()),
                      GamePageRenderer.Render(Sample(gaps: [SummarizedGap()])),
+                     GamePageRenderer.Render(Timed()),
                      GameDeckHtml(),
                  })
         {
