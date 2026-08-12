@@ -42,7 +42,7 @@ automation for this — [winget-releaser](https://github.com/vedantmgoyal9/winge
 — only automates *updates*: it needs one version already published upstream to use as a
 template, so it could not be the first step in any case.
 
-Verified against v0.3.0:
+Verified against v0.3.1:
 
 - `winget validate --manifest packaging/winget/manifests` → succeeds
 - installer URL returns HTTP 200 unauthenticated, 34,274,077 bytes
@@ -83,7 +83,7 @@ opens the PR for you:
 
 ```powershell
 winget install Microsoft.WingetCreate
-wingetcreate update jmeyer1980.MtgaPlayByPlay --version 0.3.0 --urls <installer-url> --submit
+wingetcreate update jmeyer1980.MtgaPlayByPlay --version 0.3.1 --urls <installer-url> --submit
 ```
 
 Two things worth expecting:
