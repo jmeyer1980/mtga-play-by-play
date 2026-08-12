@@ -128,6 +128,17 @@ out/text/<matchId>.md            markdown, for pasting into chat
 Open `out/index.html` in any browser. Search filters on opponent, event, result,
 date, and every card that appeared.
 
+Every page and every markdown export ends with the build that wrote it, and
+`watch` prints the same line on startup:
+
+```
+Written by mtga-pbp 0.3.0+9f2984d1
+```
+
+Worth checking when the output disagrees with what you expect. A `watch` left
+running from an older copy keeps rewriting the whole report with that copy's code,
+and the stamp is what tells you the report and the program are different vintages.
+
 Each game page has two buttons:
 
 - **Show verbose** swaps the readable beats for the full stream — named phases and
