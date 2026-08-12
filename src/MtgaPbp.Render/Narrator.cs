@@ -290,6 +290,16 @@ public static class Narrator
 
         EventKind.Triggered when e.SourceName is not null => $"{e.SourceName} triggers",
 
+        // Passive on purpose. The same annotation covers an aura arriving on a creature
+        // and a player equipping a sword, and "Opponent equips" would be a claim about
+        // who acted that the log does not make for the first of those.
+        EventKind.Attached when e.SourceName is not null && e.TargetName is not null =>
+            $"{e.SourceName} is attached to {e.TargetName}",
+
+        // Arena's own wording, from the card: "When this Class becomes level 2, …".
+        EventKind.LevelUp when e.SourceName is not null && e.Amount > 0 =>
+            $"{e.SourceName} becomes level {e.Amount}",
+
         EventKind.Attack when e.SourceName is not null && e.TargetName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "attack", "attacks", t)} " +
             $"{e.TargetName} with {e.SourceName}",

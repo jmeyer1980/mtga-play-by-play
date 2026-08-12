@@ -47,6 +47,7 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly Dictionary<int, string> _zoneTypes = [];
     private readonly Dictionary<int, List<int>> _targets = [];   // source id -> target ids
     private readonly Dictionary<int, List<StatSample>> _stats = [];
+    private readonly Dictionary<int, int> _classLevels = [];
     private int _stamp;
 
     public int Turn { get; private set; }
@@ -62,6 +63,7 @@ public sealed class GameStateTracker(ICardDb cards)
 
     private readonly List<int> _newAttackers = [];
     private readonly List<int> _newBlockers = [];
+    private readonly List<(int Id, int Level)> _newLevels = [];
 
     /// <summary>
     /// Creatures that declared an attack in the message just applied. Combat is not
@@ -73,6 +75,21 @@ public sealed class GameStateTracker(ICardDb cards)
 
     /// <summary>Creatures that declared a block in the message just applied.</summary>
     public IReadOnlyList<int> NewBlockers => _newBlockers;
+
+    /// <summary>
+    /// Classes that reached a new level in the message just applied, and the level they
+    /// reached. Reported the same way combat is, and for the same reason: Arena states a
+    /// class's level as a standing fact re-sent with every message rather than as an
+    /// event, so only the transition is worth a line.
+    /// </summary>
+    /// <remarks>
+    /// Level 1 is never annotated — a Class enters play at it and Arena says nothing —
+    /// so the first level a class is ever seen at is a level-up, not a starting value.
+    /// The exception is a log that begins mid-match with a class already levelled, which
+    /// would be reported as levelling the moment the log picks it up; those transcripts
+    /// already say they are incomplete.
+    /// </remarks>
+    public IReadOnlyList<(int Id, int Level)> NewLevels => _newLevels;
 
     /// <summary>
     /// Every statline change seen, under the instance id Arena used at the time. Ids
@@ -91,9 +108,16 @@ public sealed class GameStateTracker(ICardDb cards)
         _stamp = stamp;
         _newAttackers.Clear();
         _newBlockers.Clear();
+        _newLevels.Clear();
 
         if (Json.Obj(gsm, "gameInfo") is { } gi && Json.Int(gi, "gameNumber") is { } gnv)
+        {
+            // Levels are remembered per game. Arena hands out instance ids afresh for
+            // each game of a match, so a level carried over would let game one's
+            // Caretaker's Talent silence game two's.
+            if (gnv != GameNumber) _classLevels.Clear();
             GameNumber = gnv;
+        }
 
         if (Json.Obj(gsm, "turnInfo") is { } ti)
         {
@@ -131,6 +155,8 @@ public sealed class GameStateTracker(ICardDb cards)
         // the targets. Missing this array is why targeting looked unavailable.
         foreach (var pa in Json.Array(gsm, "persistentAnnotations"))
         {
+            if (HasType(pa, "AnnotationType_ClassLevel")) ReadClassLevel(pa);
+
             if (!HasType(pa, "AnnotationType_TargetSpec")) continue;
             if (Json.Int(pa, "affectorId") is not { } src) continue;
 
@@ -223,6 +249,23 @@ public sealed class GameStateTracker(ICardDb cards)
             if (!wasBlocking && blk is "BlockState_Declared" or "BlockState_Blocking")
                 _newBlockers.Add(id);
         }
+    }
+
+    /// <summary>
+    /// Notes a class's level, reporting it only when it has moved. The annotation is
+    /// persistent, so it arrives again in every message for the rest of the game;
+    /// without this the same level-up would be announced a few hundred times.
+    /// </summary>
+    private void ReadClassLevel(JsonElement pa)
+    {
+        if (Json.Int(pa, "affectorId") is not { } id) return;
+        if (DetailInt(pa, "Level") is not { } level) return;
+
+        var canonical = Resolve(id);
+        if (_classLevels.TryGetValue(canonical, out var known) && known == level) return;
+
+        _classLevels[canonical] = level;
+        _newLevels.Add((canonical, level));
     }
 
     private void ClearCombatState()

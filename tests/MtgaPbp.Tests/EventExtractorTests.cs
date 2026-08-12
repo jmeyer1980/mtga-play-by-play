@@ -515,6 +515,142 @@ public class EventExtractorTests
         Assert.That(t.Gaps.Single().Kind, Is.EqualTo(LogGapKind.Torn));
     }
 
+    /// <summary>
+    /// Equipment is the case that earns the line. Equip is an activated ability, not a
+    /// cast, so nothing in the transcript ever names the creature carrying the sword —
+    /// only the statline moves, with no visible cause.
+    /// </summary>
+    [Test]
+    public void Equipment_reports_the_creature_it_went_onto()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 500, "grpId": 5, "name": 1000, "type": "GameObjectType_Card" },
+            { "instanceId": 600, "grpId": 6, "name": 1001, "type": "GameObjectType_Card" } ],
+          "annotations": [ { "id": 1, "affectorId": 500, "affectedIds": [ 600 ],
+            "type": [ "AnnotationType_AttachmentCreated" ] } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Attached);
+        Assert.That(e.SourceName, Is.EqualTo("Lightning Bolt"), "the thing that attached");
+        Assert.That(e.TargetName, Is.EqualTo("Llanowar Elves"), "what it went onto");
+    }
+
+    /// <summary>
+    /// An aura is cast at its host, and the cast line already reads "You cast Ethereal
+    /// Armor, targeting Rabbit (1/1 → 5/5)". Saying it again immediately underneath is
+    /// the same fact twice, so a target already on file suppresses the line. This is
+    /// what separates the 136 auras in the archive from the 23 equips.
+    /// </summary>
+    [Test]
+    public void An_attachment_the_cast_line_already_names_is_not_repeated()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 500, "grpId": 5, "name": 1000, "type": "GameObjectType_Card" },
+            { "instanceId": 600, "grpId": 6, "name": 1001, "type": "GameObjectType_Card" } ],
+          "persistentAnnotations": [ { "id": 9, "affectorId": 500, "affectedIds": [ 600 ],
+            "type": [ "AnnotationType_TargetSpec" ] } ],
+          "annotations": [ { "id": 1, "affectorId": 500, "affectedIds": [ 600 ],
+            "type": [ "AnnotationType_AttachmentCreated" ] } ] }
+        """));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Attached), Is.False);
+    }
+
+    /// <summary>
+    /// An attachment whose host or attachment cannot be named would read "Unknown card
+    /// is attached to Unknown card", which is a line about nothing.
+    /// </summary>
+    [Test]
+    public void An_attachment_nobody_can_name_produces_no_line()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ { "instanceId": 500, "grpId": 5, "name": 1000,
+                             "type": "GameObjectType_Card" } ],
+          "annotations": [ { "id": 1, "affectorId": 500, "affectedIds": [ 4242 ],
+            "type": [ "AnnotationType_AttachmentCreated" ] } ] }
+        """));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Attached), Is.False);
+    }
+
+    /// <summary>
+    /// A Class's level is a standing fact Arena re-sends with every message for the rest
+    /// of the game, not an event — so only the move to a new level is worth a line, and
+    /// the several hundred restatements after it must stay silent.
+    /// </summary>
+    [Test]
+    public void A_class_reports_each_level_once_however_often_it_is_restated()
+    {
+        string Level(int level) => Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ { "instanceId": 700, "grpId": 7, "name": 1001,
+                             "type": "GameObjectType_Card", "controllerSeatId": 1 } ],
+          "persistentAnnotations": [ { "id": 3, "affectorId": 700,
+            "type": [ "AnnotationType_ClassLevel" ], "details": [
+              { "key": "Level", "valueInt32": [ {{level}} ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine,
+            Level(2), Level(2), Level(2), Level(3), Level(3));
+
+        var levels = t.Events.Where(x => x.Kind == EventKind.LevelUp).ToList();
+        Assert.That(levels.Select(x => x.Amount), Is.EqualTo(new[] { 2, 3 }));
+        Assert.That(levels[0].SourceName, Is.EqualTo("Llanowar Elves"));
+        Assert.That(levels[0].ActorSeat, Is.EqualTo(1));
+    }
+
+    /// <summary>
+    /// Arena hands out instance ids afresh for each game of a match, so a level
+    /// remembered from game one would silence the same card levelling in game two.
+    /// </summary>
+    [Test]
+    public void A_class_levelling_again_in_the_next_game_is_reported_again()
+    {
+        string Game(int number) => Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameInfo": { "gameNumber": {{number}} },
+          "gameObjects": [ { "instanceId": 700, "grpId": 7, "name": 1001,
+                             "type": "GameObjectType_Card", "controllerSeatId": 1 } ],
+          "persistentAnnotations": [ { "id": 3, "affectorId": 700,
+            "type": [ "AnnotationType_ClassLevel" ], "details": [
+              { "key": "Level", "valueInt32": [ 2 ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, Game(1), Game(1), Game(2));
+
+        Assert.That(t.Events.Count(x => x.Kind == EventKind.LevelUp), Is.EqualTo(2));
+    }
+
+    /// <summary>
+    /// A designation carries nothing but a numeric DesignationType, and that enum is in
+    /// no table of Arena's card database — so there is no honest sentence to build from
+    /// one. Both halves are dropped rather than left to surface as "[unhandled: …]".
+    /// </summary>
+    [Test]
+    public void Designations_are_dropped_rather_than_reported_as_unhandled()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ { "instanceId": 800, "grpId": 9, "name": 1001,
+                             "type": "GameObjectType_Card" } ],
+          "annotations": [
+            { "id": 1, "affectedIds": [ 800 ],
+              "type": [ "AnnotationType_GainDesignation" ], "details": [
+                { "key": "DesignationType", "valueInt32": [ 19 ] } ] },
+            { "id": 2, "affectorId": 800, "affectedIds": [ 800 ],
+              "type": [ "AnnotationType_LoseDesignation" ], "details": [
+                { "key": "DesignationType", "valueInt32": [ 24 ] } ] } ] }
+        """));
+
+        Assert.That(t.UnknownAnnotations, Is.Empty);
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False);
+    }
+
     [Test]
     public void A_match_with_nothing_withheld_reports_no_gaps()
     {

@@ -89,8 +89,13 @@ public sealed class EventExtractor(ICardDb cards)
         "AnnotationType_MultistepEffectComplete",
         "AnnotationType_SyntheticEvent",
         "AnnotationType_TokenDeleted",
+        // A designation is an unnameable fact. Both carry nothing but a numeric
+        // DesignationType, and unlike counters and phases that enum is in no table of
+        // Arena's card database — so a line about one could say a permanent gained
+        // something but never what. The 155 gains in the archive are also almost all
+        // Room doors being unlocked, which the transcript already reports as a cast.
         "AnnotationType_GainDesignation",
-        "AnnotationType_AttachmentCreated",
+        "AnnotationType_LoseDesignation",
         "AnnotationType_ChoiceResult",
         "AnnotationType_RevealedCardDeleted",
         "AnnotationType_DisqualifiedEffect",
@@ -229,6 +234,7 @@ public sealed class EventExtractor(ICardDb cards)
 
                 tracker.Apply(gsm, st.Seq);
                 EmitCombat(tracker, ts, st);
+                EmitLevels(tracker, ts, st);
                 foreach (var a in Json.Array(gsm, "annotations"))
                     EmitFor(a, tracker, ts, st);
             }
@@ -377,6 +383,37 @@ public sealed class EventExtractor(ICardDb cards)
     }
 
     /// <summary>
+    /// Emits the level a Class enchantment reached. Read from the tracker's transitions
+    /// for the same reason combat is: Arena states the level as a standing fact re-sent
+    /// with every message, never as an event, so the annotation stream has nothing to
+    /// key off.
+    /// </summary>
+    /// <remarks>
+    /// The level is worth a line because nothing else on the page carries it. A class
+    /// levels up by activating an ability that produces no trigger, and its consequences
+    /// — "creature tokens you control get +2/+2" — land as a statline change on other
+    /// permanents entirely, so a reader watching Toys go from 1/1 to 3/3 between two
+    /// turns has no way at all to find out why.
+    /// </remarks>
+    private static void EmitLevels(GameStateTracker tracker, long ts, Emit st)
+    {
+        foreach (var (id, level) in tracker.NewLevels)
+        {
+            var name = tracker.NameOf(id);
+            if (CardNames.IsPlaceholder(name)) continue;
+            st.SawCard(name);
+
+            st.Add(Base(tracker, ts, EventKind.LevelUp) with
+            {
+                ActorSeat = tracker.Get(id)?.ControllerSeat,
+                SourceInstanceId = id,
+                SourceName = name,
+                Amount = level
+            });
+        }
+    }
+
+    /// <summary>
     /// One board line per player, describing what they control at the end of a turn.
     /// The line text is built here rather than in the renderer because only this layer
     /// has the tracker; the renderer still decides how to present it and which player
@@ -484,6 +521,42 @@ public sealed class EventExtractor(ICardDb cards)
                 {
                     SourceInstanceId = abilityId,
                     SourceName = abilityName
+                };
+            }
+            else if (type == "AnnotationType_AttachmentCreated")
+            {
+                // affectorId is the aura or equipment; the single affected id is what it
+                // went onto.
+                if (Json.Int(a, "affectorId") is not { } attachment) continue;
+                if (FirstAffected(a) is not { } host) continue;
+
+                // An aura needs no line: it was cast at the creature, so the transcript
+                // already reads "You cast Ethereal Armor, targeting Rabbit (1/1 → 5/5)",
+                // and saying it again immediately afterwards would be the same fact
+                // twice. Equipment is moved by an activated ability — equip is not a
+                // cast — so nothing on the page says which creature is carrying it, and
+                // the statline it explains changes with no visible reason. All 136
+                // attachments in the archive that already had a target are auras, and
+                // all 23 that did not are equipment, so the rule sorts them exactly.
+                if (tracker.TargetsOf(attachment).Any(
+                        t => tracker.Resolve(t) == tracker.Resolve(host)))
+                    continue;
+
+                var attachmentName = tracker.NameOf(attachment);
+                var hostName = tracker.NameOf(host);
+                // "Unknown card is attached to Hare Apparent" tells nobody anything.
+                if (CardNames.IsPlaceholder(attachmentName) ||
+                    CardNames.IsPlaceholder(hostName)) continue;
+
+                st.SawCard(attachmentName);
+                st.SawCard(hostName);
+
+                ev = Base(tracker, ts, EventKind.Attached) with
+                {
+                    SourceInstanceId = attachment,
+                    SourceName = attachmentName,
+                    TargetInstanceId = host,
+                    TargetName = hostName
                 };
             }
             else if (type == "AnnotationType_Scry")

@@ -278,6 +278,52 @@ public class NarratorTests
         Assert.That(lines.Single().Text, Is.EqualTo("Opponent scries"));
     }
 
+    /// <summary>
+    /// Passive on purpose: the same event covers an aura landing on a creature and a
+    /// player equipping a sword, and only one of those has an actor the log names.
+    /// </summary>
+    [Test]
+    public void An_attachment_says_what_it_went_onto()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Attached) with
+            {
+                SourceInstanceId = 500,
+                SourceName = "Buster Sword",
+                TargetInstanceId = 600,
+                TargetName = "Veteran Ice Climber 4/5"
+            }), Density.Beats);
+
+        Assert.That(lines.Single().Text,
+            Is.EqualTo("Buster Sword is attached to Veteran Ice Climber 4/5"));
+    }
+
+    /// <summary>
+    /// Arena's own wording, taken from the card: "When this Class becomes level 2, …".
+    /// </summary>
+    [Test]
+    public void A_class_level_reads_the_way_the_card_says_it()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.LevelUp) with
+            { SourceInstanceId = 700, SourceName = "Caretaker's Talent", Amount = 3 }),
+            Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Caretaker's Talent becomes level 3"));
+    }
+
+    /// <summary>
+    /// Level zero is not a level a Class can be at, so an event carrying one is a
+    /// reading that went wrong rather than something to announce.
+    /// </summary>
+    [Test]
+    public void A_class_with_no_level_produces_no_line()
+    {
+        var lines = Narrator.Narrate(
+            T(E(EventKind.LevelUp) with { SourceName = "Caretaker's Talent" }), Density.Beats);
+        Assert.That(lines, Is.Empty);
+    }
+
     [Test]
     public void Repeated_lines_collapse_with_a_count()
     {
