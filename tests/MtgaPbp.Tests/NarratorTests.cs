@@ -324,6 +324,60 @@ public class NarratorTests
         Assert.That(lines, Is.Empty);
     }
 
+    /// <summary>
+    /// Cause first and active, the same shape the destroy and exile lines already use.
+    /// Without it three triggers in a row read identically and a reader cannot tell what
+    /// the player did to set any of them off.
+    /// </summary>
+    [Test]
+    public void A_trigger_with_a_known_cause_puts_the_cause_first()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Triggered) with
+            {
+                SourceName = "Caretaker's Talent's ability",
+                CauseName = "Hare Apparent"
+            }), Density.Beats);
+
+        Assert.That(lines.Single().Text,
+            Is.EqualTo("Hare Apparent triggers Caretaker's Talent's ability"));
+    }
+
+    /// <summary>
+    /// Two thirds of triggered abilities have no triggering object at all — nothing
+    /// caused them but the turn advancing — so the causeless line has to keep working.
+    /// </summary>
+    [Test]
+    public void A_trigger_with_no_known_cause_keeps_the_plain_line()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Triggered) with { SourceName = "Deal Gone Bad" }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Deal Gone Bad triggers"));
+    }
+
+    /// <summary>
+    /// Naming the cause is what stops repeated triggers folding into one another when
+    /// they were in fact set off by different permanents — the collapse is by rendered
+    /// text, so a line that says more collapses less.
+    /// </summary>
+    [Test]
+    public void Triggers_with_different_causes_no_longer_collapse_together()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Triggered, 0) with
+            { SourceName = "Caretaker's Talent's ability", CauseName = "Hare Apparent" },
+            E(EventKind.Triggered, 1) with
+            { SourceName = "Caretaker's Talent's ability", CauseName = "Toy" }
+        ), Density.Beats);
+
+        Assert.That(lines.Select(l => l.Text), Is.EqualTo(new[]
+        {
+            "Hare Apparent triggers Caretaker's Talent's ability",
+            "Toy triggers Caretaker's Talent's ability"
+        }));
+    }
+
     [Test]
     public void Repeated_lines_collapse_with_a_count()
     {

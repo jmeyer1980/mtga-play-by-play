@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace MtgaPbp.Core;
@@ -82,6 +83,20 @@ public sealed record Transcript(
     /// "one game" rather than as "no games".
     /// </summary>
     public IReadOnlyList<GameRecord> Games { get; init; } = [];
+
+    /// <summary>
+    /// Types found in <c>gameStateMessage.persistentAnnotations</c> that nothing reads
+    /// and nobody has ruled out, counted once per distinct fact. Diagnostic only: none
+    /// of it reaches the transcript.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="UnknownAnnotations"/> because the two surfaces are
+    /// separate, and folding them together would let a persistent type that nobody has
+    /// examined look like a streamed one that was. An init property rather than another
+    /// positional parameter so that adding the inventory did not disturb every caller.
+    /// </remarks>
+    public IReadOnlyDictionary<string, int> UnknownPersistentAnnotations { get; init; } =
+        new Dictionary<string, int>(StringComparer.Ordinal);
 }
 
 public sealed class EventExtractor(ICardDb cards)
@@ -150,6 +165,84 @@ public sealed class EventExtractor(ICardDb cards)
     };
 
     /// <summary>
+    /// Persistent annotation types something already reads. Listed rather than inferred,
+    /// because the code that reads them lives in <see cref="GameStateTracker"/> and this
+    /// class would otherwise have no way to tell a handled type from an unmined one.
+    /// </summary>
+    private static readonly HashSet<string> PersistentHandled = new(StringComparer.Ordinal)
+    {
+        "AnnotationType_TargetSpec",        // what a spell or ability was aimed at
+        "AnnotationType_ClassLevel",        // the level a Class enchantment reached
+        "AnnotationType_TriggeringObject",  // what set a triggered ability off
+    };
+
+    /// <summary>
+    /// Persistent annotation types examined and deliberately dropped. The counts are
+    /// distinct facts across the 170-match archive, measured the same way
+    /// <see cref="Emit.CountPersistent"/> counts.
+    /// </summary>
+    /// <remarks>
+    /// Anything not named here and not in <see cref="PersistentHandled"/> is counted as
+    /// unaccounted and shows up in <c>mtga-pbp stats</c>. That is the point of the split:
+    /// a type nobody has looked at yet must not be able to hide behind one that was.
+    /// </remarks>
+    private static readonly HashSet<string> PersistentIgnored = new(StringComparer.Ordinal)
+    {
+        // The standing twins of things the transcript already narrates as they happen.
+        // Each of these is Arena restating a fact the streamed annotation stream already
+        // delivered as an event, so reporting them would be saying everything twice.
+        "AnnotationType_EnteredZoneThisTurn",   // 10,339 — every zone move is reported
+        "AnnotationType_ModifiedPower",         //    947 — statlines and before→after buffs
+        "AnnotationType_ModifiedToughness",     //    899
+        "AnnotationType_Counter",               //    486 — counters are named by kind
+        "AnnotationType_LayeredEffect",         //  1,308 — the streamed twin is ignored too
+        "AnnotationType_DamagedThisTurn",       //    155 — damage is reported when it lands
+
+        // Exactly the same 175 (attachment, host) pairs as the streamed
+        // AnnotationType_AttachmentCreated the extractor already handles — 175 in both,
+        // none on either side alone. There is no attachment here that is not already on
+        // the page or already deliberately suppressed as an aura.
+        "AnnotationType_Attachment",
+
+        // Unnameable, for the same reason the streamed GainDesignation was dropped: the
+        // payload is a bare DesignationType int (19 and 20 account for 164 of the 188)
+        // and Arena's card database has no enum table for it — the Enums table carries
+        // CardColor, CardType, Color, CounterType, MatchState, Phase, Step, SubType and
+        // SuperType, and nothing else. A line could say a permanent gained something but
+        // never what. QualificationType is a bare int in the same way.
+        "AnnotationType_Designation",
+        "AnnotationType_Qualification",
+
+        // Says the loser was at zero life. Every one of the 47 gives the same reason,
+        // SBA_LifeTotal, and all 170 archived matches carry a finalMatchResult as well,
+        // so it never recovers a result the transcript is missing — and the turn headers
+        // already carry the life totals that got there.
+        "AnnotationType_LossOfGame",
+
+        // UsesRemaining is 0 in all 191: the client greying out an ability that has been
+        // used this turn. The activation that used it up is already on the page.
+        "AnnotationType_AbilityExhausted",
+
+        // A permanent that will not last: the four ability ids behind the 76 read
+        // "Sacrifice it at end of combat", "Sacrifice them at the beginning of the next
+        // end step", a delayed return, and Evoke. The transcript reports the sacrifice
+        // or the exile when it actually happens, which is the part a reader can act on.
+        "AnnotationType_TemporaryPermanent",
+
+        // A type-changing layered effect. 76 of the 83 carry nothing but effect ids;
+        // only 7 carry the temporaryCardType that could be turned into words.
+        "AnnotationType_ModifiedType",
+
+        // Which colours of mana a land can produce. Bookkeeping for the client's mana
+        // picker: "Forest can produce green" is not news to anybody reading a transcript.
+        "AnnotationType_ColorProduction",
+
+        // Carries no object at all — affectedIds is [0] and the affector is a synthetic
+        // id in the 9000s. The only real payload is which player is choosing.
+        "AnnotationType_ObjectsSelected",
+    };
+
+    /// <summary>
     /// Mutable state for one extraction run. Collected into an object because the
     /// emit helpers were accumulating ref parameters faster than they were gaining
     /// responsibilities.
@@ -161,7 +254,25 @@ public sealed class EventExtractor(ICardDb cards)
         public int LastTurnStarted;
         public readonly List<GameEvent> Events = [];
         public readonly Dictionary<string, int> Unknown = new(StringComparer.Ordinal);
+        public readonly Dictionary<string, int> UnknownPersistent = new(StringComparer.Ordinal);
         public readonly HashSet<string> CardsSeen = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Persistent annotations already counted this game, keyed by id and the objects
+        /// they name. Arena re-sends the whole persistent set with almost every message,
+        /// so without this the inventory reports how chatty the log is rather than how
+        /// much of it is unmined: EnteredZoneThisTurn alone arrives 10,481 times across
+        /// the archive to describe 10,339 distinct facts, and the ratio is far worse per
+        /// match.
+        /// </summary>
+        /// <remarks>
+        /// The id alone is not enough. Arena hands the same id back with different
+        /// contents once the fact it stands for changes — the "entered this turn" set
+        /// for a zone keeps its id and swaps its members every turn — so the objects go
+        /// in the key too. Details are left out: a counter annotation counting up from
+        /// one to three is one standing fact, not three.
+        /// </remarks>
+        public readonly HashSet<string> PersistentSeen = new(StringComparer.Ordinal);
 
         /// <summary>Last board text emitted per seat, so unchanged boards stay quiet.</summary>
         public readonly Dictionary<int, string> LastBoard = [];
@@ -178,6 +289,36 @@ public sealed class EventExtractor(ICardDb cards)
             LastTurn = 0;
             LastTurnStarted = 0;
             LastBoard.Clear();
+            // Persistent annotation ids are handed out afresh per game: 96 of the 121
+            // distinct ids in the archive's one Bo3 appear in both of its games. Keeping
+            // the set across a boundary would silently drop game two's inventory.
+            PersistentSeen.Clear();
+        }
+
+        /// <summary>
+        /// Counts one persistent annotation against the inventory, once per distinct
+        /// fact, skipping the types something already reads and the types that were
+        /// examined and dropped.
+        /// </summary>
+        public void CountPersistent(JsonElement pa)
+        {
+            // Built before the type check rather than after, because one annotation can
+            // carry several types and they have to agree on whether it was already seen.
+            var key = new StringBuilder()
+                .Append(Json.Int(pa, "id") ?? -1).Append('/')
+                .Append(Json.Int(pa, "affectorId") ?? -1).Append(':');
+            foreach (var x in Json.Array(pa, "affectedIds"))
+                key.Append(Json.Int(x) ?? -1).Append(',');
+            if (!PersistentSeen.Add(key.ToString())) return;
+
+            foreach (var typeEl in Json.Array(pa, "type"))
+            {
+                if (typeEl.ValueKind != JsonValueKind.String) continue;
+                var type = typeEl.GetString();
+                if (type is null || PersistentHandled.Contains(type) ||
+                    PersistentIgnored.Contains(type)) continue;
+                UnknownPersistent[type] = UnknownPersistent.GetValueOrDefault(type) + 1;
+            }
         }
 
         /// <summary>
@@ -357,6 +498,14 @@ public sealed class EventExtractor(ICardDb cards)
                 tracker.Apply(gsm, st.Seq);
                 EmitCombat(tracker, ts, st);
                 EmitLevels(tracker, ts, st);
+
+                // Inventory only — nothing here reaches the transcript. persistentAnnotations
+                // is a second annotation surface the extractor never used to look at, so
+                // `stats` reported a clean bill while TargetSpec and ClassLevel sat unread
+                // in it for months. Counting it is what stops that happening again.
+                foreach (var pa in Json.Array(gsm, "persistentAnnotations"))
+                    st.CountPersistent(pa);
+
                 foreach (var a in Json.Array(gsm, "annotations"))
                     EmitFor(a, tracker, ts, st);
             }
@@ -408,7 +557,8 @@ public sealed class EventExtractor(ICardDb cards)
             st.Events, st.Unknown, st.CardsSeen, st.Unresolved, gaps,
             BuildDeck(decks, you, games), records.Count > 0 ? records[0].Opening : null)
         {
-            Games = records
+            Games = records,
+            UnknownPersistentAnnotations = st.UnknownPersistent
         };
     }
 
@@ -723,10 +873,16 @@ public sealed class EventExtractor(ICardDb cards)
                 var abilityName = abilityId is { } aid ? tracker.NameOf(aid) : null;
                 if (CardNames.IsPlaceholder(abilityName)) continue;
 
+                var (causeId, causeName) =
+                    TriggerCause(tracker, abilityId, Json.Int(a, "affectorId"));
+                st.SawCard(causeName);
+
                 ev = Base(tracker, ts, EventKind.Triggered) with
                 {
                     SourceInstanceId = abilityId,
-                    SourceName = abilityName
+                    SourceName = abilityName,
+                    CauseInstanceId = causeId,
+                    CauseName = causeName
                 };
             }
             else if (type == "AnnotationType_AttachmentCreated")
@@ -889,6 +1045,36 @@ public sealed class EventExtractor(ICardDb cards)
 
             st.Add(ev with { Turn = turn });
         }
+    }
+
+    /// <summary>
+    /// What set a triggered ability off, when naming it would tell a reader something the
+    /// trigger line does not already say. Nulls otherwise.
+    /// </summary>
+    /// <param name="abilityId">The new ability instance, from the annotation's affected ids.</param>
+    /// <param name="sourceId">
+    /// The permanent whose ability this is, from the annotation's affector. Used only to
+    /// recognise a trigger that set itself off.
+    /// </param>
+    /// <remarks>
+    /// A creature's own enters-the-battlefield trigger names itself as the cause, and
+    /// "Hare Apparent triggers Hare Apparent's ability" is worse than saying nothing — it
+    /// reads as though a second permanent were involved. 996 of the archive's 2,394
+    /// triggering objects are that case, so the check is most of what makes the remaining
+    /// 1,398 worth printing.
+    /// </remarks>
+    private static (int? Id, string? Name) TriggerCause(
+        GameStateTracker tracker, int? abilityId, int? sourceId)
+    {
+        if (abilityId is not { } ability) return (null, null);
+        if (tracker.CauseOf(ability) is not { } cause) return (null, null);
+        if (sourceId is { } source && tracker.Resolve(cause) == tracker.Resolve(source))
+            return (null, null);
+
+        var name = tracker.NameOf(cause);
+        // "Unknown card triggers Carrot Cake's ability" is a worse sentence than the one
+        // without a cause, so an unnameable cause is dropped rather than guessed at.
+        return CardNames.IsPlaceholder(name) ? (null, null) : (cause, name);
     }
 
     private static int AmountFor(string type, JsonElement a) => type switch

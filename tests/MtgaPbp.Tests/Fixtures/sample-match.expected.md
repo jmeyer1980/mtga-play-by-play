@@ -44,7 +44,7 @@
 - Opponent plays Plains
 - Opponent casts Ajani's Pridemate
 - Ajani's Pridemate resolves
-- Hinterland Sanctifier's ability triggers
+- Ajani's Pridemate triggers Hinterland Sanctifier's ability
 - Opponent gains 1 life
 - Deal Gone Bad triggers
 - Ajani's Pridemate gets 1 +1/+1 counter

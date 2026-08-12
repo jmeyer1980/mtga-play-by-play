@@ -367,6 +367,7 @@ public static class Program
 
         var extractor = new EventExtractor(cards);
         var unknown = new Dictionary<string, int>(StringComparer.Ordinal);
+        var persistent = new Dictionary<string, int>(StringComparer.Ordinal);
         var unresolved = new Dictionary<string, int>(StringComparer.Ordinal);
         var matches = 0;
         var gaps = new List<LogGap>();
@@ -380,6 +381,8 @@ public static class Program
             var t = extractor.Extract(matchId, lines);
             foreach (var (k, v) in t.UnknownAnnotations)
                 unknown[k] = unknown.GetValueOrDefault(k) + v;
+            foreach (var (k, v) in t.UnknownPersistentAnnotations)
+                persistent[k] = persistent.GetValueOrDefault(k) + v;
             foreach (var (c, n) in t.UnresolvedNames)
                 unresolved[c] = unresolved.GetValueOrDefault(c) + n;
             if (t.Gaps.Count > 0) matchesWithGaps++;
@@ -392,6 +395,16 @@ public static class Program
         foreach (var (k, v) in unknown.OrderByDescending(x => x.Value))
             Console.WriteLine($"  {v,6}  {k}");
         if (unknown.Count == 0) Console.WriteLine("  (none)");
+
+        // A second list rather than more rows in the first, because these come from a
+        // different array and mean something different: a streamed type nobody handles
+        // is a hole in the narration, while a persistent one is a standing fact nobody
+        // has mined yet. Types that are read, and types examined and deliberately
+        // dropped, are both absent — EventExtractor holds the two sets and the reasons.
+        Console.WriteLine("\nunmined persistent annotation types (diagnostic, not narrated):");
+        foreach (var (k, v) in persistent.OrderByDescending(x => x.Value))
+            Console.WriteLine($"  {v,6}  {k}");
+        if (persistent.Count == 0) Console.WriteLine("  (none)");
 
         Console.WriteLine("\nunresolved cards:");
         foreach (var (k, v) in unresolved.OrderByDescending(x => x.Value))

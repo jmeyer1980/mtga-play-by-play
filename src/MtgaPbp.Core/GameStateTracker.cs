@@ -48,6 +48,7 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly Dictionary<int, List<int>> _targets = [];   // source id -> target ids
     private readonly Dictionary<int, List<StatSample>> _stats = [];
     private readonly Dictionary<int, int> _classLevels = [];
+    private readonly Dictionary<int, int> _triggerCauses = [];   // ability id -> what set it off
     private int _stamp;
 
     public int Turn { get; private set; }
@@ -160,6 +161,7 @@ public sealed class GameStateTracker(ICardDb cards)
         foreach (var pa in Json.Array(gsm, "persistentAnnotations"))
         {
             if (HasType(pa, "AnnotationType_ClassLevel")) ReadClassLevel(pa);
+            if (HasType(pa, "AnnotationType_TriggeringObject")) ReadTriggerCause(pa);
 
             if (!HasType(pa, "AnnotationType_TargetSpec")) continue;
             if (Json.Int(pa, "affectorId") is not { } src) continue;
@@ -270,6 +272,47 @@ public sealed class GameStateTracker(ICardDb cards)
 
         _classLevels[canonical] = level;
         _newLevels.Add((canonical, level));
+    }
+
+    /// <summary>
+    /// Notes what set a triggered ability off. <c>affectorId</c> is the ability instance
+    /// and the single affected id is the object that caused it — the opposite way round
+    /// from <c>AnnotationType_AbilityInstanceCreated</c>, which runs source → new ability.
+    /// </summary>
+    /// <remarks>
+    /// The direction was established from the archive rather than assumed, because the
+    /// two annotations disagreeing about which end is which is exactly the kind of thing
+    /// that produces a confidently backwards sentence. Of the 2,394 of these in the
+    /// archive, 2,389 name a <c>GameObjectType_Ability</c> as the affector and all 2,394
+    /// name an id that <c>AbilityInstanceCreated</c> had already announced as a new
+    /// ability; the affected ids are cards and tokens. Both readings agree, so the
+    /// affector is the ability and the affected id is its cause.
+    /// </remarks>
+    private void ReadTriggerCause(JsonElement pa)
+    {
+        if (Json.Int(pa, "affectorId") is not { } ability) return;
+        foreach (var x in Json.Array(pa, "affectedIds"))
+        {
+            // Seats 1 and 2 are players, not objects. A trigger caused by a player has
+            // nothing to name.
+            if (Json.Int(x) is not { } cause || cause <= 2) continue;
+            _triggerCauses[ability] = cause;
+            return;
+        }
+    }
+
+    /// <summary>
+    /// The object that set a triggered ability off, from
+    /// <c>AnnotationType_TriggeringObject</c>. Null when Arena did not say — two thirds
+    /// of triggered abilities have no triggering object at all, because nothing caused
+    /// them but the turn advancing.
+    /// </summary>
+    public int? CauseOf(int abilityInstanceId)
+    {
+        if (_triggerCauses.TryGetValue(abilityInstanceId, out var direct)) return direct;
+        return _triggerCauses.TryGetValue(Resolve(abilityInstanceId), out var viaAlias)
+            ? viaAlias
+            : null;
     }
 
     private void ClearCombatState()

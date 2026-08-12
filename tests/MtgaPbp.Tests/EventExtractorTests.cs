@@ -658,4 +658,165 @@ public class EventExtractorTests
         // a banner on any of them would teach the reader to ignore all of them.
         Assert.That(Run(RoomLine, MulliganLine).Gaps, Is.Empty);
     }
+
+    /// <summary>
+    /// One message carrying an ability that triggered and the object that set it off.
+    /// Shaped after the archive: the TriggeringObject names the ability as its affector
+    /// and the cause among its affected ids, which is the opposite way round from the
+    /// AbilityInstanceCreated beside it.
+    /// </summary>
+    private static string TriggerMessage(int abilitySource, int cause) => Gre($$"""
+    { "type": "GameStateType_Full",
+      "gameObjects": [
+        { "instanceId": {{abilitySource}}, "grpId": 5, "name": 1001,
+          "type": "GameObjectType_Card", "controllerSeatId": 1 },
+        { "instanceId": {{cause}}, "grpId": 6, "name": 1000,
+          "type": "GameObjectType_Card", "controllerSeatId": 1 },
+        { "instanceId": 900, "grpId": 7, "name": 1001,
+          "type": "GameObjectType_Ability", "controllerSeatId": 1 } ],
+      "persistentAnnotations": [
+        { "id": 40, "affectorId": 900, "affectedIds": [ {{cause}} ],
+          "type": [ "AnnotationType_TriggeringObject" ] } ],
+      "annotations": [
+        { "id": 41, "affectorId": {{abilitySource}}, "affectedIds": [ 900 ],
+          "type": [ "AnnotationType_AbilityInstanceCreated" ] } ] }
+    """);
+
+    /// <summary>
+    /// The direction was established from the archive: the affector of a
+    /// TriggeringObject is a GameObjectType_Ability in 2,389 of 2,394 cases and an id
+    /// AbilityInstanceCreated had already announced in all 2,394, while the affector
+    /// never changed zones in the same message and the affected object did so 528 times
+    /// out of 890. Reading it backwards would put the wrong card at the front of the
+    /// sentence, so the direction gets a test of its own.
+    /// </summary>
+    [Test]
+    public void A_trigger_names_the_object_that_set_it_off()
+    {
+        // Ability source 800, cause 801 — two different permanents.
+        var t = Run(RoomLine, MulliganLine, TriggerMessage(abilitySource: 800, cause: 801));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Triggered);
+        Assert.That(e.SourceName, Is.EqualTo("Llanowar Elves"), "the ability's own source");
+        Assert.That(e.CauseName, Is.EqualTo("Lightning Bolt"), "what set it off");
+        Assert.That(e.CauseInstanceId, Is.EqualTo(801));
+    }
+
+    /// <summary>
+    /// 996 of the archive's 2,394 triggering objects name the ability's own permanent —
+    /// a creature's enters-the-battlefield trigger setting itself off. "Llanowar Elves
+    /// triggers Llanowar Elves's ability" reads as though a second permanent were
+    /// involved, so the cause is dropped and the plain line stands.
+    /// </summary>
+    [Test]
+    public void A_trigger_that_set_itself_off_says_nothing_about_a_cause()
+    {
+        var t = Run(RoomLine, MulliganLine, TriggerMessage(abilitySource: 800, cause: 800));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Triggered);
+        Assert.That(e.CauseName, Is.Null);
+        Assert.That(e.CauseInstanceId, Is.Null);
+    }
+
+    /// <summary>
+    /// The blind spot this closes: persistentAnnotations is a second annotation array,
+    /// and because nothing counted it, TargetSpec and ClassLevel both sat unread in it
+    /// while `stats` reported a clean bill.
+    /// </summary>
+    [Test]
+    public void Persistent_annotations_nobody_reads_are_counted_not_silently_dropped()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full", "persistentAnnotations": [
+          { "id": 1, "affectorId": 300, "affectedIds": [ 301 ],
+            "type": [ "AnnotationType_SomethingPersistentAndNew" ] } ] }
+        """));
+
+        Assert.That(t.UnknownPersistentAnnotations["AnnotationType_SomethingPersistentAndNew"],
+            Is.EqualTo(1));
+
+        // Diagnostic only. The streamed side emits an Unknown event that narrates as
+        // "[unhandled: …]"; doing that here would put hundreds of lines of engine
+        // bookkeeping into every transcript.
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False);
+        Assert.That(t.UnknownAnnotations, Is.Empty, "the two surfaces are counted apart");
+    }
+
+    /// <summary>
+    /// Types something reads, and types examined and deliberately dropped, both have to
+    /// stay out of the inventory — otherwise the list a future session works from is
+    /// mostly settled questions and the unmined ones are lost in it.
+    /// </summary>
+    [Test]
+    public void Handled_and_ignored_persistent_types_stay_out_of_the_inventory()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full", "persistentAnnotations": [
+          { "id": 1, "affectorId": 300, "affectedIds": [ 301 ],
+            "type": [ "AnnotationType_TargetSpec" ] },
+          { "id": 2, "affectorId": 300, "affectedIds": [ 301 ],
+            "type": [ "AnnotationType_EnteredZoneThisTurn" ] } ] }
+        """));
+
+        Assert.That(t.UnknownPersistentAnnotations, Is.Empty);
+    }
+
+    /// <summary>
+    /// Arena re-sends the whole persistent set with almost every message — 10,481
+    /// arrivals across the archive describe 10,339 distinct EnteredZoneThisTurn facts,
+    /// and per match the ratio is roughly ten to one. Counting arrivals would report how
+    /// chatty the log is rather than how much of it is unmined.
+    /// </summary>
+    [Test]
+    public void A_persistent_annotation_re_sent_every_message_is_counted_once()
+    {
+        const string body = """
+        { "type": "GameStateType_Full", "persistentAnnotations": [
+          { "id": 7, "affectorId": 300, "affectedIds": [ 301 ],
+            "type": [ "AnnotationType_SomethingPersistentAndNew" ] } ] }
+        """;
+        var t = Run(RoomLine, MulliganLine, Gre(body), Gre(body), Gre(body));
+
+        Assert.That(t.UnknownPersistentAnnotations["AnnotationType_SomethingPersistentAndNew"],
+            Is.EqualTo(1));
+    }
+
+    /// <summary>
+    /// The id alone is not a fact. Arena hands the same id back describing different
+    /// objects once what it stands for changes — the "entered this turn" set for a zone
+    /// keeps its id and swaps its members every turn — so the objects belong in the key.
+    /// </summary>
+    [Test]
+    public void The_same_persistent_id_describing_different_objects_is_counted_twice()
+    {
+        string Body(int affected) => Gre($$"""
+        { "type": "GameStateType_Full", "persistentAnnotations": [
+          { "id": 7, "affectorId": 300, "affectedIds": [ {{affected}} ],
+            "type": [ "AnnotationType_SomethingPersistentAndNew" ] } ] }
+        """);
+        var t = Run(RoomLine, MulliganLine, Body(301), Body(302));
+
+        Assert.That(t.UnknownPersistentAnnotations["AnnotationType_SomethingPersistentAndNew"],
+            Is.EqualTo(2));
+    }
+
+    /// <summary>
+    /// Persistent annotation ids are handed out afresh per game: 96 of the 121 distinct
+    /// ids in the archive's one Bo3 appear in both of its games. A set carried across the
+    /// boundary would report game two's persistent surface as already seen.
+    /// </summary>
+    [Test]
+    public void A_second_game_reusing_a_persistent_id_is_counted_again()
+    {
+        string Body(int game) => Gre($$"""
+        { "type": "GameStateType_Full", "gameInfo": { "gameNumber": {{game}} },
+          "persistentAnnotations": [
+            { "id": 7, "affectorId": 300, "affectedIds": [ 301 ],
+              "type": [ "AnnotationType_SomethingPersistentAndNew" ] } ] }
+        """);
+        var t = Run(RoomLine, MulliganLine, Body(1), Body(2));
+
+        Assert.That(t.UnknownPersistentAnnotations["AnnotationType_SomethingPersistentAndNew"],
+            Is.EqualTo(2));
+    }
 }

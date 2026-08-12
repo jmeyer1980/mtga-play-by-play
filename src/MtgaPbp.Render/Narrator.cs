@@ -395,6 +395,12 @@ public static class Narrator
             $"{(e.Detail is null ? "" : e.Detail + " ")}counter" +
             $"{(Math.Abs(e.Amount) == 1 ? "" : "s")}",
 
+        // Cause first and active, the same shape as "Split Up destroys Hare Apparent".
+        // Without it a trigger line names the ability and stops, so a reader watching
+        // three of them fire in a row has nothing to tell them apart or say what the
+        // player did to set them off.
+        EventKind.Triggered when e.SourceName is not null && e.CauseName is not null =>
+            $"{e.CauseName} triggers {e.SourceName}",
         EventKind.Triggered when e.SourceName is not null => $"{e.SourceName} triggers",
 
         // Passive on purpose. The same annotation covers an aura arriving on a creature
