@@ -203,7 +203,7 @@ public class NarratorTests
         [
             (EventKind.Destroyed, "Split Up destroys Hare Apparent"),
             (EventKind.Exiled,    "Split Up exiles Hare Apparent"),
-            (EventKind.Returned,  "Split Up returns Hare Apparent to hand"),
+            (EventKind.Returned,  "Split Up returns Hare Apparent"),
             (EventKind.Milled,    "Split Up mills Hare Apparent"),
             (EventKind.Countered, "Split Up counters Hare Apparent"),
         ];
@@ -224,7 +224,7 @@ public class NarratorTests
         [
             (EventKind.Destroyed, "Hare Apparent is destroyed"),
             (EventKind.Exiled,    "Hare Apparent is exiled"),
-            (EventKind.Returned,  "Hare Apparent returns to hand"),
+            (EventKind.Returned,  "Hare Apparent returns"),
             (EventKind.Countered, "Hare Apparent is countered"),
         ];
 
@@ -412,6 +412,40 @@ public class NarratorTests
         var lines = Narrator.Narrate(
             T(E(EventKind.ZoneMove) with { SourceName = null }), Density.Beats);
         Assert.That(lines.Any(l => string.IsNullOrWhiteSpace(l.Text)), Is.False);
+    }
+
+    /// <summary>
+    /// A return says where the card went, because "returns" alone covers two outcomes
+    /// that are close to opposites.
+    /// </summary>
+    /// <remarks>
+    /// This read "to hand" unconditionally. Across the archive a Return goes to hand 61
+    /// times and to the battlefield 47, so nearly half of them named a zone the card did
+    /// not go to — a flicker effect reported as a bounce, which reverses who came out
+    /// ahead on the exchange.
+    /// </remarks>
+    [TestCase("ZoneType_Hand", "Split Up returns Hare Apparent to hand")]
+    [TestCase("ZoneType_Battlefield", "Split Up returns Hare Apparent to the battlefield")]
+    [TestCase("ZoneType_Library", "Split Up returns Hare Apparent to the library")]
+    public void A_return_names_the_zone_the_card_went_to(string zone, string expected)
+    {
+        var lines = Narrator.Narrate(T(E(EventKind.Returned) with
+        {
+            SourceName = "Hare Apparent", CauseName = "Split Up", ToZone = zone
+        }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void A_return_with_no_recorded_zone_claims_none()
+    {
+        // Naming the commoner of two outcomes is guessing, and the guess would be wrong
+        // more than four times in ten.
+        var lines = Narrator.Narrate(
+            T(E(EventKind.Returned) with { SourceName = "Hare Apparent" }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Hare Apparent returns"));
     }
 
     // ---------- zone transfers with no verb of their own ----------

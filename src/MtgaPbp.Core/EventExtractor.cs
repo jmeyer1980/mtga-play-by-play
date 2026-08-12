@@ -855,9 +855,12 @@ public sealed class EventExtractor(ICardDb cards)
                 st.SawCard(causeName);
                 if (CardNames.IsPlaceholder(causeName)) causeName = null;
 
-                // Only the moves that have no verb of their own need to say where they
-                // went. A Destroy already reads as a destroy wherever the card landed.
-                string? Zone(string key) => kind == EventKind.ZoneMove &&
+                // Carried for the categories whose destination is not implied by the
+                // verb. A Destroy reads as a destroy wherever the card landed, but a
+                // Return goes to hand 61 times and to the battlefield 47 in this archive
+                // and used to claim "to hand" for all 108 of them.
+                var wantsZone = kind is EventKind.ZoneMove or EventKind.Returned;
+                string? Zone(string key) => wantsZone &&
                     GameStateTracker.DetailInt(a, key) is { } z &&
                     tracker.ZoneTypes.TryGetValue(z, out var name2) ? name2 : null;
 

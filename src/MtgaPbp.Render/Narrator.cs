@@ -372,6 +372,26 @@ public static class Narrator
         return $"{e.SourceName} {where}{how}";
     }
 
+    /// <summary>
+    /// Where a return went, when the log said.
+    /// </summary>
+    /// <remarks>
+    /// This used to read "to hand" unconditionally. Across the archive a Return goes to
+    /// hand 61 times and to the battlefield 47, so nearly half of them named a zone the
+    /// card did not go to — a flicker effect read as a bounce, which is close to the
+    /// opposite. A return with no destination recorded now says only that it returned,
+    /// because naming the commoner of two outcomes is guessing.
+    /// </remarks>
+    private static string ReturnedTo(GameEvent e) => e.ToZone switch
+    {
+        "ZoneType_Hand" => " to hand",
+        "ZoneType_Battlefield" => " to the battlefield",
+        "ZoneType_Library" => " to the library",
+        "ZoneType_Graveyard" => " to the graveyard",
+        "ZoneType_Exile" => " to exile",
+        _ => ""
+    };
+
     private static string? Phrase(GameEvent e, Transcript t) => e.Kind switch
     {
         EventKind.TurnStart =>
@@ -415,8 +435,8 @@ public static class Narrator
 
         EventKind.Returned when e.SourceName is not null =>
             e.CauseName is not null
-                ? $"{e.CauseName} returns {e.SourceName} to hand"
-                : $"{e.SourceName} returns to hand",
+                ? $"{e.CauseName} returns {e.SourceName}{ReturnedTo(e)}"
+                : $"{e.SourceName} returns{ReturnedTo(e)}",
 
         EventKind.Sacrificed when e.SourceName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "sacrifice", "sacrifices", t)} {e.SourceName}",
