@@ -331,6 +331,47 @@ public static class Narrator
     private static string Elapsed(GameEvent e, IReadOnlyDictionary<int, TimeSpan> longTurns) =>
         longTurns.TryGetValue(e.Seq, out var d) ? $" · {TurnClock.Spoken(d)} elapsed" : "";
 
+    /// <summary>
+    /// A zone transfer whose category carries no verb of its own, said as where the card
+    /// ended up.
+    /// </summary>
+    /// <remarks>
+    /// These used to read "Forest moves (Put)" — the only place in the transcript where
+    /// Arena's own vocabulary reached the reader, across 153 lines of the archive. The
+    /// category is bookkeeping: "Put" covers a fetchland finding a Forest, a mulligan
+    /// bottoming a card and a tutor putting one in hand, which have nothing in common
+    /// except that the engine had no better word. The destination is the part worth
+    /// reading, and it is in the same annotation.
+    /// <para>
+    /// A category that names a mechanic rather than the bare fact of moving is kept
+    /// alongside it, so "Warp" is not flattened into a plain exile and a mechanic added
+    /// in some future set surfaces rather than disappearing. A move that begins and ends
+    /// in the same zone is a shuffle or a reorder and says nothing worth a line.
+    /// </para>
+    /// </remarks>
+    private static string? ZoneMove(GameEvent e)
+    {
+        if (e.ToZone is null) return $"{e.SourceName} moves ({e.Detail})";
+        if (e.ToZone == e.FromZone) return null;
+
+        var where = e.ToZone switch
+        {
+            "ZoneType_Battlefield" => "is put onto the battlefield",
+            "ZoneType_Hand" => "is put into hand",
+            "ZoneType_Library" => "is put into the library",
+            "ZoneType_Graveyard" => "is put into the graveyard",
+            "ZoneType_Exile" => "is exiled",
+            "ZoneType_Stack" => "goes on the stack",
+            _ => null
+        };
+        if (where is null) return $"{e.SourceName} moves ({e.Detail})";
+
+        // "Put" is the engine saying only that something moved, and "nil" is it saying
+        // nothing at all. Neither adds to a sentence that already names the destination.
+        var how = e.Detail is null or "" or "Put" or "nil" ? "" : $" ({e.Detail})";
+        return $"{e.SourceName} {where}{how}";
+    }
+
     private static string? Phrase(GameEvent e, Transcript t) => e.Kind switch
     {
         EventKind.TurnStart =>
@@ -448,8 +489,7 @@ public static class Narrator
         EventKind.Unknown => $"[unhandled: {e.RawType}]",
 
         EventKind.GameEnd => e.Detail,
-        EventKind.ZoneMove when e.SourceName is not null =>
-            $"{e.SourceName} moves ({e.Detail})",
+        EventKind.ZoneMove when e.SourceName is not null => ZoneMove(e),
 
         _ => null
     };

@@ -112,6 +112,19 @@ public sealed record GameEvent
     public int? CauseInstanceId { get; init; }
     public string? CauseName { get; init; }
 
+    /// <summary>
+    /// Where a zone transfer went, and where it came from, as Arena's zone type names.
+    /// Only set on <see cref="EventKind.ZoneMove"/> — every other transfer category
+    /// already says where it went by being a destroy, an exile, a draw or a mill.
+    /// </summary>
+    /// <remarks>
+    /// Null when the log moved a card through a zone it never described. The narrator
+    /// falls back to naming the raw category there, which is worse to read but is at
+    /// least still true.
+    /// </remarks>
+    public string? FromZone { get; init; }
+    public string? ToZone { get; init; }
+
     /// <summary>Life totals by seat, carried on TurnStart so a turn header can show
     /// the score entering the turn. Zero when not applicable.</summary>
     public int LifeSeat1 { get; init; }

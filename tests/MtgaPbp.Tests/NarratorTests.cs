@@ -413,4 +413,61 @@ public class NarratorTests
             T(E(EventKind.ZoneMove) with { SourceName = null }), Density.Beats);
         Assert.That(lines.Any(l => string.IsNullOrWhiteSpace(l.Text)), Is.False);
     }
+
+    // ---------- zone transfers with no verb of their own ----------
+
+    private static string? Moved(string? from, string? to, string? category) =>
+        Narrator.Narrate(T(E(EventKind.ZoneMove) with
+        {
+            SourceName = "Plains",
+            FromZone = from,
+            ToZone = to,
+            Detail = category
+        }), Density.Verbose).SingleOrDefault()?.Text;
+
+    /// <summary>
+    /// These read as where the card ended up, because the category does not say. "Put"
+    /// covers a fetchland finding a Forest, a mulligan bottoming a card and a tutor
+    /// putting one in hand — the destination is the only part that separates them.
+    /// </summary>
+    [TestCase("ZoneType_Library", "ZoneType_Battlefield", "Plains is put onto the battlefield")]
+    [TestCase("ZoneType_Library", "ZoneType_Hand", "Plains is put into hand")]
+    [TestCase("ZoneType_Hand", "ZoneType_Library", "Plains is put into the library")]
+    [TestCase("ZoneType_Library", "ZoneType_Graveyard", "Plains is put into the graveyard")]
+    [TestCase("ZoneType_Battlefield", "ZoneType_Exile", "Plains is exiled")]
+    public void A_move_with_no_verb_of_its_own_says_where_the_card_went(
+        string from, string to, string expected) =>
+        Assert.That(Moved(from, to, "Put"), Is.EqualTo(expected));
+
+    [Test]
+    public void A_category_that_names_a_mechanic_survives_the_rephrasing()
+    {
+        // Warp exiles a creature that is coming back. Flattening it into a plain exile
+        // would drop the only word that says so, and a mechanic printed in some future
+        // set should surface rather than disappear.
+        Assert.That(Moved("ZoneType_Battlefield", "ZoneType_Exile", "Warp"),
+            Is.EqualTo("Plains is exiled (Warp)"));
+
+        // "Put" and "nil" are the engine saying only that something moved, or nothing
+        // at all. Neither belongs in a sentence that already names the destination.
+        Assert.That(Moved("ZoneType_Stack", "ZoneType_Graveyard", "nil"),
+            Is.EqualTo("Plains is put into the graveyard"));
+    }
+
+    [Test]
+    public void A_move_that_begins_and_ends_in_one_zone_says_nothing()
+    {
+        // A shuffle or a reorder. The card did not go anywhere a reader can see.
+        Assert.That(Moved("ZoneType_Library", "ZoneType_Library", "Put"), Is.Null);
+    }
+
+    [Test]
+    public void A_move_through_a_zone_the_log_never_described_still_reports_something()
+    {
+        // Worse to read than the phrased form and still true, which beats staying silent
+        // about a card that moved.
+        Assert.That(Moved("ZoneType_Library", null, "Put"), Is.EqualTo("Plains moves (Put)"));
+        Assert.That(Moved(null, "ZoneType_Sideboard", "Put"),
+            Is.EqualTo("Plains moves (Put)"), "and the same for a zone with no phrasing");
+    }
 }

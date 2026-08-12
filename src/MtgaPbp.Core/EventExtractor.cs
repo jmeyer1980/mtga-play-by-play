@@ -855,6 +855,12 @@ public sealed class EventExtractor(ICardDb cards)
                 st.SawCard(causeName);
                 if (CardNames.IsPlaceholder(causeName)) causeName = null;
 
+                // Only the moves that have no verb of their own need to say where they
+                // went. A Destroy already reads as a destroy wherever the card landed.
+                string? Zone(string key) => kind == EventKind.ZoneMove &&
+                    GameStateTracker.DetailInt(a, key) is { } z &&
+                    tracker.ZoneTypes.TryGetValue(z, out var name2) ? name2 : null;
+
                 ev = Base(tracker, ts, kind) with
                 {
                     SourceInstanceId = objId,
@@ -862,7 +868,9 @@ public sealed class EventExtractor(ICardDb cards)
                     ActorSeat = controller is > 0 ? controller : tracker.ActiveSeat,
                     CauseInstanceId = causeName is null ? null : cause,
                     CauseName = causeName,
-                    Detail = category
+                    Detail = category,
+                    FromZone = Zone("zone_src"),
+                    ToZone = Zone("zone_dest")
                 };
             }
             else if (type == "AnnotationType_AbilityInstanceCreated")
