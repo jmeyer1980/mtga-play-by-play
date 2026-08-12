@@ -90,14 +90,15 @@ public static class GamePageRenderer
 
     /// <summary>
     /// Renders one narrated line so it reads correctly aloud as well as on screen.
-    /// Two notations need help. The narrator folds repeats into a trailing "×3", and
+    /// Three notations need help. The narrator folds repeats into a trailing "×3", and
     /// screen readers at their default punctuation level either skip U+00D7 or read it
     /// as "times" depending on the synthesiser, so "triggers ×3" can arrive as
     /// "triggers 3" — indistinguishable from a turn number. Fields are separated with
     /// "·", which is skipped just as readily, running "You 20 · Opponent 20" together
-    /// into one number-soup. Both glyphs stay for sighted readers and are taken out of
-    /// the accessibility tree; speech gets words and a comma instead, which is what
-    /// actually makes a synthesiser pause.
+    /// into one number-soup. A buff reads "1/1 → 6/6", and an arrow that is dropped
+    /// leaves two statlines with nothing between them. Every glyph stays for sighted
+    /// readers and is taken out of the accessibility tree; speech gets words and a comma
+    /// instead, which is what actually makes a synthesiser pause.
     /// </summary>
     private static string Speech(string text)
     {
@@ -113,9 +114,19 @@ public static class GamePageRenderer
         return Separated(text);
     }
 
-    private static string Separated(string text) => string.Join(
-        """<span aria-hidden="true"> · </span><span class="vh">, </span>""",
-        text.Split(" · ").Select(E));
+    /// <summary>
+    /// Splits on each glyph before encoding rather than after: <see cref="E"/> turns
+    /// non-ASCII into numeric references, so "·" is no longer there to find by the time
+    /// the text is safe to emit.
+    /// </summary>
+    private static string Separated(string text) =>
+        string.Join(Spoken(" · ", ", "), text.Split(" · ").Select(Became));
+
+    private static string Became(string text) =>
+        string.Join(Spoken(" → ", " becomes "), text.Split(" → ").Select(E));
+
+    private static string Spoken(string glyph, string words) =>
+        $"""<span aria-hidden="true">{glyph}</span><span class="vh">{words}</span>""";
 
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 

@@ -13,6 +13,8 @@
     "810954": "Carrot Cake",
     "810992": "Hop to It",
     "812286": "Ghostly Dancers",
+    "812323": "Overlord of the Mistmoors",
+    "812369": "Toby, Beastie Befriender",
     "823098": "Hinterland Sanctifier",
     "1117188": "Crowd of True Believers"
   },
@@ -30,6 +32,13 @@
       "Power": "",
       "Toughness": "",
       "IsToken": false
+    },
+    "91843": {
+      "Name": "Rabbit",
+      "Types": "2",
+      "Power": "1",
+      "Toughness": "1",
+      "IsToken": true
     },
     "92970": {
       "Name": "Deal Gone Bad",
@@ -52,6 +61,13 @@
       "Toughness": "1",
       "IsToken": false
     },
+    "93848": {
+      "Name": "Ajani\u0027s Pridemate",
+      "Types": "2",
+      "Power": "2",
+      "Toughness": "2",
+      "IsToken": false
+    },
     "94126": {
       "Name": "Temple of Enlightenment",
       "Types": "5",
@@ -64,6 +80,13 @@
       "Types": "5",
       "Power": "",
       "Toughness": "",
+      "IsToken": false
+    },
+    "104905": {
+      "Name": "Crowd of True Believers",
+      "Types": "2",
+      "Power": "1",
+      "Toughness": "2",
       "IsToken": false
     }
   },

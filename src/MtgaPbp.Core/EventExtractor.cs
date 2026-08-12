@@ -90,6 +90,19 @@ public sealed class EventExtractor(ICardDb cards)
         /// <summary>Last board text emitted per seat, so unchanged boards stay quiet.</summary>
         public readonly Dictionary<int, string> LastBoard = [];
 
+        /// <summary>
+        /// The creatures each board line lists, and the statline and flags already
+        /// worked out for each, keyed by the line's sequence number. Held aside because
+        /// only the tracker knows what was in play at that moment, while only the
+        /// finished match knows which of them need telling apart by name.
+        /// </summary>
+        public readonly Dictionary<int, List<(int Id, string Stats)>> Boards = [];
+
+        /// <summary>
+        /// Appends an event and stamps it with its position, so <c>Events[n].Seq == n</c>.
+        /// The deferred passes index straight into the list by sequence number and
+        /// <see cref="Boards"/> is keyed by one, so that has to stay true.
+        /// </summary>
         public void Add(GameEvent e) => Events.Add(e with { Seq = Seq++ });
 
         /// <summary>Names that could not be resolved, by how often each was emitted.</summary>
@@ -159,14 +172,24 @@ public sealed class EventExtractor(ICardDb cards)
 
                 if (Json.Obj(m, "gameStateMessage") is not { } gsm) continue;
 
-                tracker.Apply(gsm);
+                tracker.Apply(gsm, st.Seq);
                 EmitCombat(tracker, ts, st);
                 foreach (var a in Json.Array(gsm, "annotations"))
                     EmitFor(a, tracker, ts, st);
             }
         }
 
-        FillTargets(tracker, st);
+        // Turn boundaries, plus the end of the match so the last turn is looked at too.
+        var boundaries = st.Events
+            .Where(e => e.Kind == EventKind.TurnStart)
+            .Select(e => e.Seq)
+            .Append(st.Seq)
+            .ToList();
+
+        var labels = PermanentLabels.Build(tracker, cards, boundaries);
+        NamePermanents(tracker, labels, st);
+        NameBoards(tracker, labels, st);
+        FillTargets(tracker, labels, st);
 
         var you = (localSeat ?? fallbackSeat) is { } seat && seatMeta.TryGetValue(seat, out var y)
             ? y : null;
@@ -253,22 +276,26 @@ public sealed class EventExtractor(ICardDb cards)
 
             var parts = creatures.Select(c =>
             {
-                var text = tracker.NameOf(c.InstanceId);
+                var text = "";
                 if (c.Power is { } p && c.Toughness is { } t) text += $" {p}/{t}";
 
                 var flags = new List<string>();
                 if (c.Damage > 0) flags.Add($"{c.Damage} dmg");
                 if (c.IsTapped) flags.Add("tapped");
                 if (flags.Count > 0) text += $" ({string.Join(", ", flags)})";
-                return text;
-            });
+                return (c.InstanceId, Stats: text);
+            }).ToList();
 
             // A board that has not moved since the last turn tells you nothing, and
-            // repeating it verbatim is most of the noise these lines can generate.
-            var detail = string.Join(", ", parts);
+            // repeating it verbatim is most of the noise these lines can generate. The
+            // comparison uses the bare names: the letters a permanent may pick up later
+            // are stable, so they never make an unchanged board look changed.
+            var detail = string.Join(", ",
+                parts.Select(p => tracker.NameOf(p.InstanceId) + p.Stats));
             if (st.LastBoard.TryGetValue(seat, out var previous) && previous == detail) continue;
             st.LastBoard[seat] = detail;
 
+            var seq = st.Seq;
             st.Add(new GameEvent
             {
                 TimestampMs = ts,
@@ -278,6 +305,7 @@ public sealed class EventExtractor(ICardDb cards)
                 ActorSeat = seat,
                 Detail = detail
             });
+            st.Boards[seq] = parts;
         }
     }
 
@@ -543,27 +571,118 @@ public sealed class EventExtractor(ICardDb cards)
     }
 
     /// <summary>
-    /// Attaches targets to spells once the whole match has been read. TargetSpec
-    /// usually arrives in a later message than the cast it belongs to, so this cannot
-    /// be done while the cast is being emitted — at that moment the target is not yet
-    /// known.
+    /// Re-names every permanent an event mentions, now that the whole match is known.
+    /// Deferred for the same reason <see cref="FillTargets"/> is: whether two Rabbits
+    /// need telling apart is a fact about the match, not about the message the line came
+    /// out of. <see cref="PermanentLabels"/> holds the rule.
     /// </summary>
-    private static void FillTargets(GameStateTracker tracker, Emit st)
+    private static void NamePermanents(
+        GameStateTracker tracker, PermanentLabels labels, Emit st)
+    {
+        for (var i = 0; i < st.Events.Count; i++)
+        {
+            var e = st.Events[i];
+            var source = Named(tracker, labels, e.SourceInstanceId, e.SourceName, e.Seq);
+            var target = Named(tracker, labels, e.TargetInstanceId, e.TargetName, e.Seq);
+            var cause = Named(tracker, labels, e.CauseInstanceId, e.CauseName, e.Seq);
+
+            if (source == e.SourceName && target == e.TargetName && cause == e.CauseName)
+                continue;
+
+            st.Events[i] = e with
+            {
+                SourceName = source,
+                TargetName = target,
+                CauseName = cause
+            };
+        }
+    }
+
+    /// <summary>
+    /// The label for one role on one event, or the name untouched when there is nothing
+    /// to add to it.
+    /// </summary>
+    private static string? Named(
+        GameStateTracker tracker, PermanentLabels labels, int? instanceId, string? name, int seq)
+    {
+        // Seats 1 and 2 are players, not objects. A name the emitter composed rather
+        // than looked up — "Carrot Cake's ability" reached through a different path, or
+        // a placeholder — is left exactly as it was.
+        if (instanceId is not { } id || id <= 2 || name is null) return name;
+        if (!string.Equals(name, tracker.NameOf(id), StringComparison.Ordinal)) return name;
+        return labels.Label(id, seq);
+    }
+
+    /// <summary>
+    /// Rebuilds the end-of-turn board lines with the letters that tell same-named
+    /// creatures apart. The statlines and flags were worked out when the line was
+    /// emitted, because only then was that state still around to read.
+    /// </summary>
+    private static void NameBoards(GameStateTracker tracker, PermanentLabels labels, Emit st)
+    {
+        foreach (var (seq, creatures) in st.Boards)
+        {
+            st.Events[seq] = st.Events[seq] with
+            {
+                Detail = string.Join(", ", creatures.Select(c =>
+                    tracker.NameOf(c.Id) + labels.Suffix(c.Id, seq) + c.Stats))
+            };
+        }
+    }
+
+    /// <summary>
+    /// Attaches targets to spells once the whole match has been read, and says what the
+    /// spell did to them. TargetSpec usually arrives in a later message than the cast it
+    /// belongs to, so this cannot be done while the cast is being emitted — at that
+    /// moment the target is not yet known, and neither is what it became.
+    /// </summary>
+    private static void FillTargets(GameStateTracker tracker, PermanentLabels labels, Emit st)
     {
         for (var i = 0; i < st.Events.Count; i++)
         {
             var e = st.Events[i];
             if (e.Kind != EventKind.SpellCast || e.SourceInstanceId is not { } id) continue;
 
-            var named = tracker.TargetsOf(id)
-                .Select(tracker.NameOf)
-                .Where(n => !CardNames.IsPlaceholder(n))
-                .ToList();
+            var targets = tracker.TargetsOf(id);
+            if (targets.Count == 0) continue;
+
+            // Layers are applied in the message that carries the resolution, not in the
+            // one that carries the cast, so the "after" only exists from there on.
+            var settled = ResolvedAt(tracker, st, e) ?? e.Seq;
+
+            var named = new List<string>();
+            foreach (var target in targets)
+            {
+                var name = tracker.NameOf(target);
+                if (CardNames.IsPlaceholder(name)) continue;
+                st.SawCard(name);
+                named.Add(labels.Buff(target, e.Seq, settled));
+            }
             if (named.Count == 0) continue;
 
-            foreach (var n in named) st.SawCard(n);
             st.Events[i] = e with { TargetName = string.Join(" and ", named) };
         }
+    }
+
+    /// <summary>
+    /// Where in the event stream this spell finished resolving. The cast and the
+    /// resolution are two annotations about the same object, so they are matched on its
+    /// instance id through the alias map. Null when it never resolved — countered, or a
+    /// log that stops mid-match — in which case there is no "after" to report.
+    /// </summary>
+    private static int? ResolvedAt(GameStateTracker tracker, Emit st, GameEvent cast)
+    {
+        if (cast.SourceInstanceId is not { } id) return null;
+        var spell = tracker.Resolve(id);
+
+        for (var i = cast.Seq + 1; i < st.Events.Count; i++)
+        {
+            var e = st.Events[i];
+            if (e.Kind == EventKind.Resolved && e.SourceInstanceId is { } other &&
+                tracker.Resolve(other) == spell)
+                return e.Seq;
+        }
+        return null;
     }
 
     /// <summary>How the match ended, naming a concede or timeout rather than hiding it.</summary>

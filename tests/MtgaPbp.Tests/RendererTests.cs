@@ -26,6 +26,20 @@ public class RendererTests
         ]
     };
 
+    /// <summary>
+    /// A transcript carrying a before-and-after statline, so what a synthesiser does
+    /// with the arrow can be asserted.
+    /// </summary>
+    internal static Transcript Buffed() => Sample() with
+    {
+        Events =
+        [
+            new GameEvent { Seq = 0, Kind = EventKind.TurnStart, Turn = 1, ActorSeat = 1 },
+            new GameEvent { Seq = 1, Kind = EventKind.SpellCast, Turn = 1, ActorSeat = 1,
+                            SourceName = "Ethereal Armor", TargetName = "Rabbit A (1/1 → 6/6)" },
+        ]
+    };
+
     internal static Transcript Sample(bool incomplete = false) => new(
         "abc-123", 1786326812781, 1786327812781, "Ladder",
         new PlayerInfo(1, "ME", "PlayerOne", "SteamWindows"),
@@ -280,6 +294,7 @@ public class RendererTests
         Assert.DoesNotThrow(() => Markup.Parse(GameHtml()));
         Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Sample(incomplete: true))));
         Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Repeating())));
+        Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Buffed())));
     }
 
     [Test]
@@ -547,6 +562,7 @@ public class RendererTests
                  {
                      IndexHtml(), IndexHtml(incomplete: true),
                      GameHtml(), GamePageRenderer.Render(Repeating()),
+                     GamePageRenderer.Render(Buffed()),
                  })
         {
             foreach (var (before, after) in Markup.Seams(Markup.Parse(html)))
@@ -588,6 +604,25 @@ public class RendererTests
         Assert.That(Markup.Spoken(heading), Does.Contain("(You 20, Opponent 17)"));
         Assert.That(heading.Value, Does.Contain("(You 20 · "),
             "the dot still has to be there to look at");
+    }
+
+    [Test]
+    public void GamePage_gives_the_buff_arrow_something_to_say()
+    {
+        // "Rabbit A (1/1 → 6/6)" is the point of the whole line, and a synthesiser that
+        // drops U+2192 reads it as two statlines with nothing between them. The glyph
+        // stays for the eye and the word is supplied for the ear, exactly as the "×" and
+        // "·" notations already are.
+        var li = Markup.Parse(GamePageRenderer.Render(Buffed())).Descendants("li").First();
+
+        Assert.That(Markup.Spoken(li),
+            Is.EqualTo("You cast Ethereal Armor, targeting Rabbit A (1/1 becomes 6/6)"));
+
+        // The glyph is still in the markup, in its own hidden span — which is also what
+        // the copy button strips the spoken text back down to, so pasted markdown reads
+        // "(1/1 → 6/6)" and matches the markdown export.
+        var glyph = li.Elements("span").Single(s => s.Attribute("aria-hidden") is not null);
+        Assert.That(glyph.Value, Is.EqualTo(" → "));
     }
 
     [Test]

@@ -25,6 +25,20 @@ public sealed class TrackedObject
     public readonly Dictionary<int, int> Counters = [];
 }
 
+/// <summary>
+/// What a permanent's statline was at one point in the event stream, stamped with the
+/// sequence number of the next event to be emitted when it changed.
+/// </summary>
+/// <remarks>
+/// A transcript has to say what a creature was <em>at the time</em>, not what it ended
+/// the match as: the Rabbit that was 5/5 on turn 27 is 6/6 by turn 29, and printing the
+/// final value against the earlier line would be a lie. <see cref="InPlay"/> is carried
+/// because power and toughness are only a claim worth making about a permanent on the
+/// battlefield — the same card sitting on the stack or in a graveyard still reports
+/// numbers, and they mean nothing there.
+/// </remarks>
+public readonly record struct StatSample(int Stamp, int Power, int Toughness, bool InPlay);
+
 public sealed class GameStateTracker(ICardDb cards)
 {
     private readonly Dictionary<int, TrackedObject> _objects = [];
@@ -32,6 +46,8 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly Dictionary<int, int> _life = [];
     private readonly Dictionary<int, string> _zoneTypes = [];
     private readonly Dictionary<int, List<int>> _targets = [];   // source id -> target ids
+    private readonly Dictionary<int, List<StatSample>> _stats = [];
+    private int _stamp;
 
     public int Turn { get; private set; }
     public int ActiveSeat { get; private set; }
@@ -58,8 +74,21 @@ public sealed class GameStateTracker(ICardDb cards)
     /// <summary>Creatures that declared a block in the message just applied.</summary>
     public IReadOnlyList<int> NewBlockers => _newBlockers;
 
-    public void Apply(JsonElement gsm)
+    /// <summary>
+    /// Every statline change seen, under the instance id Arena used at the time. Ids
+    /// change when a card moves zones, so a consumer that wants one timeline per card
+    /// has to fold these onto <see cref="Resolve"/>d ids itself.
+    /// </summary>
+    public IEnumerable<(int InstanceId, IReadOnlyList<StatSample> Samples)> StatHistory =>
+        _stats.OrderBy(p => p.Key).Select(p => (p.Key, (IReadOnlyList<StatSample>)p.Value));
+
+    /// <param name="stamp">
+    /// The sequence number the next event out of this message will carry, so statline
+    /// changes can be placed in the event stream. Zero when nobody is emitting events.
+    /// </param>
+    public void Apply(JsonElement gsm, int stamp = 0)
     {
+        _stamp = stamp;
         _newAttackers.Clear();
         _newBlockers.Clear();
 
@@ -128,6 +157,10 @@ public sealed class GameStateTracker(ICardDb cards)
         if (!_objects.TryGetValue(id, out var obj))
             _objects[id] = obj = new TrackedObject { InstanceId = id };
 
+        var wasPower = obj.Power;
+        var wasToughness = obj.Toughness;
+        var wasInPlay = InPlay(obj);
+
         if (Json.Int(go, "grpId") is { } grp) obj.GrpId = grp;
         if (Json.Int(go, "name") is { } nm) obj.NameLocId = nm;
         if (Json.Str(go, "type") is { } ty) obj.Type = ty;
@@ -146,6 +179,19 @@ public sealed class GameStateTracker(ICardDb cards)
         foreach (var ct in Json.Array(go, "cardTypes"))
             if (ct.ValueKind == JsonValueKind.String) types.Add(ct.GetString()!);
         if (types.Count > 0) obj.CardTypes = types;
+
+        // Entering and leaving play are recorded alongside the numbers themselves: a
+        // creature can arrive on the battlefield already at its printed statline, and
+        // without that sample there would be no evidence it was ever in play at all.
+        if (obj.Power is { } power && obj.Toughness is { } toughness)
+        {
+            var nowInPlay = InPlay(obj);
+            if (power != wasPower || toughness != wasToughness || nowInPlay != wasInPlay)
+            {
+                if (!_stats.TryGetValue(id, out var log)) _stats[id] = log = [];
+                log.Add(new StatSample(_stamp, power, toughness, nowInPlay));
+            }
+        }
 
         if (Json.Obj(go, "attackInfo") is { } ai && Json.Int(ai, "targetId") is { } tid)
             obj.AttackTargetId = tid;
@@ -189,6 +235,9 @@ public sealed class GameStateTracker(ICardDb cards)
             o.BlockedAttackerIds = [];
         }
     }
+
+    private bool InPlay(TrackedObject obj) =>
+        _zoneTypes.TryGetValue(obj.ZoneId, out var zone) && zone == "ZoneType_Battlefield";
 
     /// <summary>power/toughness arrive either as a number or as { "value": n }.</summary>
     private static int? ReadStat(JsonElement parent, string property)

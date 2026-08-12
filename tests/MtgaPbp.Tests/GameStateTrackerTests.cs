@@ -369,6 +369,33 @@ public class GameStateTrackerTests
     }
 
     [Test]
+    public void Apply_records_every_statline_change_with_the_stamp_it_was_given()
+    {
+        // The history is what lets a line say what a creature was at the time rather
+        // than what it ended the match as, so each sample has to carry the caller's
+        // sequence number and whether the permanent was in play when it changed.
+        var t = NewTracker();
+        string Board(int power) => $$"""
+            { "type": "GameStateType_Full",
+              "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "gameObjects": [ { "instanceId": 50, "grpId": 1, "name": 648, "zoneId": 28,
+                "cardTypes": [ "CardType_Creature" ],
+                "power": {{power}}, "toughness": 1 } ] }
+            """;
+
+        t.Apply(Msg(Board(1)), stamp: 7);
+        t.Apply(Msg(Board(1)), stamp: 9);   // unchanged: nothing new to record
+        t.Apply(Msg(Board(5)), stamp: 12);
+
+        var samples = t.StatHistory.Single(h => h.InstanceId == 50).Samples;
+        Assert.That(samples.Select(s => (s.Stamp, s.Power, s.InPlay)), Is.EqualTo(new[]
+        {
+            (7, 1, true),
+            (12, 5, true)
+        }));
+    }
+
+    [Test]
     public void Apply_records_zone_types_by_id()
     {
         var t = NewTracker();

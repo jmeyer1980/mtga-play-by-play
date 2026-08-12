@@ -20,7 +20,7 @@
 - Hinterland Sanctifier's ability triggers
 - Opponent gains 1 life
 - Deal Gone Bad triggers
-- Ajani's Pridemate gets 1 +1/+1 counter
+- Ajani's Pridemate 3/3 gets 1 +1/+1 counter
 - Opponent attacks with Hinterland Sanctifier
 - You cast Elspeth's Smite, targeting Hinterland Sanctifier
 - Elspeth's Smite deals 3 damage to Hinterland Sanctifier
@@ -39,8 +39,8 @@
 - Opponent casts Hop to It
 - Hop to It creates Rabbit ×3
 - Hop to It resolves
-- Opponent attacks with Ajani's Pridemate
-- Ajani's Pridemate deals 3 damage to You
+- Opponent attacks with Ajani's Pridemate 3/3
+- Ajani's Pridemate 3/3 deals 3 damage to You
 - You lose 3 life
   *Opponent controls: Ajani's Pridemate 3/3 (tapped), Rabbit 1/1, Rabbit 1/1, Rabbit 1/1*
 
@@ -59,12 +59,12 @@
 - Leonin Vanguard's ability triggers
 - Opponent gains 1 life
 - Deal Gone Bad triggers
-- Ajani's Pridemate gets 1 +1/+1 counter
-- Opponent attacks with Ajani's Pridemate
+- Ajani's Pridemate 4/4 gets 1 +1/+1 counter
+- Opponent attacks with Ajani's Pridemate 4/4
 - Opponent attacks with Rabbit ×3
-- Rabbit blocks Ajani's Pridemate
-- Ajani's Pridemate deals 4 damage to Rabbit
-- Rabbit deals 1 damage to Ajani's Pridemate
+- Rabbit blocks Ajani's Pridemate 4/4
+- Ajani's Pridemate 4/4 deals 4 damage to Rabbit
+- Rabbit deals 1 damage to Ajani's Pridemate 4/4
 - Rabbit deals 1 damage to You ×3
 - You lose 3 life
   *Opponent controls: Ajani's Pridemate 4/4 (1 dmg, tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1*
@@ -83,13 +83,13 @@
 - Leonin Vanguard's ability triggers
 - Opponent gains 1 life
 - Deal Gone Bad triggers
-- Ajani's Pridemate gets 1 +1/+1 counter
-- Opponent attacks with Ajani's Pridemate
+- Ajani's Pridemate 5/5 gets 1 +1/+1 counter
+- Opponent attacks with Ajani's Pridemate 5/5
 - Opponent attacks with Rabbit ×3
-- Opponent attacks with Leonin Vanguard
-- Rabbit blocks Ajani's Pridemate
-- Ajani's Pridemate deals 5 damage to Rabbit
-- Rabbit deals 1 damage to Ajani's Pridemate
+- Opponent attacks with Leonin Vanguard 2/2
+- Rabbit blocks Ajani's Pridemate 5/5
+- Ajani's Pridemate 5/5 deals 5 damage to Rabbit
+- Rabbit deals 1 damage to Ajani's Pridemate 5/5
 - Rabbit deals 1 damage to You ×3
 - You lose 3 life
   *You control: Rabbit 1/1, Rabbit 1/1*
@@ -100,7 +100,7 @@
 - You play Plains
 - You cast Caretaker's Talent
 - Caretaker's Talent resolves
-- You cast Ethereal Armor, targeting Rabbit
+- You cast Ethereal Armor, targeting Rabbit (1/1 → 3/3)
 - Ethereal Armor resolves
   *You control: Rabbit 3/3, Rabbit 1/1*
 
@@ -115,5 +115,5 @@
 - Leonin Vanguard's ability triggers
 - Opponent gains 1 life
 - Deal Gone Bad triggers
-- Ajani's Pridemate gets 1 +1/+1 counter
+- Ajani's Pridemate 6/6 gets 1 +1/+1 counter
 - You concede — opponent wins the match
