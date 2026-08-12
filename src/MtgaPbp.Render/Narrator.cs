@@ -17,19 +17,27 @@ public enum Density { Beats, Verbose }
 /// <param name="Anchor">
 /// The heading's id, less the prefix that tells the two densities apart. Empty on
 /// everything that is not a heading.
+/// </param>
+/// <param name="Level">
+/// The heading's rank, and meaningless on anything that is not a heading. A single-game
+/// match keeps every heading at 2, directly under the match title. A multi-game match
+/// puts its games at 2 and demotes their openings and turns to 3, so that a game is the
+/// container its divider already looks like.
 /// <para>
-/// Every heading is an <c>h2</c>, game headings included. Nesting a game's turns under
-/// it as <c>h3</c> would describe the document more truthfully, but the page's styling
-/// deliberately shrinks <c>h2</c> below the browser default, so an unstyled <c>h3</c>
-/// turn heading would come out larger than the game heading above it — and the style
-/// rule that would fix that sits in a stylesheet shared by every page, including the
-/// single-game ones that must not change. A flat run of headings still walks correctly
-/// from heading to heading, passing "Game 2" on the way into the second game's turn one.
+/// This used to be flat — every heading an <c>h2</c>, game headings included — on the
+/// grounds that a run of same-rank headings still walks past "Game 2" on the way into
+/// the second game's turn one, and that the page shrinks <c>h2</c> below the browser
+/// default so an unstyled <c>h3</c> would come out larger than the game heading above
+/// it. Walking past a heading is not the same as being able to tell what contains what:
+/// rank is the only thing that says a turn belongs to a game, and flattening it left 56
+/// equal-rank headings on a three-game page. The styling objection was real and is
+/// answered by styling <c>h3</c> rather than by leaving the structure wrong — single-game
+/// pages emit no <c>h3</c> at all, so the added rule cannot reach them.
 /// </para>
 /// </param>
 public sealed record Line(
     int Turn, int Indent, string Text, bool IsTurnHeader, bool IsBoard = false,
-    int Game = 0, string Anchor = "");
+    int Game = 0, string Anchor = "", int Level = 2);
 
 public static class Narrator
 {
@@ -77,9 +85,13 @@ public static class Narrator
         // single-game transcript, and reads like one.
         var multi = t.Games.Count > 1;
 
+        // Everything below a game heading is one rank deeper than the game, and a match
+        // with no game headings has nothing to be deeper than.
+        var under = multi ? 3 : 2;
+
         // Both densities get the opening. Nothing about it is detail you would want
         // hidden, and the two views are meant to be the same match at two zoom levels.
-        if (!multi) AppendOpening(lines, t, t.Opening, game: 0, OpeningAnchor);
+        if (!multi) AppendOpening(lines, t, t.Opening, game: 0, OpeningAnchor, under);
 
         // Only the turns worth remarking on, so a header carries a duration where that
         // is the interesting thing about the turn and stays quiet everywhere else.
@@ -101,8 +113,8 @@ public static class Narrator
                 game = e.GameNumber;
                 var record = t.Games.FirstOrDefault(g => g.Number == game);
                 lines.Add(new Line(0, 0, $"Game {game}", IsTurnHeader: true, Game: game,
-                                   Anchor: $"g{game}"));
-                AppendOpening(lines, t, record?.Opening, game, $"g{game}-open");
+                                   Anchor: $"g{game}", Level: 2));
+                AppendOpening(lines, t, record?.Opening, game, $"g{game}-open", under);
             }
 
             if (density == Density.Beats && VerboseOnly.Contains(e.Kind)) continue;
@@ -122,7 +134,8 @@ public static class Narrator
                 header,
                 e.Kind == EventKind.BoardSnapshot,
                 Game: e.GameNumber,
-                Anchor: header ? (multi ? $"g{game}-t{e.Turn}" : $"t{e.Turn}") : ""));
+                Anchor: header ? (multi ? $"g{game}-t{e.Turn}" : $"t{e.Turn}") : "",
+                Level: under));
         }
         return Collapse(lines);
     }
@@ -132,12 +145,12 @@ public static class Narrator
     /// it — which is what keeps a game with no opening from growing an empty heading.
     /// </summary>
     private static void AppendOpening(
-        List<Line> lines, Transcript t, Opening? opening, int game, string anchor)
+        List<Line> lines, Transcript t, Opening? opening, int game, string anchor, int level)
     {
         if (OpeningLines(t, opening) is not { Count: > 0 } texts) return;
 
         lines.Add(new Line(0, 0, OpeningHeading, IsTurnHeader: true, Game: game,
-                           Anchor: anchor));
+                           Anchor: anchor, Level: level));
         foreach (var text in texts)
             lines.Add(new Line(0, 1, text, IsTurnHeader: false, Game: game));
     }

@@ -409,22 +409,71 @@ public class MultiGameTests
             Assert.That(levels[i], Is.LessThanOrEqualTo(levels[i - 1] + 1));
     }
 
+    /// <summary>
+    /// A game contains its turns, and heading rank is the only thing that says so to
+    /// anything not looking at the page.
+    /// </summary>
+    /// <remarks>
+    /// The check above this one is why that needs asserting separately: "no level is
+    /// skipped" is satisfied by every heading being an h2, which is what a three-game
+    /// page rendered for as long as multi-game support existed — 1 h1, 56 h2, no h3, and
+    /// so no way to tell a game from a turn or a turn from the game it belongs to.
+    /// </remarks>
+    [Test]
+    public void A_game_heading_outranks_the_openings_and_turns_inside_it()
+    {
+        var root = Markup.Parse(GamePageRenderer.Render(Bo3()));
+
+        var games = root.Descendants("h2").ToList();
+        Assert.That(games, Is.Not.Empty);
+        foreach (var h in games)
+            Assert.That(h.Value, Does.StartWith("Game "),
+                "an h2 on a multi-game page is a game and nothing else");
+
+        var inner = root.Descendants("h3").Select(h => h.Value).ToList();
+        Assert.That(inner, Is.Not.Empty);
+        Assert.That(inner.Any(x => x.StartsWith("Turn ", StringComparison.Ordinal)));
+        Assert.That(inner, Does.Contain("Opening"));
+    }
+
+    [Test]
+    public void A_single_game_page_keeps_every_heading_at_the_same_rank()
+    {
+        // There is no game to be inside, so demoting turns would leave an h3 with no h2
+        // above it — a skipped level, and a worse document than the flat one.
+        var root = Markup.Parse(GamePageRenderer.Render(Bo1()));
+
+        Assert.That(root.Descendants("h3"), Is.Empty);
+        Assert.That(root.Descendants("h2"), Is.Not.Empty);
+    }
+
     [Test]
     public void The_markdown_export_carries_the_same_game_structure_as_the_page()
     {
         // The two are meant to be one document, and the boundary is the newest thing
         // either of them has to say.
         var md = MarkdownRenderer.Render(Bo3()).ReplaceLineEndings("\n");
-        var headings = md.Split('\n')
-            .Where(l => l.StartsWith("## ", StringComparison.Ordinal))
-            .Select(l => l[3..])
+
+        List<string> At(string hashes) => md.Split('\n')
+            .Where(l => l.StartsWith(hashes + " ", StringComparison.Ordinal))
+            .Select(l => l[(hashes.Length + 1)..])
             .ToList();
 
-        Assert.That(headings.Count(h => h == "Game 1"), Is.EqualTo(1));
-        Assert.That(headings.Count(h => h == "Game 2"), Is.EqualTo(1));
-        Assert.That(headings.Count(h => h == "Opening"), Is.EqualTo(2));
-        Assert.That(headings.Count(h => h == "Turn 1 — Opponent  (You 20 · Opponent 20)")
-                    + headings.Count(h => h == "Turn 1 — You  (You 20 · Opponent 20)"),
+        // Markdown carries the same nesting the page does, for the same reason: a reader
+        // pasting this into a document gets an outline with two games in it rather than
+        // forty sibling turns.
+        var games = At("##");
+        Assert.That(games.Count(h => h == "Game 1"), Is.EqualTo(1));
+        Assert.That(games.Count(h => h == "Game 2"), Is.EqualTo(1));
+        // The decklist is preamble and belongs beside the games rather than inside one,
+        // so it is the one other thing allowed at this rank. Turns and openings are not.
+        Assert.That(games.Where(h => !h.StartsWith("Game ", StringComparison.Ordinal)),
+            Is.EqualTo(new[] { TranscriptSummary.DeckHeading(Bo3()) }));
+
+        var inner = At("###");
+        Assert.That(inner.Count(h => h == "Opening"), Is.EqualTo(2));
+        Assert.That(inner.Count(h => h == "Turn 1 — Opponent  (You 20 · Opponent 20)")
+                    + inner.Count(h => h == "Turn 1 — You  (You 20 · Opponent 20)"),
             Is.EqualTo(2), "both games open on a turn one");
     }
 

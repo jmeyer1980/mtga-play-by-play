@@ -132,7 +132,14 @@ public static class GamePageRenderer
             if (line.IsTurnHeader)
             {
                 if (open) { sb.Append("</ol>"); open = false; }
-                sb.Append($"""<h2 id="{prefix}{line.Anchor}">{Speech(line.Text)}</h2>""");
+
+                // On a multi-game page the narrator demotes openings and turns to h3, so
+                // an h2 there is the game heading and nothing else. Single-game pages keep
+                // every heading at h2 and get no class, which is what leaves them untouched.
+                var game = line.Level == 2 && t.Games.Count > 1 ? " class=\"game\"" : "";
+                sb.Append($"""
+                    <h{line.Level} id="{prefix}{line.Anchor}"{game}>{Speech(line.Text)}</h{line.Level}>
+                    """);
                 continue;
             }
 
@@ -202,8 +209,9 @@ public static class GamePageRenderer
         h1{font-size:1.4rem;margin:.2rem 0}
         .sub{opacity:.7;margin:.2rem 0 .8rem}
         .back a{opacity:.7;text-underline-offset:.2em}
-        h2{font-size:1rem;margin:1.6rem 0 .4rem;padding-top:.6rem;
+        h2,h3{font-size:1rem;margin:1.6rem 0 .4rem;padding-top:.6rem;
            border-top:1px dashed currentColor;opacity:.85}
+        h2.game{font-size:1.2rem;margin-top:2.4rem;border-top-style:solid;opacity:1}
         .turn{list-style:none;margin:.15rem 0;padding:0 0 0 1.5rem}
         .beat{margin:.15rem 0}
         .board{margin:.15rem 0;opacity:.6;font-style:italic;font-size:.92em}
@@ -222,7 +230,7 @@ public static class GamePageRenderer
         :focus-visible{outline:2px solid currentColor;outline-offset:2px}
         @media (prefers-color-scheme:dark){.warn{border-left-color:#e0a33a}}
         @media (forced-colors:active){
-          .sub,.board,.warn,.status,.back a,h2,.note,.deck .unseen{opacity:1}
+          .sub,.board,.warn,.status,.back a,h2,h3,.note,.deck .unseen{opacity:1}
         }
         """;
 
