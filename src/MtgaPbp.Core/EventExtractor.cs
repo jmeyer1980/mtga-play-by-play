@@ -594,9 +594,14 @@ public sealed class EventExtractor(ICardDb cards)
         for (var i = 0; i < st.Events.Count; i++)
         {
             var e = st.Events[i];
-            var source = Named(tracker, labels, e.SourceInstanceId, e.SourceName, e.Seq);
-            var target = Named(tracker, labels, e.TargetInstanceId, e.TargetName, e.Seq);
-            var cause = Named(tracker, labels, e.CauseInstanceId, e.CauseName, e.Seq);
+            // A counter event reports the change itself, so it names the size the
+            // permanent was changed FROM. Everything else describes a permanent as it
+            // stands at that moment.
+            var before = e.Kind == EventKind.CounterChanged;
+
+            var source = Named(tracker, labels, e.SourceInstanceId, e.SourceName, e.Seq, before);
+            var target = Named(tracker, labels, e.TargetInstanceId, e.TargetName, e.Seq, before);
+            var cause = Named(tracker, labels, e.CauseInstanceId, e.CauseName, e.Seq, before);
 
             if (source == e.SourceName && target == e.TargetName && cause == e.CauseName)
                 continue;
@@ -615,14 +620,15 @@ public sealed class EventExtractor(ICardDb cards)
     /// to add to it.
     /// </summary>
     private static string? Named(
-        GameStateTracker tracker, PermanentLabels labels, int? instanceId, string? name, int seq)
+        GameStateTracker tracker, PermanentLabels labels, int? instanceId, string? name, int seq,
+        bool before = false)
     {
         // Seats 1 and 2 are players, not objects. A name the emitter composed rather
         // than looked up — "Carrot Cake's ability" reached through a different path, or
         // a placeholder — is left exactly as it was.
         if (instanceId is not { } id || id <= 2 || name is null) return name;
         if (!string.Equals(name, tracker.NameOf(id), StringComparison.Ordinal)) return name;
-        return labels.Label(id, seq);
+        return before ? labels.LabelBefore(id, seq) : labels.Label(id, seq);
     }
 
     /// <summary>

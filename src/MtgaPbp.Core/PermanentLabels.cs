@@ -248,6 +248,44 @@ public sealed class PermanentLabels
         return SampleAt(id, stamp) is { } sample ? Rendered(id, sample) : null;
     }
 
+    /// <summary>
+    /// The label carrying the size a permanent had <em>before</em> the change this event
+    /// is reporting, for events that are themselves the change.
+    /// </summary>
+    /// <remarks>
+    /// A counter is applied to the tracker before the annotation announcing it is read,
+    /// so the plain <see cref="Label"/> reports the size afterwards — "Ajani's Pridemate
+    /// 4/4 gets 1 +1/+1 counter", where 4/4 is what it became. That reads as the
+    /// starting value, which is the opposite of what it means. Stepping back one sample
+    /// rather than one stamp is deliberate: every sample from a single message shares a
+    /// stamp, so <c>stamp - 1</c> would still select the post-change size.
+    /// </remarks>
+    public string LabelBefore(int instanceId, int stamp)
+    {
+        var name = _tracker.NameOf(instanceId);
+        if (CardNames.IsPlaceholder(name)) return name;
+
+        var id = _tracker.Resolve(instanceId);
+        var statline = SampleBefore(id, stamp) is { } sample ? Rendered(id, sample) : null;
+        return statline is null ? name : $"{name}{Letter(id)} {statline}";
+    }
+
+    /// <summary>The in-play sample preceding the one <see cref="SampleAt"/> would pick.</summary>
+    private StatSample? SampleBefore(int id, int stamp)
+    {
+        if (!_history.TryGetValue(id, out var samples)) return null;
+
+        StatSample? previous = null, found = null;
+        foreach (var sample in samples)
+        {
+            if (sample.Stamp > stamp) break;
+            if (!sample.InPlay) continue;
+            previous = found;
+            found = sample;
+        }
+        return previous;
+    }
+
     private string Letter(int instanceId) =>
         _letters.TryGetValue(_tracker.Resolve(instanceId), out var letter) ? " " + letter : "";
 
