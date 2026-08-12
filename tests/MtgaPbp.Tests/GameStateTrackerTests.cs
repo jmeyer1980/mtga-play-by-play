@@ -96,6 +96,62 @@ public class GameStateTrackerTests
         Assert.That(t.NameOf(9), Is.EqualTo("Card #55555"));
     }
 
+    /// <summary>
+    /// An emblem's ability names no card anywhere in itself, and is reached through the
+    /// emblem it hangs off.
+    /// </summary>
+    /// <remarks>
+    /// Shaped after the real traffic. The ability's own <c>objectSourceGrpId</c> is 2 —
+    /// the emblem's grpId, which is not a card — so the three links that used to be
+    /// tried all miss and it printed as "Card #190846". The emblem carries the real
+    /// source, and one hop up <c>parentId</c> reaches it.
+    /// </remarks>
+    [Test]
+    public void NameOf_reaches_an_emblems_source_by_following_the_parent()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full", "gameObjects": [
+          { "instanceId": 522, "grpId": 2, "name": 1, "type": "GameObjectType_Emblem",
+            "objectSourceGrpId": 94131, "parentId": 521 },
+          { "instanceId": 523, "grpId": 190846, "type": "GameObjectType_Ability",
+            "objectSourceGrpId": 2, "parentId": 522 } ]  }
+        """));
+
+        Assert.That(t.NameOf(522), Is.EqualTo("Temple of Plenty's emblem"),
+            "an emblem belongs to its planeswalker rather than being its ability");
+        Assert.That(t.NameOf(523), Is.EqualTo("Temple of Plenty's emblem's ability"));
+    }
+
+    [Test]
+    public void NameOf_ignores_a_parent_it_cannot_name_either()
+    {
+        // "Card #2's ability" is no better than "Card #190846" and is longer.
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full", "gameObjects": [
+          { "instanceId": 40, "grpId": 2, "type": "GameObjectType_Emblem" },
+          { "instanceId": 41, "grpId": 190846, "type": "GameObjectType_Ability",
+            "parentId": 40 } ] }
+        """));
+
+        Assert.That(t.NameOf(41), Is.EqualTo("Card #190846"));
+    }
+
+    [Test]
+    public void NameOf_survives_a_parent_chain_that_loops()
+    {
+        // Nothing in the archive has one. A hang here would be a hang mid-render.
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full", "gameObjects": [
+          { "instanceId": 60, "grpId": 111, "type": "GameObjectType_Ability", "parentId": 61 },
+          { "instanceId": 61, "grpId": 222, "type": "GameObjectType_Ability", "parentId": 60 } ] }
+        """));
+
+        Assert.That(t.NameOf(60), Is.EqualTo("Card #111"));
+    }
+
     [Test]
     public void NameOf_names_an_object_it_never_saw_instead_of_printing_its_id()
     {

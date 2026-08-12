@@ -17,6 +17,14 @@ public sealed class TrackedObject
     public bool IsTapped;
     public int? Loyalty;
     public int? ObjectSourceGrpId;
+
+    /// <summary>
+    /// The object this one hangs off — an ability's source permanent, an emblem's
+    /// planeswalker. The only link that survives when <c>objectSourceGrpId</c> does not
+    /// name a card, which is how every emblem's ability arrives.
+    /// </summary>
+    public int? ParentId;
+
     public IReadOnlyList<string> CardTypes = [];
     public string AttackState = "";
     public string BlockState = "";
@@ -206,6 +214,7 @@ public sealed class GameStateTracker(ICardDb cards)
             obj.IsTapped = tap.ValueKind == JsonValueKind.True;
         if (ReadStat(go, "loyalty") is { } ly) obj.Loyalty = ly;
         if (Json.Int(go, "objectSourceGrpId") is { } src) obj.ObjectSourceGrpId = src;
+        if (Json.Int(go, "parentId") is { } par) obj.ParentId = par;
 
         var types = new List<string>();
         foreach (var ct in Json.Array(go, "cardTypes"))
@@ -352,17 +361,59 @@ public sealed class GameStateTracker(ICardDb cards)
         return _objects.TryGetValue(instanceId, out var orig) ? orig : null;
     }
 
-    public string NameOf(int instanceId)
+    public string NameOf(int instanceId) => NameOf(instanceId, null);
+
+    /// <summary>
+    /// What to call an object, resolved from whichever of Arena's four links answers
+    /// first: its own localized name, its card, the card that produced it, or — failing
+    /// all of those — the object it hangs off.
+    /// </summary>
+    /// <remarks>
+    /// The parent hop exists because an emblem's ability names no card anywhere in
+    /// itself. Its <c>objectSourceGrpId</c> is the emblem's own grpId of 2, which is not
+    /// in the card database, so every emblem ability used to print as "Card #190846".
+    /// The emblem it hangs off does carry a real source, and following one link reaches
+    /// it: ability → emblem → Tezzeret, Cruel Captain. The same hop covers a linked
+    /// ability whose source is a land, whose <c>objectSourceGrpId</c> arrives as 5.
+    /// <para>
+    /// A parent that cannot be named either is not used, because "Card #2's ability" is
+    /// no better than "Card #190846" and is longer. The visited set guards against a
+    /// parent chain that loops; nothing in the archive has one, and a hang here would be
+    /// a hang in the middle of a render.
+    /// </para>
+    /// </remarks>
+    private string NameOf(int instanceId, HashSet<int>? visited)
     {
         var o = Get(instanceId);
         if (o is null) return CardNames.Unknown;
 
-        if (o.NameLocId is { } loc && cards.NameForLocId(loc) is { } byLoc) return byLoc;
+        // Emblems localize their name to the empty string rather than to nothing, so a
+        // bare null check would name them "" and stop before the links that work.
+        if (o.NameLocId is { } loc && cards.NameForLocId(loc) is { Length: > 0 } byLoc)
+            return byLoc;
         if (cards.CardForGrpId(o.GrpId) is { } card) return card.Name;
         if (o.ObjectSourceGrpId is { } srcGrp && cards.CardForGrpId(srcGrp) is { } src)
-            return $"{src.Name}'s ability";
+            return src.Name + Belonging(o);
+
+        if (o.ParentId is { } parent)
+        {
+            visited ??= [];
+            if (visited.Add(o.InstanceId))
+            {
+                var name = NameOf(parent, visited);
+                if (!CardNames.IsPlaceholder(name)) return name + Belonging(o);
+            }
+        }
+
         return $"Card #{o.GrpId}";
     }
+
+    /// <summary>
+    /// How an object reads when it has to be named through whatever produced it. An
+    /// emblem is its planeswalker's emblem; everything else that gets here is an ability.
+    /// </summary>
+    private static string Belonging(TrackedObject o) =>
+        o.Type == "GameObjectType_Emblem" ? "'s emblem" : "'s ability";
 
     public string SeatName(int seat) => seat == LocalSeat ? "You" : "Opponent";
 
