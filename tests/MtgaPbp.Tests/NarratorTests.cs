@@ -431,7 +431,9 @@ public class NarratorTests
     {
         var lines = Narrator.Narrate(T(E(EventKind.Returned) with
         {
-            SourceName = "Hare Apparent", CauseName = "Split Up", ToZone = zone
+            SourceName = "Hare Apparent",
+            CauseName = "Split Up",
+            ToZone = zone
         }), Density.Beats);
 
         Assert.That(lines.Single().Text, Is.EqualTo(expected));
