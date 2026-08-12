@@ -10,9 +10,10 @@ public class RendererTests
 {
     /// <summary>
     /// A transcript whose narration collapses into a run, so the "×3" notation and
-    /// what a screen reader does with it can be asserted.
+    /// what a screen reader does with it can be asserted. No opening: this fixture
+    /// exists to put one specific line first, and an opening would sit in front of it.
     /// </summary>
-    internal static Transcript Repeating() => Sample() with
+    internal static Transcript Repeating() => Sample(opening: false) with
     {
         Events =
         [
@@ -28,9 +29,10 @@ public class RendererTests
 
     /// <summary>
     /// A transcript carrying a before-and-after statline, so what a synthesiser does
-    /// with the arrow can be asserted.
+    /// with the arrow can be asserted. No opening, for the same reason
+    /// <see cref="Repeating"/> has none.
     /// </summary>
-    internal static Transcript Buffed() => Sample() with
+    internal static Transcript Buffed() => Sample(opening: false) with
     {
         Events =
         [
@@ -60,9 +62,20 @@ public class RendererTests
         new DeckEntry("Split Up", 2, Seen: false),
     ];
 
+    /// <summary>
+    /// The opening the sample match carries: you win the roll 14 to 3, take the play,
+    /// and neither player mulligans. Shaped from the archive's ordinary case, so the
+    /// structural and accessibility checks that run over <see cref="Sample"/> cover the
+    /// opening markup rather than only the turns.
+    /// </summary>
+    internal static Opening SampleOpening() => new(
+        [new DieRoll(1, 14), new DieRoll(2, 3)],
+        FirstPlayerSeat: 1,
+        new Dictionary<int, int> { [1] = 0, [2] = 0 });
+
     internal static Transcript Sample(
         bool incomplete = false, IReadOnlyList<LogGap>? gaps = null,
-        IReadOnlyList<DeckEntry>? deck = null) => new(
+        IReadOnlyList<DeckEntry>? deck = null, bool opening = true) => new(
         "abc-123", 1786326812781, 1786327812781, "Ladder",
         new PlayerInfo(1, "ME", "PlayerOne", "SteamWindows"),
         new PlayerInfo(2, "THEM", "PlayerTwo", "iPhone"),
@@ -79,7 +92,8 @@ public class RendererTests
         new HashSet<string> { "Plains", "Lightning Bolt" },
         new Dictionary<string, int>(),
         gaps ?? [],
-        deck ?? []);
+        deck ?? [],
+        opening ? SampleOpening() : null);
 
     [Test]
     public void Match_times_render_in_the_configured_time_zone()
@@ -655,19 +669,24 @@ public class RendererTests
         var root = Markup.Parse(GameHtml());
         var beats = root.Descendants("section")
             .Single(s => s.Attribute("data-density")?.Value == "beats");
-        var list = beats.Descendants("ol").Single();
+
+        // Two lists: the opening and the one turn. The opening is a list for the same
+        // reason a turn is — it is a short ordered sequence of things that happened.
+        var lists = beats.Descendants("ol").ToList();
+        Assert.That(lists, Has.Count.EqualTo(2));
 
         // Entering a list tells a screen reader user how many things happened this
         // turn before reading any of them, and turns a turn into something the list
         // quick-keys can step through. Paragraphs give none of that.
-        Assert.That(list.Elements("li").Count(), Is.EqualTo(3));
+        Assert.That(lists[0].Elements("li").Count(), Is.EqualTo(2), "the opening");
+        Assert.That(lists[1].Elements("li").Count(), Is.EqualTo(3), "turn one");
 
         // Safari drops the list role when list-style is none, which is exactly the
         // styling used here, so the role is stated rather than inferred.
-        Assert.That(list.Attribute("role")?.Value, Is.EqualTo("list"));
+        Assert.That(lists.Select(l => l.Attribute("role")?.Value), Is.All.EqualTo("list"));
         Assert.That(GameHtml(), Does.Contain("list-style:none"));
 
-        foreach (var li in list.Elements("li"))
+        foreach (var li in lists.SelectMany(l => l.Elements("li")))
             Assert.That(li.Parent!.Name.LocalName, Is.EqualTo("ol"));
     }
 
@@ -677,10 +696,12 @@ public class RendererTests
         var root = Markup.Parse(GameHtml());
         var headings = root.Descendants("h2").ToList();
 
-        Assert.That(headings, Has.Count.EqualTo(2), "one turn, rendered in both densities");
-        Assert.That(headings[0].Attribute("id")?.Value, Is.EqualTo("t1"),
-            "the density that is visible by default keeps the short anchor");
-        Assert.That(headings[1].Attribute("id")?.Value, Is.EqualTo("v-t1"));
+        // The opening and one turn, each rendered in both densities. The opening takes
+        // turn zero's anchor, which no turn can ever claim — Arena numbers turns from
+        // one — so it needs no scheme of its own to stay unique.
+        Assert.That(headings.Select(h => h.Attribute("id")?.Value),
+            Is.EqualTo(new[] { "t0", "t1", "v-t0", "v-t1" }),
+            "the density that is visible by default keeps the short anchors");
     }
 
     [Test]
@@ -752,7 +773,9 @@ public class RendererTests
                                 LifeSeat1 = 20, LifeSeat2 = 17 },
             ]
         };
-        var heading = Markup.Parse(GamePageRenderer.Render(scored)).Descendants("h2").First();
+        // By anchor, not by position: the opening's heading comes first on the page.
+        var heading = Markup.Parse(GamePageRenderer.Render(scored)).Descendants("h2")
+            .First(h => h.Attribute("id")?.Value == "t1");
 
         Assert.That(heading.Elements("span").Count(s => s.Attribute("class")?.Value == "vh"),
             Is.EqualTo(1));

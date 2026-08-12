@@ -168,9 +168,10 @@ lives somewhere unusual.
 The log records only what your client was told, so a transcript is fog-of-war by
 nature — a game annotated by one player, not a god's-eye replay.
 
-**It has** both players' plays, resolutions, damage, life, counters, tokens, combat
-(who attacked, who blocked what), your hand and draws, and any opponent card that
-became visible.
+**It has** the opening (who won the die roll, who is on the play, and how far each
+player mulliganed — the mulligan count covers both seats), both players' plays,
+resolutions, damage, life, counters, tokens, combat (who attacked, who blocked what),
+your hand and draws, and any opponent card that became visible.
 
 **It does not have** the opponent's hand or library, or their decklist beyond the
 cards they actually played.

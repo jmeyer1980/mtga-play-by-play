@@ -26,6 +26,10 @@
 
 *A card marked "not seen" stayed in your library all match.*
 
+## Opening
+- Opponent wins the die roll 19 to 11 and plays first
+- Both players keep seven
+
 ## Turn 1 — Opponent  (You 20 · Opponent 20)
 - Opponent plays Plains
 - Opponent casts Hinterland Sanctifier

@@ -26,7 +26,16 @@ public sealed record Transcript(
     /// stopped discarding <c>ConnectResp</c>, and any match whose deck message named a
     /// seat other than the local player's.
     /// </summary>
-    IReadOnlyList<DeckEntry> Deck);
+    IReadOnlyList<DeckEntry> Deck,
+
+    /// <summary>
+    /// The die roll and the opening hands, or null when the log carried none of it.
+    /// Kept off the event stream on purpose: these facts arrive scattered across the
+    /// first few messages and are only complete once the first turn opens, so they
+    /// cannot be emitted in sequence without disturbing the sequence numbers that the
+    /// board, label and target passes all index by.
+    /// </summary>
+    Opening? Opening = null);
 
 public sealed class EventExtractor(ICardDb cards)
 {
@@ -159,6 +168,13 @@ public sealed class EventExtractor(ICardDb cards)
         // against yet when it goes past.
         var decks = new List<(int? Seat, IReadOnlyList<int> GrpIds)>();
 
+        // The opening, gathered as it goes past. The roll lands in the third message of
+        // the match and the mulligans over the several after it, but who is on the play
+        // is not settled until the first turn opens, so none of it can be turned into a
+        // sentence here.
+        var rolls = new List<DieRoll>();
+        var mulligans = new Dictionary<int, int>();
+
         foreach (var raw in rawLines)
         {
             JsonElement root;
@@ -197,8 +213,19 @@ public sealed class EventExtractor(ICardDb cards)
                 else if (type is "GREMessageType_ConnectResp" &&
                          DeckList.ReadMessage(m) is { } announced)
                     decks.Add(announced);
+                // The first one only. A match carries exactly one in every archived log,
+                // and if a re-roll ever produced a second it is the roll that was played
+                // on that matters, not the one that was thrown out.
+                else if (type is "GREMessageType_DieRollResultsResp" && rolls.Count == 0)
+                    rolls.AddRange(Openings.ReadRolls(m));
 
                 if (Json.Obj(m, "gameStateMessage") is not { } gsm) continue;
+
+                // Only until the first turn number arrives. Mulligans are over by then —
+                // all 29 increments in the archive land while the turn is still unset —
+                // and stopping there keeps a later game's counts, in a Bo3 the archive
+                // has yet to see, from being read as this game's opening hands.
+                if (tracker.Turn == 0) Openings.ReadMulligans(gsm, mulligans);
 
                 tracker.Apply(gsm, st.Seq);
                 EmitCombat(tracker, ts, st);
@@ -244,7 +271,32 @@ public sealed class EventExtractor(ICardDb cards)
             matchId, started, ended, eventName, you, opp,
             winningTeam, won, lost, Incomplete: !sawFinal,
             st.Events, st.Unknown, st.CardsSeen, st.Unresolved, gaps,
-            BuildDeck(decks, you, tracker));
+            BuildDeck(decks, you, tracker), BuildOpening(rolls, mulligans, st));
+    }
+
+    /// <summary>
+    /// The opening, or null when the log carried none of it.
+    /// </summary>
+    /// <remarks>
+    /// Who is on the play is taken from the turn-one header this same run emitted,
+    /// rather than worked out again from <c>turnInfo</c>. Two readings of the same fact
+    /// can drift apart, and an opening that says "Opponent plays first" above a header
+    /// reading "Turn 1 — You" would be worse than no opening at all. Reading the header
+    /// also covers the one archived match whose <c>turnInfo</c> never reports a turn
+    /// number: the turn is announced, the player concedes during the mulligan, and the
+    /// extractor's own turn-one rule recovers the seat anyway.
+    /// </remarks>
+    private static Opening? BuildOpening(
+        List<DieRoll> rolls, Dictionary<int, int> mulligans, Emit st)
+    {
+        int? firstPlayer = null;
+        if (st.Events.FirstOrDefault(e => e.Kind == EventKind.TurnStart) is { } opener &&
+            (opener.ActorSeat ?? opener.ActiveSeat) is > 0 and var seat)
+            firstPlayer = seat;
+
+        return rolls.Count > 0 || mulligans.Count > 0 || firstPlayer is not null
+            ? new Opening(rolls, firstPlayer, mulligans)
+            : null;
     }
 
     /// <summary>
