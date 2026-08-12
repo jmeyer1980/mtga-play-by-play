@@ -5,7 +5,7 @@ namespace MtgaPbp.Core;
 
 public sealed record ArchiveEntry(
     string MatchId, long StartedAtMs, long EndedAtMs, bool Incomplete, bool Favorite = false,
-    int Gaps = 0);
+    int Gaps = 0, bool HasDeck = false);
 
 public sealed class RawArchive
 {
@@ -43,6 +43,12 @@ public sealed class RawArchive
     /// is precisely the outcome the detection exists to prevent. Gaps only ever
     /// increase, so a healed match settles after one rewrite instead of churning.
     /// </para>
+    /// <para>
+    /// A capture that carries a decklist the stored copy lacks wins for exactly the
+    /// same reason, and settles the same way: the slicer used to throw those lines
+    /// away, so every match archived before it stopped doing that is stored without
+    /// one even though the line is still sitting in a log that has not rotated.
+    /// </para>
     /// </summary>
     public bool Write(MatchSlice slice)
     {
@@ -54,7 +60,8 @@ public sealed class RawArchive
 
             var completesTheMatch = existing.Incomplete && !slice.Incomplete;
             var revealsNewGaps = slice.Gaps > existing.Gaps;
-            if (!completesTheMatch && !revealsNewGaps) return false;
+            var revealsTheDeck = slice.HasDeck && !existing.HasDeck;
+            if (!completesTheMatch && !revealsNewGaps && !revealsTheDeck) return false;
         }
 
         // Re-capturing a match must not silently unfavourite it.
@@ -70,7 +77,7 @@ public sealed class RawArchive
 
         _ledger[slice.MatchId] = new ArchiveEntry(
             slice.MatchId, slice.StartedAtMs, slice.EndedAtMs, slice.Incomplete, favorite,
-            Gaps: slice.Gaps);
+            Gaps: slice.Gaps, HasDeck: slice.HasDeck);
         SaveLedger();
         return true;
     }

@@ -19,6 +19,17 @@ public static class MarkdownRenderer
         if (TranscriptSummary.GapWarning(t) is { } gap)
             sb.AppendLine($"> {gap}").AppendLine();
 
+        // Before the turns, not after: it is the thing you check while reading the
+        // transcript, and it is what the copy button puts here too, so a pasted
+        // transcript and the exported file stay the same document.
+        if (t.Deck.Count > 0)
+        {
+            sb.AppendLine($"## {TranscriptSummary.DeckHeading(t)}").AppendLine();
+            foreach (var card in t.Deck)
+                sb.AppendLine($"- {TranscriptSummary.DeckLine(card)}");
+            sb.AppendLine().AppendLine($"*{TranscriptSummary.DeckNote}*");
+        }
+
         foreach (var line in Narrator.Narrate(t, Density.Beats))
         {
             if (line.IsTurnHeader) sb.AppendLine().AppendLine($"## {line.Text}");
@@ -33,6 +44,29 @@ public static class TranscriptSummary
 {
     public static string Title(Transcript t) =>
         $"{t.You?.ScreenName ?? "You"} vs {t.Opponent?.ScreenName ?? "Opponent"}";
+
+    /// <summary>
+    /// The decklist's heading. It counts cards rather than naming the deck, because
+    /// the log carries a list of ids and nothing else — any name would be a guess.
+    /// </summary>
+    public static string DeckHeading(Transcript t) =>
+        $"Your deck ({t.Deck.Sum(d => d.Count)} cards)";
+
+    /// <summary>
+    /// One decklist line. Shared with the game page so a copied transcript and the
+    /// exported markdown say the same words; the page adds the spoken forms of the
+    /// glyphs on top and takes them back off again when copying.
+    /// </summary>
+    public static string DeckLine(DeckEntry d) =>
+        $"{d.Count}× {d.Name}{(d.Seen ? "" : " · not seen")}";
+
+    /// <summary>
+    /// What the mark means. "Seen" is whether the client ever held a game object for
+    /// the card, so its absence really does mean the card sat in the library from the
+    /// first shuffle to the last turn — worth saying, because a reader could otherwise
+    /// read it as "not played".
+    /// </summary>
+    public const string DeckNote = "A card marked \"not seen\" stayed in your library all match.";
 
     /// <summary>
     /// What to tell a reader when the log did not account for part of the match, or

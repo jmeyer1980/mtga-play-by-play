@@ -2,6 +2,29 @@
 
 *Ladder · 2026-08-10 03:23 · Lost 0-1 · 11 turns*
 
+## Your deck (60 cards)
+
+- 3× Abandoned Air Temple · not seen
+- 3× Caretaker's Talent
+- 2× Carrot Cake
+- 4× Dollmaker's Shop // Porcelain Gallery · not seen
+- 3× Elspeth's Smite
+- 2× Elspeth, Storm Slayer · not seen
+- 3× Ethereal Armor
+- 3× Ghostly Dancers
+- 4× Hop to It
+- 4× Overlord of the Mistmoors
+- 14× Plains
+- 2× Release the Dogs · not seen
+- 1× Season of the Burrow · not seen
+- 2× Split Up · not seen
+- 2× Temple of Enlightenment
+- 1× Temple of Plenty · not seen
+- 1× Temple of Silence · not seen
+- 3× Toby, Beastie Befriender
+- 3× Virtue of Loyalty · not seen
+
+*A card marked "not seen" stayed in your library all match.*
 
 ## Turn 1 — Opponent  (You 20 · Opponent 20)
 - Opponent plays Plains

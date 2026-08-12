@@ -57,7 +57,15 @@ public sealed record MatchSlice(
     /// lines so the archive can tell that a re-capture learned something a stored copy
     /// does not know, without re-parsing thousands of lines to find out.
     /// </summary>
-    int Gaps = 0);
+    int Gaps = 0,
+
+    /// <summary>
+    /// Whether this slice carries the local player's registered deck. Kept for the
+    /// same reason as <see cref="Gaps"/>: deck capture arrived after matches had
+    /// already been archived, and this is what tells a stored copy from a better one
+    /// without decompressing and re-parsing it.
+    /// </summary>
+    bool HasDeck = false);
 
 public enum EventKind
 {

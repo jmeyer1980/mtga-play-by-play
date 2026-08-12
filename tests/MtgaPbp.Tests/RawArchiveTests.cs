@@ -218,6 +218,51 @@ public class RawArchiveTests
         Assert.That(a.ReadLines("m1"), Is.EqualTo(new[] { """{"full":1}""" }));
     }
 
+    /// <summary>
+    /// Same reasoning as the gap rule above, and the same shape of problem: the slicer
+    /// used to throw the deck message away, so 128 of the 152 archived matches are
+    /// stored without one. For 29 of them the line is still sitting in a log that has
+    /// not rotated, and a re-capture can only recover it if the archive will take it.
+    /// </summary>
+    [Test]
+    public void A_recapture_that_finds_the_deck_replaces_a_complete_match_without_one()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1", incomplete: false));
+
+        var wrote = a.Write(Slice("m1", incomplete: false) with { HasDeck = true });
+
+        Assert.That(wrote, Is.True);
+        Assert.That(a.Meta("m1")!.HasDeck, Is.True);
+    }
+
+    [Test]
+    public void A_match_whose_deck_is_already_stored_is_not_rewritten_every_capture()
+    {
+        // Settles after one rewrite, exactly as gaps do — otherwise `watch` rebuilds
+        // the whole site every three seconds for as long as the log survives.
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1", incomplete: false) with { HasDeck = true });
+
+        Assert.That(a.Write(Slice("m1", incomplete: false) with { HasDeck = true }), Is.False);
+    }
+
+    [Test]
+    public void Finding_the_deck_never_trades_a_finished_match_for_a_partial_one()
+    {
+        // The deck message opens a match, so the log that holds it is the likeliest one
+        // to hold only the first half of that match. Gaining a decklist must not cost
+        // us the ending.
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1", incomplete: false, """{"full":1}"""));
+
+        var wrote = a.Write(
+            Slice("m1", incomplete: true, """{"partial":1}""") with { HasDeck = true });
+
+        Assert.That(wrote, Is.False);
+        Assert.That(a.Meta("m1")!.Incomplete, Is.False);
+    }
+
     [Test]
     public void Written_payload_is_gzip_compressed()
     {

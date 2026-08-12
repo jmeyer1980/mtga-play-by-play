@@ -19,9 +19,30 @@
     "1117188": "Crowd of True Believers"
   },
   "Cards": {
+    "84261": {
+      "Name": "Elspeth\u0027s Smite",
+      "Types": "4",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "86722": {
+      "Name": "Virtue of Loyalty",
+      "Types": "3",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
     "87141": {
       "Name": "Dusk Rose Reliquary",
       "Types": "1",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "91542": {
+      "Name": "Caretaker\u0027s Talent",
+      "Types": "3",
       "Power": "",
       "Toughness": "",
       "IsToken": false
@@ -33,12 +54,68 @@
       "Toughness": "",
       "IsToken": false
     },
+    "91552": {
+      "Name": "Hop to It",
+      "Types": "10",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "91565": {
+      "Name": "Season of the Burrow",
+      "Types": "10",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
     "91843": {
       "Name": "Rabbit",
       "Types": "2",
       "Power": "1",
       "Toughness": "1",
       "IsToken": true
+    },
+    "92060": {
+      "Name": "Dollmaker\u0027s Shop // Porcelain Gallery",
+      "Types": "3",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "92065": {
+      "Name": "Ethereal Armor",
+      "Types": "3",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "92071": {
+      "Name": "Ghostly Dancers",
+      "Types": "2",
+      "Power": "2",
+      "Toughness": "5",
+      "IsToken": false
+    },
+    "92083": {
+      "Name": "Overlord of the Mistmoors",
+      "Types": "3,2",
+      "Power": "6",
+      "Toughness": "6",
+      "IsToken": false
+    },
+    "92092": {
+      "Name": "Split Up",
+      "Types": "10",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "92097": {
+      "Name": "Toby, Beastie Befriender",
+      "Types": "2",
+      "Power": "1",
+      "Toughness": "1",
+      "IsToken": false
     },
     "92970": {
       "Name": "Deal Gone Bad",
@@ -68,6 +145,13 @@
       "Toughness": "2",
       "IsToken": false
     },
+    "94008": {
+      "Name": "Release the Dogs",
+      "Types": "10",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
     "94126": {
       "Name": "Temple of Enlightenment",
       "Types": "5",
@@ -77,6 +161,34 @@
     },
     "94131": {
       "Name": "Temple of Plenty",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "94132": {
+      "Name": "Temple of Silence",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "95526": {
+      "Name": "Elspeth, Storm Slayer",
+      "Types": "8",
+      "Power": "",
+      "Toughness": "5",
+      "IsToken": false
+    },
+    "96179": {
+      "Name": "Plains",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false
+    },
+    "97544": {
+      "Name": "Abandoned Air Temple",
       "Types": "5",
       "Power": "",
       "Toughness": "",

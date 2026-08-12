@@ -49,7 +49,20 @@ public class RendererTests
         new(LogGapKind.Summarized, line, GameObjects: 77, Annotations: 3,
             Messages: ["GameStateMessage", "ActionsAvailableReq"]);
 
-    internal static Transcript Sample(bool incomplete = false, IReadOnlyList<LogGap>? gaps = null) => new(
+    /// <summary>
+    /// A four-card decklist, one copy of which never showed up during the match, so the
+    /// seen/unseen mark and the singular/plural of "copy" can both be asserted.
+    /// </summary>
+    internal static IReadOnlyList<DeckEntry> SampleDeck() =>
+    [
+        new DeckEntry("Hare Apparent", 4, Seen: true),
+        new DeckEntry("Plains", 1, Seen: true),
+        new DeckEntry("Split Up", 2, Seen: false),
+    ];
+
+    internal static Transcript Sample(
+        bool incomplete = false, IReadOnlyList<LogGap>? gaps = null,
+        IReadOnlyList<DeckEntry>? deck = null) => new(
         "abc-123", 1786326812781, 1786327812781, "Ladder",
         new PlayerInfo(1, "ME", "PlayerOne", "SteamWindows"),
         new PlayerInfo(2, "THEM", "PlayerTwo", "iPhone"),
@@ -65,7 +78,8 @@ public class RendererTests
         new Dictionary<string, int>(),
         new HashSet<string> { "Plains", "Lightning Bolt" },
         new Dictionary<string, int>(),
-        gaps ?? []);
+        gaps ?? [],
+        deck ?? []);
 
     [Test]
     public void Match_times_render_in_the_configured_time_zone()
@@ -292,6 +306,11 @@ public class RendererTests
 
     private static string GameHtml() => GamePageRenderer.Render(Sample());
 
+    // Kept apart from GameHtml: the deck adds the first <li> on the page, and the
+    // tests that assert what a transcript line looks like index into that.
+    private static string GameDeckHtml() =>
+        GamePageRenderer.Render(Sample(deck: SampleDeck()));
+
     [Test]
     public void Both_pages_are_structurally_well_formed()
     {
@@ -310,6 +329,7 @@ public class RendererTests
             GamePageRenderer.Render(Sample(incomplete: true, gaps: [SummarizedGap()]))));
         Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Repeating())));
         Assert.DoesNotThrow(() => Markup.Parse(GamePageRenderer.Render(Buffed())));
+        Assert.DoesNotThrow(() => Markup.Parse(GameDeckHtml()));
     }
 
     [Test]
@@ -325,6 +345,8 @@ public class RendererTests
                      // and only appear on the variants that need them.
                      IndexHtml(incomplete: true, gaps: true),
                      GamePageRenderer.Render(Sample(incomplete: true, gaps: [SummarizedGap()])),
+                     // The decklist owns an id so the copy button can find it.
+                     GameDeckHtml(),
                  })
         {
             var ids = Markup.Parse(html).Descendants()
@@ -695,6 +717,7 @@ public class RendererTests
                      GameHtml(), GamePageRenderer.Render(Repeating()),
                      GamePageRenderer.Render(Buffed()),
                      GamePageRenderer.Render(Sample(gaps: [SummarizedGap()])),
+                     GameDeckHtml(),
                  })
         {
             foreach (var (before, after) in Markup.Seams(Markup.Parse(html)))
@@ -765,6 +788,116 @@ public class RendererTests
         var html = GamePageRenderer.Render(Repeating());
         Assert.That(html, Does.Contain("clone.querySelectorAll('.vh')"));
         Assert.That(html, Does.Contain("h2, li.beat, li.board"));
+    }
+
+    // ---------- the decklist ----------
+
+    [Test]
+    public void GamePage_renders_the_deck_as_a_list_that_keeps_its_role()
+    {
+        var deck = Markup.Parse(GameDeckHtml()).Descendants("details")
+            .Single(d => d.Attribute("id")?.Value == "deck");
+        var list = deck.Descendants("ul").Single();
+
+        // A decklist is a list, and saying so is what lets a screen reader announce
+        // how many cards are in it and step through them with the list quick keys.
+        // list-style:none costs the role in Safari, so it is stated, as the turns do.
+        Assert.That(list.Attribute("role")?.Value, Is.EqualTo("list"));
+        Assert.That(list.Elements("li").Count(), Is.EqualTo(3));
+
+        // Collapsed by default and opened with no script, because the page has to work
+        // opened straight from a file.
+        Assert.That(deck.Attribute("open"), Is.Null);
+        Assert.That(deck.Elements("summary").Single().Value, Is.EqualTo("Your deck (7 cards)"));
+    }
+
+    [Test]
+    public void GamePage_counts_deck_copies_in_words_and_gets_the_singular_right()
+    {
+        // "4×" arrives as "4" from a synthesiser that skips U+00D7, which next to a
+        // card name is indistinguishable from part of the name.
+        var items = Markup.Parse(GameDeckHtml()).Descendants("li").ToList();
+
+        Assert.That(Markup.Spoken(items[0]), Is.EqualTo("4 copies of Hare Apparent"));
+        Assert.That(items[0].Value, Does.StartWith("4×"), "the glyph stays for the eye");
+
+        // A one-of is a copy, not a copies.
+        Assert.That(Markup.Spoken(items[1]), Is.EqualTo("1 copy of Plains"));
+    }
+
+    [Test]
+    public void GamePage_says_which_cards_never_turned_up_in_words()
+    {
+        var items = Markup.Parse(GameDeckHtml()).Descendants("li").ToList();
+        var unseen = items.Single(li => li.Attribute("class")?.Value == "unseen");
+
+        // Dimming alone would say it only to people who can see the dimming, and the
+        // separator needs the same comma every other "·" on the page gets.
+        Assert.That(Markup.Spoken(unseen), Is.EqualTo("2 copies of Split Up, not seen"));
+        Assert.That(Markup.Clipboard(unseen), Is.EqualTo("2× Split Up · not seen"));
+
+        // Every other line is left alone.
+        Assert.That(items.Count(li => li.Attribute("class")?.Value == "unseen"), Is.EqualTo(1));
+
+        // And what the mark means, since "not seen" could be read as "not played".
+        Assert.That(Markup.Parse(GameDeckHtml()).Descendants("p")
+                .Any(p => p.Attribute("class")?.Value == "note" &&
+                          p.Value.Contains("stayed in your library", StringComparison.Ordinal)),
+            Is.True);
+    }
+
+    [Test]
+    public void GamePage_omits_the_deck_entirely_when_the_log_carried_none()
+    {
+        // Most archived matches predate deck capture. An empty disclosure widget
+        // inviting you to open it and find nothing is worse than no widget.
+        Assert.That(GameHtml(), Does.Not.Contain("id=\"deck\""));
+        Assert.That(GameHtml(), Does.Not.Contain("Your deck"));
+    }
+
+    [Test]
+    public void Copying_the_page_reproduces_the_markdown_export_of_the_deck()
+    {
+        // The clipboard and the .md file are meant to be the same document. The page
+        // adds the spoken forms of "×" and "·" on top of the shared line text and the
+        // copy strips them back off; this asserts the round trip actually lands.
+        var html = GameDeckHtml();
+        Assert.That(html, Does.Contain("getElementById('deck')"),
+            "the copy must gather the deck even while it is collapsed");
+
+        var copied = Markup.Parse(html).Descendants("details")
+            .Single(d => d.Attribute("id")?.Value == "deck")
+            .Descendants("li")
+            .Select(Markup.Clipboard)
+            .ToList();
+
+        // The same lines as the .md file writes, taken from between its deck heading
+        // and the blank line that ends the list.
+        var exported = MarkdownRenderer.Render(Sample(deck: SampleDeck()))
+            .ReplaceLineEndings("\n").Split('\n')
+            .SkipWhile(l => !l.StartsWith("## Your deck", StringComparison.Ordinal))
+            .SkipWhile(l => !l.StartsWith("- ", StringComparison.Ordinal))
+            .TakeWhile(l => l.StartsWith("- ", StringComparison.Ordinal))
+            .Select(l => l[2..])
+            .ToList();
+
+        Assert.That(copied, Is.EqualTo(exported));
+        Assert.That(copied, Has.Count.EqualTo(3));
+    }
+
+    [Test]
+    public void Markdown_lists_the_deck_ahead_of_the_first_turn()
+    {
+        var md = MarkdownRenderer.Render(Sample(deck: SampleDeck())).ReplaceLineEndings("\n");
+
+        Assert.That(md.IndexOf("## Your deck (7 cards)", StringComparison.Ordinal),
+            Is.GreaterThan(0).And.LessThan(md.IndexOf("## Turn 1", StringComparison.Ordinal)),
+            "the deck is what you check while reading, so it goes before the turns");
+        Assert.That(md, Does.Contain("\n- 4× Hare Apparent\n"));
+        Assert.That(md, Does.Contain("\n- 2× Split Up · not seen\n"));
+
+        // A match with no deck message must not grow an empty heading.
+        Assert.That(MarkdownRenderer.Render(Sample()), Does.Not.Contain("Your deck"));
     }
 
     [Test]
@@ -923,6 +1056,24 @@ internal static class Markup
             XText text => text.Value,
             XElement child when child.Attribute("aria-hidden")?.Value == "true" => "",
             XElement child => Spoken(child),
+            _ => ""
+        }));
+
+    /// <summary>
+    /// What the copy button would put on the clipboard for this element: the text with
+    /// the screen-reader-only spans taken out, which is exactly what <c>textOf</c> does
+    /// in the page's own script.
+    /// </summary>
+    internal static string Clipboard(XElement element) => Visible(element).Trim();
+
+    // Trimmed once at the end, never per node: " · " inside a nested span is a real
+    // separator, and trimming on the way up collapses it to "·".
+    private static string Visible(XElement element) =>
+        string.Concat(element.Nodes().Select(n => n switch
+        {
+            XText text => text.Value,
+            XElement child when child.Attribute("class")?.Value == "vh" => "",
+            XElement child => Visible(child),
             _ => ""
         }));
 

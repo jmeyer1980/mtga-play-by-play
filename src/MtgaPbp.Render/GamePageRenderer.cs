@@ -40,6 +40,7 @@ public static class GamePageRenderer
         if (TranscriptSummary.GapWarning(t) is { } gap)
             sb.Append($"""<p class="warn" id="gap-warning">{E(gap)}</p>""");
 
+        AppendDeck(sb, t);
         AppendSection(sb, t, Density.Beats);
         AppendSection(sb, t, Density.Verbose);
 
@@ -48,6 +49,48 @@ public static class GamePageRenderer
             <script>{Script}</script></body></html>
             """);
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The deck you registered, collapsed. A disclosure widget rather than a section:
+    /// the transcript is what the page is for, and a 20-line list wedged above it
+    /// pushes turn one off the screen — but a decklist is also the thing you reach for
+    /// mid-read, so it sits where you are rather than at the bottom. <c>details</c>
+    /// does that with no script, which matters on a page opened from a file.
+    /// </summary>
+    /// <remarks>
+    /// A real list, because it is one: a screen reader announces how many distinct
+    /// cards the deck holds on entering it, and each line is reachable with the list
+    /// quick keys. <c>list-style:none</c> costs the role in Safari, so the role is
+    /// stated, exactly as the turn lists do.
+    /// </remarks>
+    private static void AppendDeck(StringBuilder sb, Transcript t)
+    {
+        if (t.Deck.Count == 0) return;
+
+        sb.Append($"""
+            <details class="deck" id="deck">
+            <summary>{E(TranscriptSummary.DeckHeading(t))}</summary>
+            <ul class="cards" role="list">
+            """);
+
+        foreach (var card in t.Deck)
+        {
+            // "4×" is read as "4" by synthesisers that skip U+00D7, which next to a
+            // card name is indistinguishable from part of the name. The glyph stays
+            // for the eye and the words go to speech, as everywhere else on the page.
+            // Built on one line: the clipboard reads these as text, and a newline in
+            // the markup would land in the pasted markdown as one.
+            var copies = card.Count == 1 ? "copy" : "copies";
+            var seen = card.Seen ? "" : $"""{Spoken(" · ", ", ")}not seen""";
+            sb.Append($"""<li class="{(card.Seen ? "seen" : "unseen")}"><span aria-hidden="true">{card.Count}×</span><span class="vh">{card.Count} {copies} of</span> {E(card.Name)}{seen}</li>""");
+        }
+
+        sb.Append($"""
+            </ul>
+            <p class="note">{E(TranscriptSummary.DeckNote)}</p>
+            </details>
+            """);
     }
 
     /// <summary>
@@ -159,13 +202,19 @@ public static class GamePageRenderer
         .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
             clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
         .warn{border-left:3px solid #a35b00;padding-left:.8rem;opacity:.85}
+        .deck{margin:.6rem 0}
+        .deck summary{cursor:pointer}
+        .deck .cards{list-style:none;margin:.4rem 0;padding:0 0 0 1.5rem}
+        .deck .cards li{margin:.1rem 0}
+        .deck .unseen{opacity:.65}
+        .note{font-size:.9rem;opacity:.75;margin:.4rem 0 0 1.5rem}
         .controls{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.4rem 0 0}
         button{font:inherit;padding:.3rem .8rem;cursor:pointer;min-height:1.75rem}
         .status{font-size:.85rem;opacity:.75}
         :focus-visible{outline:2px solid currentColor;outline-offset:2px}
         @media (prefers-color-scheme:dark){.warn{border-left-color:#e0a33a}}
         @media (forced-colors:active){
-          .sub,.board,.warn,.status,.back a,h2{opacity:1}
+          .sub,.board,.warn,.status,.back a,h2,.note,.deck .unseen{opacity:1}
         }
         """;
 
@@ -238,6 +287,17 @@ public static class GamePageRenderer
             if (title) out.push('# ' + textOf(title), '');
             if (sub) out.push('*' + textOf(sub) + '*', '');
             for (var w = 0; w < warns.length; w++) out.push('> ' + textOf(warns[w]), '');
+
+            // Copied whether or not it is expanded, and in the same place the markdown
+            // export puts it: the two are meant to be the same document, and a reader
+            // who collapsed a list did not ask to leave it out of the paste.
+            var deck = document.getElementById('deck');
+            if (deck) {
+              out.push('## ' + textOf(deck.querySelector('summary')), '');
+              var cards = deck.querySelectorAll('li');
+              for (var c = 0; c < cards.length; c++) out.push('- ' + textOf(cards[c]));
+              out.push('', '*' + textOf(deck.querySelector('.note')) + '*', '');
+            }
 
             var nodes = section.querySelectorAll('h2, li.beat, li.board');
             for (var i = 0; i < nodes.length; i++) {

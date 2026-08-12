@@ -18,7 +18,15 @@ public sealed record Transcript(
     /// from <c>Incomplete</c>: that one means the log stopped, this one means the log
     /// kept going and left things out of the middle.
     /// </summary>
-    IReadOnlyList<LogGap> Gaps);
+    IReadOnlyList<LogGap> Gaps,
+
+    /// <summary>
+    /// The deck <see cref="You"/> registered for this match, sorted by name. Empty when
+    /// the log did not carry one — which is every match archived before the slicer
+    /// stopped discarding <c>ConnectResp</c>, and any match whose deck message named a
+    /// seat other than the local player's.
+    /// </summary>
+    IReadOnlyList<DeckEntry> Deck);
 
 public sealed class EventExtractor(ICardDb cards)
 {
@@ -146,6 +154,11 @@ public sealed class EventExtractor(ICardDb cards)
         string? endReason = null;
         var gaps = new List<LogGap>();
 
+        // Collected rather than resolved on sight: the deck message arrives before the
+        // MulliganReq that says which seat is ours, so there is nothing to check it
+        // against yet when it goes past.
+        var decks = new List<(int? Seat, IReadOnlyList<int> GrpIds)>();
+
         foreach (var raw in rawLines)
         {
             JsonElement root;
@@ -181,6 +194,9 @@ public sealed class EventExtractor(ICardDb cards)
                     localSeat = FirstSeat(m);
                 else if (type is "GREMessageType_ActionsAvailableReq" && fallbackSeat is null)
                     fallbackSeat = FirstSeat(m);
+                else if (type is "GREMessageType_ConnectResp" &&
+                         DeckList.ReadMessage(m) is { } announced)
+                    decks.Add(announced);
 
                 if (Json.Obj(m, "gameStateMessage") is not { } gsm) continue;
 
@@ -227,7 +243,42 @@ public sealed class EventExtractor(ICardDb cards)
         return new Transcript(
             matchId, started, ended, eventName, you, opp,
             winningTeam, won, lost, Incomplete: !sawFinal,
-            st.Events, st.Unknown, st.CardsSeen, st.Unresolved, gaps);
+            st.Events, st.Unknown, st.CardsSeen, st.Unresolved, gaps,
+            BuildDeck(decks, you, tracker));
+    }
+
+    /// <summary>
+    /// The decklist, attributed to the local seat or not shown at all.
+    /// </summary>
+    /// <remarks>
+    /// Arena addresses the deck message to a seat, and it named the local player in all
+    /// 35 occurrences across the current logs — but the one archived match where it
+    /// disagreed had been mis-sliced, not mis-addressed, and that is exactly the case a
+    /// reader must never be shown. So the seat is checked rather than trusted, and a
+    /// disagreement drops the deck: no decklist is better than the wrong one.
+    /// <para>
+    /// The last message wins. A slice carries at most one today, and where two could
+    /// ever reach the same match the later one is the nearer to it.
+    /// </para>
+    /// </remarks>
+    private IReadOnlyList<DeckEntry> BuildDeck(
+        List<(int? Seat, IReadOnlyList<int> GrpIds)> decks, PlayerInfo? you,
+        GameStateTracker tracker)
+    {
+        if (you is null) return [];
+
+        var mine = decks.LastOrDefault(d => d.Seat == you.Seat);
+        if (mine.GrpIds is not { Count: > 0 } grpIds) return [];
+
+        // Owning a game object is the client's own record of having held the card.
+        // A card that stayed in the library the whole match never gets one, which is
+        // precisely the distinction worth drawing.
+        var seen = tracker.Objects.Values
+            .Where(o => o.OwnerSeat == you.Seat && o.GrpId > 0)
+            .Select(o => o.GrpId)
+            .ToHashSet();
+
+        return DeckList.Build(grpIds, cards, seen);
     }
 
     /// <summary>

@@ -348,11 +348,16 @@ after a play session.
 
 Four things only real data revealed. All are now covered by regression tests.
 
-**The match id is sticky.** Only `GameStateType_Full` carries `gameInfo.matchID` — 74
-lines out of 4,774 in the sample log. Every `GameStateType_Diff`, which is where the
-annotations live, has no match id at all and must inherit the match in progress. The
-first implementation dropped 98% of the game data and produced a 168 KB archive
-instead of 2.0 MB.
+**The match id is sticky.** Almost nothing names its match: of 7,053 engine envelopes,
+142 carry `gameInfo.matchID` — all 37 `GameStateType_Full` messages and 105 of the
+12,239 `GameStateType_Diff` ones. The rest must inherit the match in progress. The first
+implementation required an explicit id and so dropped 98% of the game data, producing a
+168 KB archive instead of 2.0 MB.
+
+> This paragraph previously said only `Full` ever names a match. That held in the
+> 24-match sample it was written from and is false in general — and a `Diff` naming an
+> already-finished match is precisely what misattributed a decklist to the wrong game.
+> Counted, not assumed, is the rule that keeps being learned here.
 
 **`JsonElement.TryGetInt32` throws.** It returns `false` only when a number will not
 fit; when the element is not a number at all it raises `InvalidOperationException`.
