@@ -1,0 +1,34 @@
+<Project>
+
+  <!--
+    The version every project builds under. The release workflow overrides it with
+    -p:Version from the tag, so this is what a build from a working copy reports.
+  -->
+  <PropertyGroup>
+    <Version>0.3.0</Version>
+  </PropertyGroup>
+
+  <!--
+    Stamps the commit onto the assembly so a rendered report can say which build wrote
+    it. This exists because of a real morning lost to it: a `watch` left running from an
+    older release kept rewriting the whole report with pre-fix code, and neither the
+    pages nor the exe said which version they came from — so the repository and the
+    output disagreed with no way to see why. A version alone would not have settled it
+    either, since every build from a working copy carries the same one.
+
+    Failure is not an error. A source drop with no .git directory, or a machine with no
+    git on PATH, still has to build; it just reports a bare version.
+  -->
+  <Target Name="StampCommit" BeforeTargets="GetAssemblyVersion" Condition="'$(SourceRevisionId)' == ''">
+    <Exec Command="git rev-parse --short=8 HEAD"
+          ConsoleToMSBuild="true" StandardOutputImportance="low"
+          ContinueOnError="true" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommit" />
+      <Output TaskParameter="ExitCode" PropertyName="GitExitCode" />
+    </Exec>
+    <PropertyGroup Condition="'$(GitExitCode)' == '0' and '$(GitCommit)' != ''">
+      <SourceRevisionId>$(GitCommit.Trim())</SourceRevisionId>
+    </PropertyGroup>
+  </Target>
+
+</Project>

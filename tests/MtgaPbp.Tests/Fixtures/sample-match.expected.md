@@ -144,3 +144,7 @@
 - Deal Gone Bad triggers
 - Ajani's Pridemate 5/5 gets 1 +1/+1 counter
 - You concede — opponent wins the match
+
+---
+
+*Written by mtga-pbp 0.0.0-test*

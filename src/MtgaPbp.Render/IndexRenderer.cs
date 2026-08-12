@@ -136,6 +136,7 @@ public static class IndexRenderer
                 id="live"> <span aria-hidden="true">· </span>live updating</span></p>
             {{body}}
             </main>
+            <footer class="build">{{E(BuildInfo.Line)}}</footer>
             <script>{{Script}}</script>
             </body></html>
             """;
@@ -218,13 +219,15 @@ public static class IndexRenderer
         #live{display:none;font-size:.8rem;opacity:.6}
         body.live #live{display:inline}
         code{font-family:ui-monospace,Menlo,Consolas,monospace}
+        .build{margin-top:2rem;padding-top:.8rem;font-size:.8rem;opacity:.55;
+               border-top:1px solid rgba(128,128,128,.35)}
         @media (prefers-color-scheme:dark){
           .win{color:#4ade80}
           .star{color:#9a9a9a}
           .star.on{color:#f2c14a}
         }
         @media (forced-colors:active){
-          .sub,.loss,.empty,.note,th,#live{opacity:1}
+          .sub,.loss,.empty,.note,th,#live,.build{opacity:1}
           .star{color:ButtonText}
           .star.on{color:Highlight}
         }

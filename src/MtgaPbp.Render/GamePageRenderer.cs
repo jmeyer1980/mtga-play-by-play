@@ -52,6 +52,7 @@ public static class GamePageRenderer
 
         sb.Append($"""
             </main>
+            <footer class="build">{E(BuildInfo.Line)}</footer>
             <script>{Script}</script></body></html>
             """);
         return sb.ToString();
@@ -224,13 +225,15 @@ public static class GamePageRenderer
         .deck .cards li{margin:.1rem 0}
         .deck .unseen{opacity:.65}
         .note{font-size:.9rem;opacity:.75;margin:.4rem 0 0 1.5rem}
+        .build{margin-top:2rem;padding-top:.8rem;font-size:.8rem;opacity:.55;
+               border-top:1px solid currentColor}
         .controls{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.4rem 0 0}
         button{font:inherit;padding:.3rem .8rem;cursor:pointer;min-height:1.75rem}
         .status{font-size:.85rem;opacity:.75}
         :focus-visible{outline:2px solid currentColor;outline-offset:2px}
         @media (prefers-color-scheme:dark){.warn{border-left-color:#e0a33a}}
         @media (forced-colors:active){
-          .sub,.board,.warn,.status,.back a,h2,h3,.note,.deck .unseen{opacity:1}
+          .sub,.board,.warn,.status,.back a,h2,h3,.note,.deck .unseen,.build{opacity:1}
         }
         """;
 

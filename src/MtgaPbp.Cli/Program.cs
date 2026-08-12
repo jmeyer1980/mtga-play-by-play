@@ -217,6 +217,10 @@ public static class Program
             return 2;
         }
 
+        // Named here rather than only on the page, because this is the window that stays
+        // open for hours rewriting the report — and a `watch` running from a stale copy
+        // is the one way to have the output disagree with the source and see no reason.
+        Console.WriteLine($"mtga-pbp {BuildInfo.Version}");
         Console.WriteLine($"watching {cfg.LogPaths.FirstOrDefault()}");
         Console.WriteLine($"report is live at {server.Url}");
         Console.WriteLine("leave this window open; press Ctrl+C to stop.");

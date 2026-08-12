@@ -40,6 +40,10 @@ public static class MarkdownRenderer
             else if (line.IsBoard) sb.AppendLine($"  *{line.Text}*");
             else sb.AppendLine($"- {line.Text}");
         }
+
+        // Below a rule, so a transcript pasted into a chat carries which build wrote it
+        // without the stamp reading as part of the match.
+        sb.AppendLine().AppendLine("---").AppendLine().AppendLine($"*{BuildInfo.Line}*");
         return sb.ToString();
     }
 }

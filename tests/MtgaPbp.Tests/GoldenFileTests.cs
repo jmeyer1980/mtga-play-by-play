@@ -12,18 +12,29 @@ namespace MtgaPbp.Tests;
 public class GoldenFileTests
 {
     private TimeZoneInfo _originalZone = null!;
+    private string _originalVersion = null!;
 
-    // Match times render in local time, so without pinning this the golden file
-    // would only match on a machine in the timezone that generated it.
+    // Match times render in local time, and the build stamp carries the commit, so
+    // without pinning both the golden file would only match on the machine and the
+    // commit that generated it.
     [OneTimeSetUp]
-    public void PinTimeZone()
+    public void PinEnvironment()
     {
         _originalZone = TranscriptSummary.DisplayTimeZone;
         TranscriptSummary.DisplayTimeZone = TimeZoneInfo.Utc;
+        _originalVersion = BuildInfo.Version;
+        BuildInfo.Version = PinnedVersion;
     }
 
     [OneTimeTearDown]
-    public void RestoreTimeZone() => TranscriptSummary.DisplayTimeZone = _originalZone;
+    public void RestoreEnvironment()
+    {
+        TranscriptSummary.DisplayTimeZone = _originalZone;
+        BuildInfo.Version = _originalVersion;
+    }
+
+    /// <summary>Stands in for whatever commit the suite happens to be running at.</summary>
+    internal const string PinnedVersion = "0.0.0-test";
 
     internal static string FixtureDir =>
         Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures");
