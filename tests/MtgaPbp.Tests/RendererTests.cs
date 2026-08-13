@@ -224,7 +224,7 @@ public class RendererTests
         // Copy must gather from the transcript sections, never from the header, so
         // the toggle and copy button labels cannot end up in the clipboard.
         Assert.That(html, Does.Contain("section[data-density]"));
-        Assert.That(html, Does.Contain("h2, li.beat"));
+        Assert.That(html, Does.Contain("h2, h3, li.beat"));
         Assert.That(html, Does.Not.Contain("copy-button').textContent"),
             "the button's own label must not be part of the copied text");
     }
@@ -835,7 +835,7 @@ public class RendererTests
         // transcript should match what the markdown export produces.
         var html = GamePageRenderer.Render(Repeating());
         Assert.That(html, Does.Contain("clone.querySelectorAll('.vh')"));
-        Assert.That(html, Does.Contain("h2, li.beat, li.board"));
+        Assert.That(html, Does.Contain("h2, h3, li.beat, li.board"));
     }
 
     // ---------- the decklist ----------

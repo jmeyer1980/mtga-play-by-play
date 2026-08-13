@@ -323,11 +323,16 @@ public static class GamePageRenderer
               out.push('', '*' + textOf(deck.querySelector('.note')) + '*', '');
             }
 
-            var nodes = section.querySelectorAll('h2, li.beat, li.board');
+            // h3 as well as h2. A multi-game page puts its games at h2 and demotes the
+            // openings and turns beneath them to h3, so selecting only h2 copied the
+            // three game headings and dropped all twenty-five turn boundaries — a
+            // Bo3 transcript arrived in chat as one unbroken run of beats.
+            var nodes = section.querySelectorAll('h2, h3, li.beat, li.board');
             for (var i = 0; i < nodes.length; i++) {
               var node = nodes[i];
               var text = textOf(node);
               if (node.tagName === 'H2') out.push('', '## ' + text);
+              else if (node.tagName === 'H3') out.push('', '### ' + text);
               else if (node.className === 'board') out.push('  *' + text + '*');
               else out.push('- ' + text);
             }

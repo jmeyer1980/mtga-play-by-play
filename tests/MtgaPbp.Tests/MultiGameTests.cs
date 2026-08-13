@@ -447,6 +447,38 @@ public class MultiGameTests
         Assert.That(root.Descendants("h2"), Is.Not.Empty);
     }
 
+    /// <summary>
+    /// The copy button collects every heading level the narrator can emit.
+    /// </summary>
+    /// <remarks>
+    /// It selected only h2. When games moved to h2 and their openings and turns were
+    /// demoted to h3, the copy silently kept the three game headings and dropped all
+    /// twenty-five turn boundaries — a Bo3 pasted into chat arrived as one unbroken run
+    /// of beats. The page and the markdown export are meant to be the same document, and
+    /// nothing was comparing them at more than one heading level.
+    /// <para>
+    /// Asserted against the levels the narrator actually produces rather than against a
+    /// hardcoded pair, so adding a level fails here instead of silently going uncopied.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void The_copy_script_collects_every_heading_level_the_narrator_emits()
+    {
+        var levels = Lines().Where(l => l.IsTurnHeader).Select(l => l.Level)
+                            .Distinct().Order().ToList();
+        Assert.That(levels, Is.EqualTo(new[] { 2, 3 }),
+            "a multi-game page nests its turns under its games");
+
+        var selector = System.Text.RegularExpressions.Regex
+            .Matches(GamePageRenderer.Render(Bo3()), @"querySelectorAll\('([^']+)'\)")
+            .Select(m => m.Groups[1].Value)
+            .Single(s => s.Contains("li.beat", StringComparison.Ordinal));
+
+        foreach (var level in levels)
+            Assert.That(selector, Does.Contain($"h{level}"),
+                $"a heading the narrator emits at level {level} would not be copied");
+    }
+
     [Test]
     public void The_markdown_export_carries_the_same_game_structure_as_the_page()
     {
