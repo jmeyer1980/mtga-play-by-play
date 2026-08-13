@@ -8,6 +8,7 @@ public sealed class CardDb : ICardDb, IDisposable
     private readonly Dictionary<int, string?> _locCache = new();
     private readonly Dictionary<int, CardInfo?> _cardCache = new();
     private readonly Dictionary<(string Type, int Value), string?> _enumCache = new();
+    private readonly Dictionary<int, string?> _abilityCache = new();
 
     public CardDb(string dbPath)
     {
@@ -101,6 +102,29 @@ public sealed class CardDb : ICardDb, IDisposable
         }
         _cardCache[grpId] = info;
         return info;
+    }
+
+    public string? AbilityText(int abilityGrpId)
+    {
+        if (_abilityCache.TryGetValue(abilityGrpId, out var hit)) return hit;
+        using var cmd = _con.CreateCommand();
+        // First Formatted variant available, not a fixed one: ability rows are
+        // inconsistent about which variants exist — "First strike" lives only at
+        // Formatted = 1, while most whole-sentence texts also have 0 and 2 — and
+        // pinning any single value silently loses most of the table.
+        cmd.CommandText = """
+            SELECT l.Loc
+            FROM Abilities a
+            JOIN Localizations_enUS l ON l.LocId = a.TextId
+            WHERE a.Id = $id
+            ORDER BY l.Formatted
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("$id", abilityGrpId);
+        var text = cmd.ExecuteScalar() as string;
+        if (string.IsNullOrWhiteSpace(text)) text = null;
+        _abilityCache[abilityGrpId] = text;
+        return text;
     }
 
     public string? EnumName(string type, int value)

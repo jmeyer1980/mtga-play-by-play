@@ -520,6 +520,15 @@ public static class Narrator
         EventKind.LevelUp when e.SourceName is not null && e.Amount > 0 =>
             $"{e.SourceName} becomes level {e.Amount}",
 
+        // Cause first and active where the log names one, the same shape as "Split Up
+        // destroys Hare Apparent". This is the line that connects "Enter the Avatar
+        // State resolves" to the first-strike damage two lines later — without it the
+        // grant is invisible and the damage step reads like the parser lost count.
+        EventKind.AbilityGained when e.TargetName is not null && e.Detail is not null =>
+            e.CauseName is not null
+                ? $"{e.CauseName} gives {e.TargetName} {e.Detail}"
+                : $"{e.TargetName} gains {e.Detail}",
+
         EventKind.Attack when e.SourceName is not null && e.TargetName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "attack", "attacks", t)} " +
             $"{e.TargetName} with {e.SourceName}",

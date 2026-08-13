@@ -135,6 +135,7 @@
 - Caretaker's Talent resolves
 - You cast Ethereal Armor, targeting Rabbit (1/1 → 3/3)
 - Ethereal Armor resolves
+- Ethereal Armor gives Rabbit 3/3 first strike
   *You control: Rabbit 3/3, Rabbit 1/1*
 
 ## Turn 11 — Opponent  (You 11 · Opponent 23)

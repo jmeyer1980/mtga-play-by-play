@@ -38,6 +38,7 @@ public class PermanentLabelsTests
         };
 
         public string? EnumName(string type, int value) => null;
+        public string? AbilityText(int abilityGrpId) => null;
     }
 
     private const string RoomLine = """

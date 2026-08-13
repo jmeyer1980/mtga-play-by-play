@@ -25,6 +25,7 @@ public class CardNameFixtureGenerator
         public readonly Dictionary<int, string> Locs = [];
         public readonly Dictionary<int, FixtureCardDb.Card> Cards = [];
         public readonly Dictionary<string, string> Enums = [];
+        public readonly Dictionary<int, string> Abilities = [];
 
         public string? NameForLocId(int locId)
         {
@@ -47,6 +48,13 @@ public class CardNameFixtureGenerator
             var name = inner.EnumName(type, value);
             if (name is not null) Enums[$"{type}:{value}"] = name;
             return name;
+        }
+
+        public string? AbilityText(int abilityGrpId)
+        {
+            var text = inner.AbilityText(abilityGrpId);
+            if (text is not null) Abilities[abilityGrpId] = text;
+            return text;
         }
     }
 
@@ -79,7 +87,11 @@ public class CardNameFixtureGenerator
             recorder.Locs.OrderBy(k => k.Key).ToDictionary(k => k.Key, v => v.Value),
             recorder.Cards.OrderBy(k => k.Key).ToDictionary(k => k.Key, v => v.Value),
             recorder.Enums.OrderBy(k => k.Key, StringComparer.Ordinal)
-                          .ToDictionary(k => k.Key, v => v.Value));
+                          .ToDictionary(k => k.Key, v => v.Value))
+        {
+            Abilities = recorder.Abilities.OrderBy(k => k.Key)
+                                          .ToDictionary(k => k.Key, v => v.Value)
+        };
 
         // Write into the source tree, not the copied output directory.
         var sourceFixtures = Path.GetFullPath(Path.Combine(
@@ -91,6 +103,7 @@ public class CardNameFixtureGenerator
 
         TestContext.Out.WriteLine(
             $"wrote {target}\n  locs={data.Locs.Count} cards={data.Cards.Count} " +
-            $"enums={data.Enums.Count} size={new FileInfo(target).Length:N0} bytes");
+            $"enums={data.Enums.Count} abilities={data.Abilities.Count} " +
+            $"size={new FileInfo(target).Length:N0} bytes");
     }
 }

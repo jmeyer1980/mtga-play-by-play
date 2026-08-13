@@ -105,8 +105,9 @@ the reasoning is in the commit history:
 - `TimerStateMessage` think-time — unreported on a third of turns, and about half the
   wall clock when present, so the transcript reports wall clock instead
 
-Still unmined and genuinely open: `AddAbility`, which appears 461 times and is visible in
-`mtga-pbp stats`.
+`AddAbility` is mined as of issue #5: grants render as "Enter the Avatar State gives
+Llanowar Elves 2/2 first strike", via the card database's `Abilities` table. Grants that
+ride on a counter or restate a Class level line are deliberately left to those lines.
 
 ## Reporting a bug
 

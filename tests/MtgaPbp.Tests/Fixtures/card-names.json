@@ -69,13 +69,6 @@
       "Toughness": "",
       "IsToken": false
     },
-    "88956": {
-      "Name": "Wrench",
-      "Types": "1",
-      "Power": "",
-      "Toughness": "",
-      "IsToken": false
-    },
     "91542": {
       "Name": "Caretaker\u0027s Talent",
       "Types": "3",
@@ -151,13 +144,6 @@
       "Types": "2",
       "Power": "1",
       "Toughness": "1",
-      "IsToken": false
-    },
-    "92970": {
-      "Name": "Deal Gone Bad",
-      "Types": "4",
-      "Power": "",
-      "Toughness": "",
       "IsToken": false
     },
     "93636": {
@@ -300,6 +286,13 @@
       "Toughness": "3",
       "IsToken": false
     },
+    "98601": {
+      "Name": "Goblin",
+      "Types": "2",
+      "Power": "1",
+      "Toughness": "1",
+      "IsToken": true
+    },
     "103538": {
       "Name": "The Great Goblin",
       "Types": "2",
@@ -339,5 +332,11 @@
     "Step:6": "Declare Blockers",
     "Step:7": "Combat Damage",
     "Step:8": "End Combat"
+  },
+  "Abilities": {
+    "6": "First strike",
+    "117109": "{oT}, Sacrifice CARDNAME: It deals 1 damage to any target.",
+    "173825": "When this Class becomes level 2, create a token that\u0027s a copy of target token you control.",
+    "193925": "Pay 1 life, Blight 2: Target opponent blights 2. Activate only as a sorcery."
   }
 }
