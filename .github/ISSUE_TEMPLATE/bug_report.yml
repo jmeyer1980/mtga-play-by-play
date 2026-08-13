@@ -18,7 +18,7 @@ body:
     attributes:
       label: Build stamp
       description: From the bottom of any report page, or the first line `watch` prints.
-      placeholder: Written by mtga-pbp 0.3.1+5f79196f
+      placeholder: Written by mtga-pbp 0.4.0+a9ad4257
     validations:
       required: true
 

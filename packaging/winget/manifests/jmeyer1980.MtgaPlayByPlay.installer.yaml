@@ -1,10 +1,10 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
 
 PackageIdentifier: jmeyer1980.MtgaPlayByPlay
-PackageVersion: 0.3.1
+PackageVersion: 0.4.0
 InstallerType: zip
 NestedInstallerType: portable
-ReleaseDate: 2026-08-12
+ReleaseDate: 2026-08-13
 InstallModes:
 - interactive
 - silent
@@ -13,7 +13,7 @@ Installers:
   NestedInstallerFiles:
   - RelativeFilePath: mtga-pbp.exe
     PortableCommandAlias: mtga-pbp
-  InstallerUrl: https://github.com/jmeyer1980/mtga-play-by-play/releases/download/v0.3.1/mtga-pbp-v0.3.1-win-x64.zip
-  InstallerSha256: C7D69692B5DBB09D3DA51E5EABA00D15038DE6EBEEAC295D8759B952FD71943A
+  InstallerUrl: https://github.com/jmeyer1980/mtga-play-by-play/releases/download/v0.4.0/mtga-pbp-v0.4.0-win-x64.zip
+  InstallerSha256: 83D391189727C5CBE3028AD2C979A1C89136A1454F58689703DD64AA03BE9AB3
 ManifestType: installer
 ManifestVersion: 1.12.0

@@ -170,7 +170,7 @@ Every page and every markdown export ends with the build that wrote it, and
 `watch` prints the same line on startup:
 
 ```
-Written by mtga-pbp 0.3.1+d198a120
+Written by mtga-pbp 0.4.0+a9ad4257
 ```
 
 Worth checking when the output disagrees with what you expect. A `watch` left
