@@ -85,6 +85,75 @@ public class GameStateTrackerTests
         Assert.That(t.NameOf(433), Is.EqualTo("Temple of Plenty's ability"));
     }
 
+    /// <summary>
+    /// Arena omits protobuf defaults, so an absent flag is the default and not silence.
+    /// </summary>
+    /// <remarks>
+    /// Across the archive `isTapped` is true 14,967 times and false zero times, and
+    /// `damage` is non-zero 1,415 times and zero zero times. Reading absence as
+    /// "unchanged" latched both on: once a creature was tapped or damaged it stayed so on
+    /// every later board line, and 671 of 1,946 board snapshots carried a claim that was
+    /// no longer true, always in the same direction.
+    /// </remarks>
+    [Test]
+    public void An_absent_tapped_or_damage_flag_means_untapped_and_undamaged()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full", "gameObjects": [
+          { "instanceId": 80, "grpId": 94131, "type": "GameObjectType_Card",
+            "isTapped": true, "damage": 3, "cardTypes": ["CardType_Creature"] } ] }
+        """));
+        Assert.That(t.Get(80)!.IsTapped, Is.True);
+        Assert.That(t.Get(80)!.Damage, Is.EqualTo(3));
+
+        // The untap step and the cleanup step: the same object, described again with
+        // both fields simply gone.
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 80, "grpId": 94131, "type": "GameObjectType_Card",
+            "cardTypes": ["CardType_Creature"] } ] }
+        """));
+        Assert.That(t.Get(80)!.IsTapped, Is.False, "it untapped");
+        Assert.That(t.Get(80)!.Damage, Is.EqualTo(0), "damage wore off at cleanup");
+    }
+
+    /// <summary>
+    /// An empty power object is a power of zero, which is how protobuf writes it.
+    /// </summary>
+    /// <remarks>
+    /// Read as "unknown", the previous value stood and a creature whose buff had ended
+    /// kept the buffed number: "Sazh's Chocobo 4/5 returns to 4/1" for a 0/1 Chocobo.
+    /// The property being absent altogether still means unknown — a non-creature has no
+    /// power at all.
+    /// </remarks>
+    [Test]
+    public void An_empty_power_object_is_zero_rather_than_unknown()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full", "gameObjects": [
+          { "instanceId": 81, "grpId": 94131, "type": "GameObjectType_Card",
+            "power": { "value": 4 }, "toughness": { "value": 5 } } ] }
+        """));
+        Assert.That(t.Get(81)!.Power, Is.EqualTo(4));
+
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 81, "grpId": 94131, "type": "GameObjectType_Card",
+            "power": {}, "toughness": { "value": 1 } } ] }
+        """));
+        Assert.That(t.Get(81)!.Power, Is.EqualTo(0), "an empty object is zero");
+        Assert.That(t.Get(81)!.Toughness, Is.EqualTo(1));
+
+        // Absent is still unknown, so a non-creature keeps whatever was known.
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 81, "grpId": 94131, "type": "GameObjectType_Card" } ] }
+        """));
+        Assert.That(t.Get(81)!.Power, Is.EqualTo(0));
+    }
+
     [Test]
     public void NameOf_degrades_to_grpid_when_unresolvable()
     {

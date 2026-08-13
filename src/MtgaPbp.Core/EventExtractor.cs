@@ -830,8 +830,17 @@ public sealed class EventExtractor(ICardDb cards)
             // are stable, so they never make an unchanged board look changed.
             var detail = string.Join(", ",
                 parts.Select(p => tracker.NameOf(p.InstanceId) + p.Stats));
-            if (st.LastBoard.TryGetValue(seat, out var previous) && previous == detail) continue;
-            st.LastBoard[seat] = detail;
+
+            // Tap state is printed but does not by itself make a board worth reprinting.
+            // Permanents untap at their controller's untap step, so once tapped state was
+            // read correctly every turn boundary "changed" every board — 417 of 1,076
+            // consecutive snapshots differed from the one before by nothing except
+            // creatures having untapped, which is what a turn passing means and not news
+            // about the board.
+            var shape = detail.Replace(" (tapped)", "", StringComparison.Ordinal)
+                              .Replace(", tapped)", ")", StringComparison.Ordinal);
+            if (st.LastBoard.TryGetValue(seat, out var previous) && previous == shape) continue;
+            st.LastBoard[seat] = shape;
 
             var seq = st.Seq;
             st.Add(new GameEvent

@@ -95,7 +95,7 @@
 - Rabbit deals 1 damage to Ajani's Pridemate 4/4
 - Rabbit deals 1 damage to You ×3
 - You lose 3 life
-  *Opponent controls: Ajani's Pridemate 4/4 (1 dmg, tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1*
+  *Opponent controls: Ajani's Pridemate 4/4 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1*
 
 ## Turn 8 — You  (You 14 · Opponent 22)
 - Leonin Vanguard 2/2 returns to 1/1
@@ -123,7 +123,7 @@
 - Rabbit deals 1 damage to You ×3
 - You lose 3 life
   *You control: Rabbit 1/1, Rabbit 1/1*
-  *Opponent controls: Ajani's Pridemate 5/5 (1 dmg, tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1, Crowd of True Believers 1/2*
+  *Opponent controls: Ajani's Pridemate 5/5 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1, Crowd of True Believers 1/2*
 
 ## Turn 10 — You  (You 11 · Opponent 23)
 - Leonin Vanguard 2/2 returns to 1/1

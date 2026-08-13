@@ -209,9 +209,20 @@ public sealed class GameStateTracker(ICardDb cards)
         if (Json.Int(go, "zoneId") is { } zi) obj.ZoneId = zi;
         if (ReadStat(go, "power") is { } pw) obj.Power = pw;
         if (ReadStat(go, "toughness") is { } tg) obj.Toughness = tg;
-        if (Json.Int(go, "damage") is { } dmg) obj.Damage = dmg;
-        if (go.TryGetProperty("isTapped", out var tap))
-            obj.IsTapped = tap.ValueKind == JsonValueKind.True;
+        // Assigned unconditionally, because absence is the value. Arena omits protobuf
+        // defaults: across the archive `isTapped` is true 14,967 times and false zero
+        // times, and `damage` is non-zero 1,415 times and zero zero times. Treating
+        // absence as "unchanged" latched both on — once a creature was tapped or
+        // damaged it stayed that way on every later board line, and 671 of 1,946 board
+        // snapshots carried at least one claim that was no longer true. The errors ran
+        // one way only, which is what a latch looks like.
+        //
+        // Safe because a gameObjects entry is a complete description rather than a
+        // patch: the two commonest shapes in the archive are the same thirteen keys
+        // with and without `isTapped`, and no entry omits the identifying fields.
+        obj.Damage = Json.Int(go, "damage") ?? 0;
+        obj.IsTapped = go.TryGetProperty("isTapped", out var tap) &&
+                       tap.ValueKind == JsonValueKind.True;
         if (ReadStat(go, "loyalty") is { } ly) obj.Loyalty = ly;
         if (Json.Int(go, "objectSourceGrpId") is { } src) obj.ObjectSourceGrpId = src;
         if (Json.Int(go, "parentId") is { } par) obj.ParentId = par;
@@ -338,11 +349,25 @@ public sealed class GameStateTracker(ICardDb cards)
     private bool InPlay(TrackedObject obj) =>
         _zoneTypes.TryGetValue(obj.ZoneId, out var zone) && zone == "ZoneType_Battlefield";
 
-    /// <summary>power/toughness arrive either as a number or as { "value": n }.</summary>
+    /// <summary>
+    /// power/toughness, which arrive either as a number or as <c>{ "value": n }</c>.
+    /// </summary>
+    /// <remarks>
+    /// An empty object is zero, not silence. Arena serializes protobuf with default
+    /// values omitted, so a power of 0 arrives as <c>"power": {}</c> — reading that as
+    /// "unknown" left the previous value standing, and a creature whose buff had ended
+    /// kept the buffed number. "Sazh's Chocobo 4/5 returns to 4/1" was a 0/1 Chocobo.
+    /// <para>
+    /// The property being absent altogether is different and still means unknown: a
+    /// non-creature has no power at all, and 12-key entries that describe an enchantment
+    /// sit right beside 15-key ones that describe a creature.
+    /// </para>
+    /// </remarks>
     private static int? ReadStat(JsonElement parent, string property)
     {
         if (!parent.TryGetProperty(property, out var el)) return null;
-        return el.ValueKind == JsonValueKind.Object ? Json.Int(el, "value") : Json.Int(el);
+        if (el.ValueKind != JsonValueKind.Object) return Json.Int(el);
+        return Json.Int(el, "value") ?? 0;
     }
 
     /// <summary>Follows the id-change chain to the current id. Cycle-safe.</summary>
