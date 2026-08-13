@@ -529,6 +529,11 @@ public static class Narrator
                 ? $"{e.CauseName} gives {e.TargetName} {e.Detail}"
                 : $"{e.TargetName} gains {e.Detail}",
 
+        // "loses", the same verb counters and life use. No cause: a wear-off has no
+        // actor, and the grant line already named who put the ability there.
+        EventKind.AbilityExpired when e.TargetName is not null && e.Detail is not null =>
+            $"{e.TargetName} loses {e.Detail}",
+
         EventKind.Attack when e.SourceName is not null && e.TargetName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "attack", "attacks", t)} " +
             $"{e.TargetName} with {e.SourceName}",

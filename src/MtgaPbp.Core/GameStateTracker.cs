@@ -31,6 +31,15 @@ public sealed class TrackedObject
     public int? AttackTargetId;
     public IReadOnlyList<int> BlockedAttackerIds = [];
     public readonly Dictionary<int, int> Counters = [];
+
+    /// <summary>
+    /// The ability grpids this object carried the last time Arena described it,
+    /// printed and granted alike. Kept so a granted ability leaving the set can be
+    /// noticed — the object's own description is the only surface that says a grant
+    /// wore off, because the grant's persistent annotation is sampled in and out of
+    /// messages while the ability stands.
+    /// </summary>
+    public HashSet<int> AbilityGrpIds = [];
 }
 
 /// <summary>
@@ -84,6 +93,8 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly List<(int Id, int Level)> _newLevels = [];
     private readonly List<(int Affected, int AbilityGrpId, int? Affector)> _newAbilityGrants = [];
     private readonly HashSet<(int AnnotationId, int Affected, int AbilityGrpId)> _grantsSeen = [];
+    private readonly List<(int Affected, int AbilityGrpId)> _newAbilityExpiries = [];
+    private readonly Dictionary<int, HashSet<int>> _grantedAbilities = [];  // canonical id -> grpids
 
     /// <summary>
     /// Creatures that declared an attack in the message just applied. Combat is not
@@ -129,6 +140,25 @@ public sealed class GameStateTracker(ICardDb cards)
         _newAbilityGrants;
 
     /// <summary>
+    /// Granted abilities that wore off a permanent still on the battlefield in the
+    /// message just applied. Not read from the grant's annotation: that annotation is
+    /// sampled — it goes missing from the persistent surface for stretches of a game
+    /// and returns under the same id, 252 times across the archive while the creature
+    /// stood in play the whole while — so its absence proves nothing. The evidence is
+    /// the object's own <c>uniqueAbilities</c> losing a grpid this tracker saw granted,
+    /// the same object-state channel a statline wear-off is read from.
+    /// </summary>
+    /// <remarks>
+    /// Only permanents still in play report here. The annotation and the ability both
+    /// vanish when the creature dies too, and the death line already owns that fact —
+    /// a creature that died did not "lose trample". A grant standing when the log stops
+    /// is likewise never reported: with no later description of the object there is no
+    /// diff, so a truncated log manufactures nothing.
+    /// </remarks>
+    public IReadOnlyList<(int Affected, int AbilityGrpId)> NewAbilityExpiries =>
+        _newAbilityExpiries;
+
+    /// <summary>
     /// Every statline change seen, under the instance id Arena used at the time. Ids
     /// change when a card moves zones, so a consumer that wants one timeline per card
     /// has to fold these onto <see cref="Resolve"/>d ids itself.
@@ -147,6 +177,7 @@ public sealed class GameStateTracker(ICardDb cards)
         _newBlockers.Clear();
         _newLevels.Clear();
         _newAbilityGrants.Clear();
+        _newAbilityExpiries.Clear();
 
         if (Json.Obj(gsm, "gameInfo") is { } gi && Json.Int(gi, "gameNumber") is { } gnv)
         {
@@ -220,7 +251,20 @@ public sealed class GameStateTracker(ICardDb cards)
             if (!HasType(a, "AnnotationType_ObjectIdChanged")) continue;
             var orig = DetailInt(a, "orig_id");
             var next = DetailInt(a, "new_id");
-            if (orig is { } o && next is { } n && o != n) { _alias[o] = n; _aliasBack[n] = o; }
+            if (orig is { } o && next is { } n && o != n)
+            {
+                _alias[o] = n;
+                _aliasBack[n] = o;
+
+                // Grants follow the object through a rename. They are keyed by the
+                // canonical id known when the grant arrived, and an id change would
+                // otherwise strand them under a key no later lookup resolves to.
+                if (_grantedAbilities.Remove(o, out var moved))
+                {
+                    if (_grantedAbilities.TryGetValue(n, out var into)) into.UnionWith(moved);
+                    else _grantedAbilities[n] = moved;
+                }
+            }
         }
     }
 
@@ -265,6 +309,28 @@ public sealed class GameStateTracker(ICardDb cards)
         foreach (var ct in Json.Array(go, "cardTypes"))
             if (ct.ValueKind == JsonValueKind.String) types.Add(ct.GetString()!);
         if (types.Count > 0) obj.CardTypes = types;
+
+        // Read unconditionally, like `isTapped` above: absence is the value. A vanilla
+        // creature whose only ability was granted reports the wear-off as a complete
+        // snapshot with no `uniqueAbilities` at all — treated as "unchanged", that
+        // wear-off would never be seen.
+        var abilities = new HashSet<int>();
+        foreach (var ua in Json.Array(go, "uniqueAbilities"))
+            if (Json.Int(ua, "grpId") is { } ag) abilities.Add(ag);
+
+        // A granted grpid leaving this set is the wear-off itself. Set membership,
+        // not entry count, deliberately: a creature with printed menace granted menace
+        // again still has menace when the grant ends, and overlapping grants of the
+        // same keyword keep the grpid in the set until the last of them is gone —
+        // either way no line, which is what the reader would say too. The registry
+        // entry goes regardless of zone; only a permanent still in play gets a line,
+        // because the ability also vanishes when the creature does, and the death
+        // line already owns that fact.
+        if (_grantedAbilities.TryGetValue(Resolve(id), out var granted))
+            foreach (var was in obj.AbilityGrpIds)
+                if (!abilities.Contains(was) && granted.Remove(was) && InPlay(obj))
+                    _newAbilityExpiries.Add((Resolve(id), was));
+        obj.AbilityGrpIds = abilities;
 
         // Entering and leaving play are recorded alongside the numbers themselves: a
         // creature can arrive on the battlefield already at its printed statline, and
@@ -369,6 +435,14 @@ public sealed class GameStateTracker(ICardDb cards)
             {
                 if (!_grantsSeen.Add((annId, canonical, grp))) continue;
                 _newAbilityGrants.Add((canonical, grp, affector));
+
+                // What arms the wear-off diff in UpsertObject: only a grpid this
+                // registry holds can be reported as expiring, so a printed ability
+                // leaving an object's description — a transform, a face-down flip —
+                // never reads as an effect wearing off.
+                if (!_grantedAbilities.TryGetValue(canonical, out var set))
+                    _grantedAbilities[canonical] = set = [];
+                set.Add(grp);
             }
         }
     }

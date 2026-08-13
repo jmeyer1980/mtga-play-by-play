@@ -1214,4 +1214,181 @@ public class EventExtractorTests
         Assert.That(e.CauseName, Is.Null);
         Assert.That(e.CauseInstanceId, Is.Null);
     }
+
+    /// <summary>
+    /// A grant as Arena states one in full: the creature on the battlefield with the
+    /// granted grpid in its own <c>uniqueAbilities</c>, beside the AddAbility
+    /// annotation. Wear-off tests need the object's description because that is the
+    /// surface a wear-off is read from — the annotation is sampled in and out of
+    /// messages while the ability stands, so its absence proves nothing.
+    /// </summary>
+    private static string BattlefieldGrant(string grpids, string uniq, int annId = 90) =>
+        Gre($$"""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+          "gameObjects": [
+            { "instanceId": 800, "grpId": 5, "name": 1001, "zoneId": 28,
+              "type": "GameObjectType_Card", "controllerSeatId": 1,
+              "uniqueAbilities": [ {{uniq}} ] } ],
+          "persistentAnnotations": [
+            { "id": {{annId}}, "affectorId": 801, "affectedIds": [ 800 ],
+              "type": [ "AnnotationType_AddAbility", "AnnotationType_LayeredEffect" ],
+              "details": [ { "key": "grpid", "valueInt32": {{grpids}} } ] } ] }
+        """);
+
+    /// <summary>
+    /// The creature described again, with no grant annotation in sight. An empty
+    /// <c>uniq</c> omits <c>uniqueAbilities</c> entirely, because that is how the
+    /// wear-off actually arrives for a creature with no other abilities: a complete
+    /// snapshot in which the omitted list is the protobuf default, not a patch.
+    /// </summary>
+    private static string Resend(int zone = 28, string uniq = "") => Gre($$"""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" },
+                     { "zoneId": 29, "type": "ZoneType_Graveyard" } ],
+          "gameObjects": [
+            { "instanceId": 800, "grpId": 5, "name": 1001, "zoneId": {{zone}},
+              "type": "GameObjectType_Card", "controllerSeatId": 1
+              {{(uniq.Length == 0 ? "" : $", \"uniqueAbilities\": [ {uniq} ]")}} } ] }
+        """);
+
+    /// <summary>
+    /// Issue #7: the page says a creature gained menace and never says the menace
+    /// left. The wear-off is the granted grpid leaving the object's own description
+    /// while the creature stands on the battlefield.
+    /// </summary>
+    [Test]
+    public void A_grant_leaving_the_objects_description_reads_as_a_wear_off()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            BattlefieldGrant("[ 6 ]", uniq: """{ "id": 55, "grpId": 6 }"""),
+            Resend());
+
+        var e = t.Events.Single(x => x.Kind == EventKind.AbilityExpired);
+        Assert.That(e.TargetName, Is.EqualTo("Llanowar Elves"));
+        Assert.That(e.TargetInstanceId, Is.EqualTo(800));
+        Assert.That(e.Detail, Is.EqualTo("first strike"));
+        Assert.That(e.CauseName, Is.Null, "a wear-off has no actor");
+    }
+
+    /// <summary>
+    /// Four keywords granted in one annotation all end together, and four lines
+    /// saying "loses" four times is the same fact told worse — the exact mirror of
+    /// the grant side's one-line rule.
+    /// </summary>
+    [Test]
+    public void Several_abilities_wearing_off_at_once_make_one_line()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            BattlefieldGrant("[ 8, 6, 12, 10 ]", uniq:
+                """{ "id": 55, "grpId": 8 }, { "id": 56, "grpId": 6 },""" +
+                """{ "id": 57, "grpId": 12 }, { "id": 58, "grpId": 10 }"""),
+            Resend());
+
+        var e = t.Events.Single(x => x.Kind == EventKind.AbilityExpired);
+        Assert.That(e.Detail, Is.EqualTo("flying, first strike, lifelink and hexproof"));
+    }
+
+    /// <summary>
+    /// The trap that shaped the whole feature. Across the archive an AddAbility
+    /// annotation goes missing from the persistent surface and returns under the same
+    /// id 115 times — up to 86 messages later, the creature on the battlefield with
+    /// the ability the whole while. The annotation's absence is sampling, not expiry;
+    /// only the object's own description losing the grpid is the wear-off.
+    /// </summary>
+    [Test]
+    public void A_sampled_out_annotation_is_not_a_wear_off()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            BattlefieldGrant("[ 6 ]", uniq: """{ "id": 55, "grpId": 6 }"""),
+            Resend(uniq: """{ "id": 55, "grpId": 6 }"""),   // annotation gone, ability not
+            Resend());                                       // now the ability leaves too
+
+        Assert.That(t.Events.Count(x => x.Kind == EventKind.AbilityExpired), Is.EqualTo(1),
+            "the wear-off is where the ability left the object, not where the annotation blinked");
+        Assert.That(t.Events.Count(x => x.Kind == EventKind.AbilityGained), Is.EqualTo(1),
+            "and the returning annotation is not a fresh grant");
+    }
+
+    /// <summary>
+    /// A creature that died did not "lose trample". The ability leaves the object's
+    /// description when the creature leaves play too, and the death or exile line
+    /// already owns that fact — same which-line-owns-the-fact rule as the grant
+    /// side's counter and level suppressions.
+    /// </summary>
+    [Test]
+    public void A_creature_leaving_play_does_not_lose_its_grant()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            BattlefieldGrant("[ 6 ]", uniq: """{ "id": 55, "grpId": 6 }"""),
+            Resend(zone: 29));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.AbilityExpired), Is.False);
+    }
+
+    /// <summary>
+    /// A grant standing when the log stops is not an expiry. With no later
+    /// description of the object there is no diff, so an incomplete transcript —
+    /// which already says it is incomplete — manufactures nothing at end-of-log.
+    /// </summary>
+    [Test]
+    public void A_grant_standing_at_end_of_log_is_not_a_wear_off()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            BattlefieldGrant("[ 6 ]", uniq: """{ "id": 55, "grpId": 6 }"""));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.AbilityExpired), Is.False);
+    }
+
+    /// <summary>
+    /// Only a grpid the tracker saw granted can wear off. A printed ability leaving
+    /// an object's description — a transform, a face-down flip — is a different fact
+    /// with a different owner, and "Llanowar Elves loses flying" about an ability
+    /// nothing ever granted would be the parser inventing a story.
+    /// </summary>
+    [Test]
+    public void A_printed_ability_leaving_is_not_a_wear_off()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            // Described with flying it was never granted; no annotation anywhere.
+            Resend(uniq: """{ "id": 55, "grpId": 8 }"""),
+            Resend());
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.AbilityExpired), Is.False);
+    }
+
+    /// <summary>
+    /// The Battlesong Berserker cycle from issue #7: gains menace, loses it, gains it
+    /// again under a fresh annotation id, loses it again. Every grant and every
+    /// wear-off is its own line — the registry re-arms on the re-grant.
+    /// </summary>
+    [Test]
+    public void A_worn_off_ability_regranted_wears_off_again()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            BattlefieldGrant("[ 6 ]", uniq: """{ "id": 55, "grpId": 6 }""", annId: 90),
+            Resend(),
+            BattlefieldGrant("[ 6 ]", uniq: """{ "id": 71, "grpId": 6 }""", annId: 94),
+            Resend());
+
+        Assert.That(t.Events.Count(x => x.Kind == EventKind.AbilityGained), Is.EqualTo(2));
+        Assert.That(t.Events.Count(x => x.Kind == EventKind.AbilityExpired), Is.EqualTo(2));
+    }
+
+    /// <summary>
+    /// A creature with printed menace granted menace still has menace when the grant
+    /// ends. The diff is set membership, not entry count: the grpid never leaves the
+    /// object's description, so no line — which is what the reader would say too.
+    /// </summary>
+    [Test]
+    public void A_grant_duplicating_a_printed_ability_never_reads_as_lost()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            // Printed first strike (id 40) plus the granted copy (id 55).
+            BattlefieldGrant("[ 6 ]",
+                uniq: """{ "id": 40, "grpId": 6 }, { "id": 55, "grpId": 6 }"""),
+            Resend(uniq: """{ "id": 40, "grpId": 6 }"""));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.AbilityExpired), Is.False);
+    }
 }
