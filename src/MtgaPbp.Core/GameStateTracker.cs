@@ -82,6 +82,8 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly List<int> _newAttackers = [];
     private readonly List<int> _newBlockers = [];
     private readonly List<(int Id, int Level)> _newLevels = [];
+    private readonly List<(int Affected, int AbilityGrpId, int? Affector)> _newAbilityGrants = [];
+    private readonly HashSet<(int AnnotationId, int Affected, int AbilityGrpId)> _grantsSeen = [];
 
     /// <summary>
     /// Creatures that declared an attack in the message just applied. Combat is not
@@ -110,6 +112,23 @@ public sealed class GameStateTracker(ICardDb cards)
     public IReadOnlyList<(int Id, int Level)> NewLevels => _newLevels;
 
     /// <summary>
+    /// Abilities granted to permanents in the message just applied — who gained what,
+    /// and what granted it. Reported the same way levels are: the grant is a standing
+    /// <c>AnnotationType_AddAbility</c> fact on the persistent surface, re-sent with
+    /// every message and never announced as an event, so only its first appearance is
+    /// worth a line.
+    /// </summary>
+    /// <remarks>
+    /// The seen-key includes the annotation id on purpose. A standing grant keeps its
+    /// id while its <c>affectedIds</c> grow — each new member is a new grant under the
+    /// same id — and a fresh grant of the same ability to the same creature on a later
+    /// turn arrives under a fresh id. Keying on (affected, ability) alone would report
+    /// the first landfall trample of the game and silently drop every later one.
+    /// </remarks>
+    public IReadOnlyList<(int Affected, int AbilityGrpId, int? Affector)> NewAbilityGrants =>
+        _newAbilityGrants;
+
+    /// <summary>
     /// Every statline change seen, under the instance id Arena used at the time. Ids
     /// change when a card moves zones, so a consumer that wants one timeline per card
     /// has to fold these onto <see cref="Resolve"/>d ids itself.
@@ -127,6 +146,7 @@ public sealed class GameStateTracker(ICardDb cards)
         _newAttackers.Clear();
         _newBlockers.Clear();
         _newLevels.Clear();
+        _newAbilityGrants.Clear();
 
         if (Json.Obj(gsm, "gameInfo") is { } gi && Json.Int(gi, "gameNumber") is { } gnv)
         {
@@ -183,6 +203,7 @@ public sealed class GameStateTracker(ICardDb cards)
         {
             if (HasType(pa, "AnnotationType_ClassLevel")) ReadClassLevel(pa);
             if (HasType(pa, "AnnotationType_TriggeringObject")) ReadTriggerCause(pa);
+            if (HasType(pa, "AnnotationType_AddAbility")) ReadAddAbility(pa);
 
             if (!HasType(pa, "AnnotationType_TargetSpec")) continue;
             if (Json.Int(pa, "affectorId") is not { } src) continue;
@@ -305,6 +326,51 @@ public sealed class GameStateTracker(ICardDb cards)
 
         _classLevels[canonical] = level;
         _newLevels.Add((canonical, level));
+    }
+
+    /// <summary>
+    /// Notes ability grants, reporting each once. The payload runs parallel arrays:
+    /// <c>grpid</c> holds one entry per ability granted — Enter the Avatar State lands
+    /// as a single annotation whose grpids are flying, first strike, lifelink and
+    /// hexproof — while <c>affectedIds</c> holds every permanent granted to, so a lord
+    /// effect is one grpid crossed with five creatures. Every combination is its own
+    /// grant.
+    /// </summary>
+    /// <remarks>
+    /// The affector is carried rather than re-derived because it is the one part of
+    /// the annotation that says why: 431 is Enter the Avatar State, and the line
+    /// "Llanowar Elves gains first strike" with no cause is the issue this exists to
+    /// fix, restated smaller.
+    /// </remarks>
+    private void ReadAddAbility(JsonElement pa)
+    {
+        if (Json.Int(pa, "id") is not { } annId) return;
+
+        // An ability that rides on a counter — indestructible from Season of the
+        // Burrow — is dual-typed AddAbility and Counter, and the streamed CounterAdded
+        // has already put "gets 1 Indestructible counter" on the page. The counter
+        // line is the better of the two for the same reason it beats a statline mod:
+        // it names the kind, and it is what the reader watches leave later.
+        if (HasType(pa, "AnnotationType_Counter")) return;
+
+        var grpids = DetailInts(pa, "grpid");
+        if (grpids.Count == 0) return;
+
+        // Resolved like the affected ids are, so grants that name the same granter
+        // under an aliased id still group into one line downstream.
+        var affector = Json.Int(pa, "affectorId");
+        if (affector is { } af && af > 2) affector = Resolve(af);
+        foreach (var x in Json.Array(pa, "affectedIds"))
+        {
+            // Seats 1 and 2 are players; a granted ability lands on a permanent.
+            if (Json.Int(x) is not { } affected || affected <= 2) continue;
+            var canonical = Resolve(affected);
+            foreach (var grp in grpids.Distinct())
+            {
+                if (!_grantsSeen.Add((annId, canonical, grp))) continue;
+                _newAbilityGrants.Add((canonical, grp, affector));
+            }
+        }
     }
 
     /// <summary>

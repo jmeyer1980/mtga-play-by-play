@@ -42,6 +42,15 @@ public interface ICardDb
     /// Null when the value has no label — Phase 0 and Step 0 are both blank.
     /// </summary>
     string? EnumName(string type, int value);
+
+    /// <summary>
+    /// The rules text of one ability, by the id <c>AnnotationType_AddAbility</c> grants
+    /// under — "First strike", "Ward {o1}", or a whole triggered-ability sentence. Raw
+    /// from the database, Arena markup and all; <see cref="AbilityText.Clause"/> is what
+    /// turns it into words a transcript can use. Null when the id is in no Abilities row
+    /// — grpid 1000001 is granted once in the archive and named nowhere.
+    /// </summary>
+    string? AbilityText(int abilityGrpId);
 }
 
 public sealed record LogEnvelope(long LineNumber, long TimestampMs, JsonElement Root);
@@ -75,7 +84,7 @@ public enum EventKind
     StateBasedAction, ZoneMove, Milled, Surveilled, StatsModified, StatsExpired, DoorUnlocked,
     Damage, LifeChanged, TokenCreated, CounterChanged,
     Scry, Revealed, ManaPaid, Attack, Block, BoardSnapshot, Triggered, Activated,
-    Attached, LevelUp,
+    Attached, LevelUp, AbilityGained,
     GameEnd, Unknown
 }
 

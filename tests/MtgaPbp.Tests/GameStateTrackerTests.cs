@@ -20,6 +20,7 @@ public class GameStateTrackerTests
             _ => null
         };
         public string? EnumName(string type, int value) => null;
+        public string? AbilityText(int abilityGrpId) => null;
     }
 
     private static GameStateTracker NewTracker() => new(new FakeCardDb());

@@ -27,6 +27,7 @@ public class DeckListTests
         };
 
         public string? EnumName(string type, int value) => null;
+        public string? AbilityText(int abilityGrpId) => null;
     }
 
     private static IReadOnlyList<DeckEntry> Build(int[] grpIds, params int[] seen) =>

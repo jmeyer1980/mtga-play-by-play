@@ -172,6 +172,7 @@ public sealed class EventExtractor(ICardDb cards)
         "AnnotationType_TargetSpec",        // what a spell or ability was aimed at
         "AnnotationType_ClassLevel",        // the level a Class enchantment reached
         "AnnotationType_TriggeringObject",  // what set a triggered ability off
+        "AnnotationType_AddAbility",        // an ability granted — first strike, flying
     };
 
     /// <summary>
@@ -564,6 +565,11 @@ public sealed class EventExtractor(ICardDb cards)
                 foreach (var a in Json.Array(gsm, "annotations"))
                     EmitFor(a, tracker, ts, st, countered);
 
+                // After the streamed annotations, not before: the grant and the spell
+                // that made it arrive in the same message, and "Enter the Avatar State
+                // resolves" has to be on the page before the first strike it granted.
+                EmitAbilityGrants(tracker, ts, st);
+
                 EmitStatExpiry(game, tracker, ts, st, explained);
             }
         }
@@ -823,6 +829,69 @@ public sealed class EventExtractor(ICardDb cards)
                 SourceInstanceId = id,
                 SourceName = name,
                 Amount = level
+            });
+        }
+    }
+
+    /// <summary>
+    /// Emits the abilities a permanent was granted, one line per granter per permanent.
+    /// This is the line that answers "why did the Elves deal first-strike damage": the
+    /// grant otherwise leaves no mark on the page at all, because the spell's
+    /// resolution says only that it resolved and the damage step two lines later
+    /// already behaves as if everyone knew.
+    /// </summary>
+    /// <remarks>
+    /// Grants from one granter are one line — Enter the Avatar State gives four
+    /// keywords in a single annotation, and four consecutive "gains" lines would be
+    /// the same fact told worse. A grant whose ability text the database cannot name
+    /// is dropped, the same bargain <c>AnnotationType_AbilityInstanceCreated</c>
+    /// strikes: only worth a line when there are words to put on it. That costs one
+    /// grant in the archive (grpid 1000001) out of 660.
+    /// </remarks>
+    private void EmitAbilityGrants(GameStateTracker tracker, long ts, Emit st)
+    {
+        foreach (var grants in tracker.NewAbilityGrants.GroupBy(g => (g.Affected, g.Affector)))
+        {
+            // A Class levelling up grants itself its new level's ability in the same
+            // message that moves the level. "Caretaker's Talent becomes level 2" is
+            // already on the page in Arena's own words, and the quoted grant under it
+            // is the same fact restated by the machinery that implements it — 115
+            // lines across the archive, every one directly beside its level line.
+            if (tracker.NewLevels.Any(l => l.Id == grants.Key.Affected)) continue;
+
+            var name = tracker.NameOf(grants.Key.Affected);
+            if (CardNames.IsPlaceholder(name)) continue;
+
+            var clauses = grants
+                .Select(g => cards.AbilityText(g.AbilityGrpId))
+                .Where(raw => raw is not null)
+                .Select(raw => AbilityText.Clause(raw!, out _))
+                .ToList();
+            if (clauses.Count == 0) continue;
+
+            st.SawCard(name);
+
+            // The granter: a spell mid-resolution or a permanent's standing ability.
+            // Counted before it is suppressed, like every unnameable cause. A grant
+            // whose granter is the creature itself — a conditional menace switching
+            // on, an Equipment activating into a creature — keeps no cause, because
+            // "Battlesong Berserker gives Battlesong Berserker menace" names one
+            // permanent as though it were two.
+            var causeId = grants.Key.Affector;
+            var self = causeId is { } cid && tracker.Resolve(cid) == grants.Key.Affected;
+            var causeName = !self && causeId is > 2 ? tracker.NameOf(causeId.Value) : null;
+            st.SawCard(causeName);
+            if (CardNames.IsPlaceholder(causeName)) causeName = null;
+
+            st.Add(Base(tracker, ts, EventKind.AbilityGained) with
+            {
+                ActorSeat = tracker.Get(grants.Key.Affected)?.ControllerSeat is > 0 and var c
+                    ? c : tracker.ActiveSeat,
+                TargetInstanceId = grants.Key.Affected,
+                TargetName = name,
+                CauseInstanceId = causeName is null ? null : causeId,
+                CauseName = causeName,
+                Detail = AbilityText.Join(clauses)
             });
         }
     }

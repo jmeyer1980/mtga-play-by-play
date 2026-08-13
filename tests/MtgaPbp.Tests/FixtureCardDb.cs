@@ -25,7 +25,15 @@ public sealed class FixtureCardDb : ICardDb
     public sealed record Data(
         Dictionary<int, string> Locs,
         Dictionary<int, Card> Cards,
-        Dictionary<string, string> Enums);
+        Dictionary<string, string> Enums)
+    {
+        /// <summary>
+        /// Ability rules texts by grpid, for the grants the fixture matches carry. An
+        /// init property with a default rather than a fourth positional parameter so a
+        /// card-names.json written before abilities existed still deserializes.
+        /// </summary>
+        public Dictionary<int, string> Abilities { get; init; } = [];
+    }
 
     private readonly Data _data;
 
@@ -63,4 +71,7 @@ public sealed class FixtureCardDb : ICardDb
 
     public string? EnumName(string type, int value) =>
         _data.Enums.TryGetValue($"{type}:{value}", out var name) ? name : null;
+
+    public string? AbilityText(int abilityGrpId) =>
+        _data.Abilities.TryGetValue(abilityGrpId, out var text) ? text : null;
 }

@@ -325,6 +325,47 @@ public class NarratorTests
     }
 
     /// <summary>
+    /// Issue #5's missing line, in the cause-first shape the destroy lines use. This is
+    /// what connects "Enter the Avatar State resolves" to the first-strike damage two
+    /// lines later.
+    /// </summary>
+    [Test]
+    public void A_granted_ability_names_granter_creature_and_ability()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.AbilityGained) with
+            {
+                CauseInstanceId = 431,
+                CauseName = "Enter the Avatar State",
+                TargetInstanceId = 405,
+                TargetName = "Llanowar Elves 2/2",
+                Detail = "flying, first strike, lifelink and hexproof"
+            }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo(
+            "Enter the Avatar State gives Llanowar Elves 2/2 " +
+            "flying, first strike, lifelink and hexproof"));
+    }
+
+    /// <summary>
+    /// A grant whose granter the log never named still happened to somebody. The line
+    /// falls back to the creature's own act of gaining rather than inventing a cause.
+    /// </summary>
+    [Test]
+    public void A_grant_with_no_named_granter_still_reads()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.AbilityGained) with
+            {
+                TargetInstanceId = 405,
+                TargetName = "Toy 11/11",
+                Detail = "lifelink"
+            }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Toy 11/11 gains lifelink"));
+    }
+
+    /// <summary>
     /// Cause first and active, the same shape the destroy and exile lines already use.
     /// Without it three triggers in a row read identically and a reader cannot tell what
     /// the player did to set any of them off.

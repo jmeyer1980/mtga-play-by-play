@@ -21,6 +21,15 @@ public class EventExtractorTests
             ("Step", 5) => "Declare Attackers",
             _ => null
         };
+        public string? AbilityText(int abilityGrpId) => abilityGrpId switch
+        {
+            6 => "First strike",
+            8 => "Flying",
+            10 => "Hexproof",
+            12 => "Lifelink",
+            500 => "When this Class becomes level 2, create a token.",
+            _ => null
+        };
     }
 
     private static Transcript Run(params string[] lines) =>
@@ -1029,5 +1038,180 @@ public class EventExtractorTests
 
         Assert.That(t.UnknownPersistentAnnotations["AnnotationType_SomethingPersistentAndNew"],
             Is.EqualTo(2));
+    }
+
+    /// <summary>
+    /// The creature and the spell that will grant to it. 800 is Llanowar Elves; 801 is
+    /// the granter, named Lightning Bolt because the fixture db knows that name — the
+    /// shape matches issue #5's live case, where 431 was Enter the Avatar State.
+    /// </summary>
+    private static string GrantObjects => """
+        { "instanceId": 800, "grpId": 5, "name": 1001,
+          "type": "GameObjectType_Card", "controllerSeatId": 1 },
+        { "instanceId": 801, "grpId": 6, "name": 1000,
+          "type": "GameObjectType_Card", "controllerSeatId": 2 },
+        { "instanceId": 805, "grpId": 9, "name": 648,
+          "type": "GameObjectType_Card", "controllerSeatId": 1 }
+    """;
+
+    private static string GrantMessage(string grpids, string affected = "[ 800 ]", int annId = 90) =>
+        Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ {{GrantObjects}} ],
+          "persistentAnnotations": [
+            { "id": {{annId}}, "affectorId": 801, "affectedIds": {{affected}},
+              "type": [ "AnnotationType_AddAbility", "AnnotationType_LayeredEffect" ],
+              "details": [ { "key": "grpid", "valueInt32": {{grpids}} } ] } ] }
+        """);
+
+    /// <summary>
+    /// Issue #5: a spell resolves, a creature fights differently, and nothing on the
+    /// page says what changed. The grant arrives only as a persistent AddAbility whose
+    /// details name the ability's grpid, so the line has to come from there — target,
+    /// granter and the ability in words.
+    /// </summary>
+    [Test]
+    public void A_granted_ability_is_named_with_its_granter()
+    {
+        var t = Run(RoomLine, MulliganLine, GrantMessage("[ 6 ]"));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.AbilityGained);
+        Assert.That(e.TargetName, Is.EqualTo("Llanowar Elves"));
+        Assert.That(e.TargetInstanceId, Is.EqualTo(800));
+        Assert.That(e.CauseName, Is.EqualTo("Lightning Bolt"));
+        Assert.That(e.Detail, Is.EqualTo("first strike"), "lowercased to sit mid-sentence");
+    }
+
+    /// <summary>
+    /// Enter the Avatar State grants four keywords in one annotation — grpid is a
+    /// parallel array. Four lines saying "gains" four times is the same fact told
+    /// worse, so the grants of one granter to one creature are one line.
+    /// </summary>
+    [Test]
+    public void Several_abilities_granted_at_once_make_one_line()
+    {
+        var t = Run(RoomLine, MulliganLine, GrantMessage("[ 8, 6, 12, 10 ]"));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.AbilityGained);
+        Assert.That(e.Detail, Is.EqualTo("flying, first strike, lifelink and hexproof"));
+    }
+
+    /// <summary>
+    /// The annotation is persistent: Arena re-sends it with every message for as long
+    /// as the grant stands. Only its first appearance is news. But a new member joining
+    /// the same annotation's affectedIds IS news — that creature just gained the
+    /// ability — and must be the only thing the second message adds.
+    /// </summary>
+    [Test]
+    public void A_standing_grant_is_said_once_and_a_new_member_once_more()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            GrantMessage("[ 12 ]"),
+            GrantMessage("[ 12 ]"),                              // verbatim re-send
+            GrantMessage("[ 12 ]", affected: "[ 800, 805 ]"));   // 805 joins the grant
+
+        var gains = t.Events.Where(x => x.Kind == EventKind.AbilityGained).ToList();
+        Assert.That(gains, Has.Count.EqualTo(2), "one per creature, never per re-send");
+        Assert.That(gains[0].TargetInstanceId, Is.EqualTo(800));
+        Assert.That(gains[1].TargetInstanceId, Is.EqualTo(805));
+    }
+
+    /// <summary>
+    /// A whole-rule grant is a quotation, not a keyword: it keeps its capitals and
+    /// gains quotes, because lowercasing "When this Class becomes level 2, …" would
+    /// present a sentence as a name.
+    /// </summary>
+    [Test]
+    public void A_granted_rule_is_quoted_not_lowercased()
+    {
+        var t = Run(RoomLine, MulliganLine, GrantMessage("[ 500 ]"));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.AbilityGained);
+        Assert.That(e.Detail,
+            Is.EqualTo("“When this Class becomes level 2, create a token.”"));
+    }
+
+    /// <summary>
+    /// One grant in the archive (grpid 1000001) indexes no Abilities row at all. The
+    /// same bargain AbilityInstanceCreated strikes applies: a line is only worth
+    /// emitting when there are words to put on it, and "gains something" is not words.
+    /// </summary>
+    [Test]
+    public void A_grant_the_database_cannot_name_is_dropped()
+    {
+        var t = Run(RoomLine, MulliganLine, GrantMessage("[ 999 ]"));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.AbilityGained), Is.False);
+    }
+
+    /// <summary>
+    /// An ability riding on a counter — indestructible from Season of the Burrow — is
+    /// dual-typed AddAbility and Counter, and the streamed CounterAdded already put
+    /// "gets 1 Indestructible counter" on the page. The counter line is the better of
+    /// the two: it names the kind, and it is what the reader watches leave later.
+    /// </summary>
+    [Test]
+    public void A_counter_backed_grant_keeps_only_its_counter_line()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ {{GrantObjects}} ],
+          "persistentAnnotations": [
+            { "id": 90, "affectorId": 4002, "affectedIds": [ 800 ],
+              "type": [ "AnnotationType_AddAbility", "AnnotationType_Counter" ],
+              "details": [ { "key": "grpid", "valueInt32": [ 6 ] },
+                           { "key": "count", "valueInt32": [ 1 ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.AbilityGained), Is.False);
+    }
+
+    /// <summary>
+    /// A Class levelling up grants itself its new level's ability in the same message
+    /// that moves the level — affector, affected and the levelling class are all one
+    /// instance. "Caretaker's Talent becomes level 2" already says it in Arena's own
+    /// words; the quoted grant under it is the machinery restating the fact.
+    /// </summary>
+    [Test]
+    public void A_class_grant_in_its_level_message_is_claimed_by_the_level_line()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ {{GrantObjects}} ],
+          "persistentAnnotations": [
+            { "id": 91, "affectorId": 800,
+              "type": [ "AnnotationType_ClassLevel" ], "details": [
+                { "key": "Level", "valueInt32": [ 2 ] } ] },
+            { "id": 92, "affectorId": 800, "affectedIds": [ 800 ],
+              "type": [ "AnnotationType_AddAbility", "AnnotationType_LayeredEffect" ],
+              "details": [ { "key": "grpid", "valueInt32": [ 500 ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.LevelUp), Is.True);
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.AbilityGained), Is.False,
+            "the level line owns the fact");
+    }
+
+    /// <summary>
+    /// A conditional ability switching itself on — menace as long as some condition
+    /// holds — grants with the creature as its own granter. "X gives X menace" names
+    /// one permanent as though it were two, so a self-grant keeps no cause.
+    /// </summary>
+    [Test]
+    public void A_self_grant_reads_as_gaining_not_giving()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ {{GrantObjects}} ],
+          "persistentAnnotations": [
+            { "id": 93, "affectorId": 800, "affectedIds": [ 800 ],
+              "type": [ "AnnotationType_AddAbility", "AnnotationType_LayeredEffect" ],
+              "details": [ { "key": "grpid", "valueInt32": [ 6 ] } ] } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.AbilityGained);
+        Assert.That(e.TargetName, Is.EqualTo("Llanowar Elves"));
+        Assert.That(e.CauseName, Is.Null);
+        Assert.That(e.CauseInstanceId, Is.Null);
     }
 }
