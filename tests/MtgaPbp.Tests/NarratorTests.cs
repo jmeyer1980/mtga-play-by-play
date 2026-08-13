@@ -504,6 +504,47 @@ public class NarratorTests
         Assert.That(lines.Single().Text, Is.EqualTo("Tifa Lockhart 2/2 returns to 1/2"));
     }
 
+    /// <summary>
+    /// A Room's door opening, named by the half that opened.
+    /// </summary>
+    /// <remarks>
+    /// Designations were dropped as a candidate because DesignationType is a bare int
+    /// with no entry in the card database's enum table. That is still true, and it turned
+    /// out not to matter: every one of the archive's 201 type-19 and type-20 designations
+    /// lands on a card whose name holds both halves, so the half can be named from the
+    /// name. 19 is the first door and 20 the second.
+    /// <para>
+    /// No cause is named. affectorId is populated on 54 of them and is not the unlocker —
+    /// across the archive it points once at a Plains and once at Hare Apparent's ability,
+    /// neither of which can open a door, so no shape of affector can be trusted.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void A_room_door_is_named_by_the_half_that_opened()
+    {
+        var lines = Narrator.Narrate(T(E(EventKind.DoorUnlocked) with
+        {
+            ActorSeat = 1,
+            SourceName = "Porcelain Gallery"
+        }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("You unlock Porcelain Gallery"));
+        Assert.That(lines.Single().Text, Does.Not.Contain("//"),
+            "naming the whole card would name the side that was already open too");
+    }
+
+    [Test]
+    public void The_opponents_door_reads_in_the_third_person()
+    {
+        var lines = Narrator.Narrate(T(E(EventKind.DoorUnlocked) with
+        {
+            ActorSeat = 2,
+            SourceName = "Dollmaker's Shop"
+        }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Opponent unlocks Dollmaker's Shop"));
+    }
+
     // ---------- zone transfers with no verb of their own ----------
 
     private static string? Moved(string? from, string? to, string? category) =>

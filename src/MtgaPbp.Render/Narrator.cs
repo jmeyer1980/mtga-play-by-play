@@ -484,6 +484,12 @@ public static class Narrator
         EventKind.StatsExpired when e.TargetName is not null && e.Detail is not null =>
             $"{e.TargetName} returns to {e.Detail.Split('→')[1].Trim()}",
 
+        // Named by the half that opened, not by the whole card: "unlocks Porcelain
+        // Gallery" is what happened, where "unlocks Dollmaker's Shop // Porcelain
+        // Gallery" would name the side that was already open too.
+        EventKind.DoorUnlocked when e.SourceName is not null =>
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "unlock", "unlocks", t)} {e.SourceName}",
+
         EventKind.CounterChanged when e.TargetName is not null && e.Amount != 0 =>
             $"{e.TargetName} {(e.Amount > 0 ? "gets" : "loses")} {Math.Abs(e.Amount)} " +
             $"{(e.Detail is null ? "" : e.Detail + " ")}counter" +

@@ -155,7 +155,6 @@ public sealed class EventExtractor(ICardDb cards)
         // Arena's card database — so a line about one could say a permanent gained
         // something but never what. The 155 gains in the archive are also almost all
         // Room doors being unlocked, which the transcript already reports as a cast.
-        "AnnotationType_GainDesignation",
         "AnnotationType_LoseDesignation",
         "AnnotationType_ChoiceResult",
         "AnnotationType_RevealedCardDeleted",
@@ -866,6 +865,41 @@ public sealed class EventExtractor(ICardDb cards)
             if (type is null || Ignored.Contains(type)) continue;
 
             GameEvent? ev;
+
+            if (type == "AnnotationType_GainDesignation")
+            {
+                // A Room's two halves are unlocked one at a time, and the designation
+                // says which: 19 is the first door and 20 the second. Every one of the
+                // archive's 201 of these lands on a card whose name holds both halves,
+                // so the half being unlocked can be named even though DesignationType is
+                // in no enum table — which was the reason this was dropped.
+                //
+                // The other 13 designations in the archive (types 16, 18, 22, 24) land
+                // on ordinary cards and stay dropped: those really are a bare int with
+                // nothing to say what was gained.
+                if (FirstAffected(a) is not { } room) continue;
+                var designation = GameStateTracker.DetailInt(a, "DesignationType");
+                if (designation is not (19 or 20)) continue;
+
+                var full = tracker.NameOf(room);
+                var halves = full.Split(" // ", StringSplitOptions.TrimEntries);
+                if (halves.Length != 2) continue;
+
+                // No cause is named, though affectorId is populated on 54 of these.
+                // It is not the unlocker: across the archive it points at a Plains once
+                // and at Hare Apparent's ability once, neither of which can unlock a
+                // door, so there is no shape of affector that can be trusted and no
+                // filter that separates the 26 correct ones from the wrong ones. The
+                // line above this one already names whatever just resolved.
+                st.Add(Base(tracker, ts, EventKind.DoorUnlocked) with
+                {
+                    ActorSeat = tracker.Get(room)?.ControllerSeat is > 0 and var rc
+                        ? rc : tracker.ActiveSeat,
+                    SourceInstanceId = room,
+                    SourceName = halves[designation == 19 ? 0 : 1]
+                });
+                continue;
+            }
 
             if (type == "AnnotationType_PowerToughnessModCreated")
             {
