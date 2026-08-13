@@ -143,7 +143,6 @@ public sealed class EventExtractor(ICardDb cards)
         "AnnotationType_ResolutionComplete",
         "AnnotationType_LayeredEffectCreated",
         "AnnotationType_LayeredEffectDestroyed",
-        "AnnotationType_PowerToughnessModCreated",
         "AnnotationType_PlayerSelectingTargets",
         "AnnotationType_PlayerSubmittedTargets", // carries no target ids — see spec
         "AnnotationType_ShouldntPlay",
@@ -506,8 +505,18 @@ public sealed class EventExtractor(ICardDb cards)
                 foreach (var pa in Json.Array(gsm, "persistentAnnotations"))
                     st.CountPersistent(pa);
 
+                // Which permanents this message already reports a counter on. A power
+                // change backed by a counter is said twice otherwise, and the counter
+                // line is the better of the two because it names the kind.
+                var countered = new HashSet<int>();
                 foreach (var a in Json.Array(gsm, "annotations"))
-                    EmitFor(a, tracker, ts, st);
+                    if (Json.Array(a, "type").Any(t => t.ValueKind == JsonValueKind.String &&
+                            t.GetString() is "AnnotationType_CounterAdded" or
+                                             "AnnotationType_CounterRemoved"))
+                        if (FirstAffected(a) is { } hit) countered.Add(hit);
+
+                foreach (var a in Json.Array(gsm, "annotations"))
+                    EmitFor(a, tracker, ts, st, countered);
             }
         }
 
@@ -817,7 +826,8 @@ public sealed class EventExtractor(ICardDb cards)
         }
     }
 
-    private void EmitFor(JsonElement a, GameStateTracker tracker, long ts, Emit st)
+    private void EmitFor(JsonElement a, GameStateTracker tracker, long ts, Emit st,
+                         IReadOnlySet<int> countered)
     {
         foreach (var typeEl in Json.Array(a, "type"))
         {
@@ -826,6 +836,36 @@ public sealed class EventExtractor(ICardDb cards)
             if (type is null || Ignored.Contains(type)) continue;
 
             GameEvent? ev;
+
+            if (type == "AnnotationType_PowerToughnessModCreated")
+            {
+                // A pump, a shrink, or a doubling — anything that moves a statline
+                // without a counter behind it. Suppressed when this same message adds a
+                // counter to the permanent, because the counter line says it better: it
+                // names the kind, and 959 of the archive's 1,147 mods are that case.
+                //
+                // The remaining 188 had nothing reporting them at all. That is how a
+                // creature could go from 1/2 to 24/4 across one turn of landfall
+                // doublings with the transcript mentioning none of it, and how a
+                // creature shrunk to death by -3/-3 could die with no stated cause.
+                if (FirstAffected(a) is not { } pt || countered.Contains(pt)) continue;
+
+                var dp = GameStateTracker.DetailInt(a, "power") ?? 0;
+                var dt = GameStateTracker.DetailInt(a, "toughness") ?? 0;
+                if (dp == 0 && dt == 0) continue;
+
+                var mod = Base(tracker, ts, EventKind.StatsModified) with
+                {
+                    ActorSeat = tracker.Get(pt)?.ControllerSeat is > 0 and var pc
+                        ? pc : tracker.ActiveSeat,
+                    TargetInstanceId = pt,
+                    TargetName = tracker.NameOf(pt),
+                    Amount = dp,
+                    Detail = $"{dp:+#;-#;+0}/{dt:+#;-#;+0}"
+                };
+                st.Add(mod);
+                continue;
+            }
 
             if (type == "AnnotationType_ZoneTransfer")
             {
@@ -1176,7 +1216,10 @@ public sealed class EventExtractor(ICardDb cards)
             // A counter event reports the change itself, so it names the size the
             // permanent was changed FROM. Everything else describes a permanent as it
             // stands at that moment.
-            var before = e.Kind == EventKind.CounterChanged;
+            // A counter or a stat mod reports the change itself, so it names the size the
+            // permanent was changed FROM. Everything else describes a permanent as it
+            // stands at that moment.
+            var before = e.Kind is EventKind.CounterChanged or EventKind.StatsModified;
 
             var source = Named(tracker, labels, e.SourceInstanceId, e.SourceName, e.Seq, before);
             var target = Named(tracker, labels, e.TargetInstanceId, e.TargetName, e.Seq, before);

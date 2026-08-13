@@ -450,6 +450,38 @@ public class NarratorTests
         Assert.That(lines.Single().Text, Is.EqualTo("Hare Apparent returns"));
     }
 
+    /// <summary>
+    /// A statline change with no counter behind it — a pump, a shrink, or a doubling.
+    /// </summary>
+    /// <remarks>
+    /// These were invisible until a Tifa Lockhart match made it obvious: her landfall
+    /// ability doubles her power, and across one turn she went 1/2 to 24/4 with the
+    /// transcript reporting none of it. The permanent is named at the size it was
+    /// changed from, so one line carries both ends of the change.
+    /// <para>
+    /// No duration is claimed. The annotation carries two deltas and nothing else, and
+    /// the same one covers a landfall pump that expires at end of turn and an aura that
+    /// lasts while attached — "until end of turn" would be right about Tifa and wrong
+    /// about Royal Treatment.
+    /// </para>
+    /// </remarks>
+    [TestCase(1, 0, "+1/+0")]
+    [TestCase(12, 0, "+12/+0")]
+    [TestCase(-3, -3, "-3/-3")]
+    [TestCase(2, 2, "+2/+2")]
+    public void A_statline_change_says_the_size_it_started_from_and_the_delta(
+        int power, int toughness, string expected)
+    {
+        var lines = Narrator.Narrate(T(E(EventKind.StatsModified) with
+        {
+            TargetName = "Tifa Lockhart 3/4",
+            Amount = power,
+            Detail = $"{power:+#;-#;+0}/{toughness:+#;-#;+0}"
+        }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo($"Tifa Lockhart 3/4 gets {expected}"));
+    }
+
     // ---------- zone transfers with no verb of their own ----------
 
     private static string? Moved(string? from, string? to, string? category) =>

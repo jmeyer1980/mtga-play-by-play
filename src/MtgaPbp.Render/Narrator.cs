@@ -464,6 +464,16 @@ public static class Narrator
         EventKind.TokenCreated when e.TargetName is not null =>
             $"{e.SourceName ?? "An effect"} creates {e.TargetName}",
 
+        // The permanent is named at the size it was changed from, so "Tifa Lockhart 1/2
+        // gets +1/+0" carries both ends of the change in one line.
+        //
+        // No duration is claimed. The annotation carries only the two deltas, and the
+        // same one covers a landfall pump that expires at end of turn and an aura that
+        // lasts as long as it stays attached — so saying "until end of turn" would be
+        // right about Tifa and wrong about Royal Treatment.
+        EventKind.StatsModified when e.TargetName is not null && e.Detail is not null =>
+            $"{e.TargetName} gets {e.Detail}",
+
         EventKind.CounterChanged when e.TargetName is not null && e.Amount != 0 =>
             $"{e.TargetName} {(e.Amount > 0 ? "gets" : "loses")} {Math.Abs(e.Amount)} " +
             $"{(e.Detail is null ? "" : e.Detail + " ")}counter" +

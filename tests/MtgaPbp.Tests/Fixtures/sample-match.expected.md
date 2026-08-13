@@ -84,6 +84,7 @@
 - Opponent casts Leonin Vanguard
 - Leonin Vanguard resolves
 - Leonin Vanguard's ability triggers
+- Leonin Vanguard gets +1/+1
 - Opponent gains 1 life
 - Deal Gone Bad triggers
 - Ajani's Pridemate 3/3 gets 1 +1/+1 counter
@@ -108,6 +109,7 @@
 - Opponent casts Crowd of True Believers
 - Crowd of True Believers resolves
 - Leonin Vanguard's ability triggers
+- Leonin Vanguard gets +1/+1
 - Opponent gains 1 life
 - Deal Gone Bad triggers
 - Ajani's Pridemate 4/4 gets 1 +1/+1 counter
@@ -140,6 +142,7 @@
 - Dusk Rose Reliquary's ability triggers
 - Ethereal Armor is put into the graveyard
 - Leonin Vanguard's ability triggers
+- Leonin Vanguard gets +1/+1
 - Opponent gains 1 life
 - Deal Gone Bad triggers
 - Ajani's Pridemate 5/5 gets 1 +1/+1 counter
