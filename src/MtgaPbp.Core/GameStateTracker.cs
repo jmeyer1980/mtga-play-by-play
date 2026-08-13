@@ -51,6 +51,7 @@ public sealed class GameStateTracker(ICardDb cards)
 {
     private readonly Dictionary<int, TrackedObject> _objects = [];
     private readonly Dictionary<int, int> _alias = [];   // old id -> new id
+    private readonly Dictionary<int, int> _aliasBack = []; // new id -> old id
     private readonly Dictionary<int, int> _life = [];
     private readonly Dictionary<int, string> _zoneTypes = [];
     private readonly Dictionary<int, int> _zoneOwners = [];
@@ -198,7 +199,7 @@ public sealed class GameStateTracker(ICardDb cards)
             if (!HasType(a, "AnnotationType_ObjectIdChanged")) continue;
             var orig = DetailInt(a, "orig_id");
             var next = DetailInt(a, "new_id");
-            if (orig is { } o && next is { } n && o != n) _alias[o] = n;
+            if (orig is { } o && next is { } n && o != n) { _alias[o] = n; _aliasBack[n] = o; }
         }
     }
 
@@ -395,7 +396,21 @@ public sealed class GameStateTracker(ICardDb cards)
     {
         var id = Resolve(instanceId);
         if (_objects.TryGetValue(id, out var o)) return o;
-        return _objects.TryGetValue(instanceId, out var orig) ? orig : null;
+        if (_objects.TryGetValue(instanceId, out var orig)) return orig;
+
+        // Backwards along the rename, as a last resort. A permanent that dies is
+        // renamed and then reported dead under the new id in the same message, and that
+        // new id is never described — Arena renames 389 to 521 and says 521 changed
+        // zones, while the object it is talking about is in the same message as 389.
+        // Following only the forward map left those deaths as "Unknown card", which is
+        // exactly the wrong thing to lose: five tokens dying to one board wipe is the
+        // answer to how a game was lost.
+        var seen = new HashSet<int>();
+        var back = instanceId;
+        while (_aliasBack.TryGetValue(back, out var older) && seen.Add(back))
+            if (_objects.TryGetValue(back = older, out var was)) return was;
+
+        return null;
     }
 
     public string NameOf(int instanceId) => NameOf(instanceId, null);

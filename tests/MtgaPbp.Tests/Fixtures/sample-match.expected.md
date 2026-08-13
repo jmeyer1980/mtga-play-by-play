@@ -95,6 +95,7 @@
 - Rabbit deals 1 damage to Ajani's Pridemate 4/4
 - Rabbit deals 1 damage to You ×3
 - You lose 3 life
+- Rabbit is put into the graveyard
   *Opponent controls: Ajani's Pridemate 4/4 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1*
 
 ## Turn 8 — You  (You 14 · Opponent 22)
@@ -122,6 +123,7 @@
 - Rabbit deals 1 damage to Ajani's Pridemate 5/5
 - Rabbit deals 1 damage to You ×3
 - You lose 3 life
+- Rabbit is put into the graveyard
   *You control: Rabbit 1/1, Rabbit 1/1*
   *Opponent controls: Ajani's Pridemate 5/5 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1, Crowd of True Believers 1/2*
 
@@ -140,8 +142,10 @@
 - Temple of Plenty's ability triggers
 - Opponent scries 1, putting 1 card to the top
 - Opponent casts Dusk Rose Reliquary
+- Opponent sacrifices Rabbit
 - Dusk Rose Reliquary resolves
 - Dusk Rose Reliquary's ability triggers
+- Dusk Rose Reliquary's ability exiles Rabbit 3/3
 - Ethereal Armor is put into the graveyard
 - Leonin Vanguard's ability triggers
 - Leonin Vanguard gets +1/+1
