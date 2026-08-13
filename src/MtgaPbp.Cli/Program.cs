@@ -8,10 +8,28 @@ public static class Program
 {
     public static int Main(string[] args)
     {
+        // Answered before anything is loaded or written. Neither was a known option, so
+        // both fell through to "do everything": asking the tool its version re-scanned a
+        // 35 MB log, rewrote every page, and ran the pruner.
+        if (args.Any(a => a is "--version" or "-V"))
+        {
+            Banner.Write(art: false);
+            return 0;
+        }
+        if (args.Any(a => a is "--help" or "-h" or "/?" or "help"))
+        {
+            Banner.Write(art: false);
+            Usage();
+            return 0;
+        }
+
         var exeDir = AppContext.BaseDirectory;
         var cfg = Config.Load(exeDir);
         var (command, operands) = Parse(args);
         var open = cfg.OpenAfterBuild || args.Contains("--open");
+
+        // Identity first, on every command that a person reads.
+        if (command is not ("keep" or "unkeep")) Banner.Write();
 
         try
         {
@@ -134,8 +152,8 @@ public static class Program
 
         if (!quiet)
             Console.WriteLine(
-                $"captured {written} new match(es); {stats.JsonLines:N0} json lines read, " +
-                $"{stats.MalformedLines} malformed");
+                $"captured {written} new match{(written == 1 ? "" : "es")} " +
+                $"({stats.JsonLines:N0} records read)");
 
         // Said out loud even when nothing new was captured: it is the one condition
         // under which a transcript that looks finished is not, and a count buried in a
@@ -217,10 +235,6 @@ public static class Program
             return 2;
         }
 
-        // Named here rather than only on the page, because this is the window that stays
-        // open for hours rewriting the report — and a `watch` running from a stale copy
-        // is the one way to have the output disagree with the source and see no reason.
-        Console.WriteLine($"mtga-pbp {BuildInfo.Version}");
         Console.WriteLine($"watching {cfg.LogPaths.FirstOrDefault()}");
         Console.WriteLine($"report is live at {server.Url}");
         Console.WriteLine("leave this window open; press Ctrl+C to stop.");
