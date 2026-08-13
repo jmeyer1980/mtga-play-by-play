@@ -84,7 +84,7 @@ public enum EventKind
     StateBasedAction, ZoneMove, Milled, Surveilled, StatsModified, StatsExpired, DoorUnlocked,
     Damage, LifeChanged, TokenCreated, CounterChanged,
     Scry, Revealed, ManaPaid, Attack, Block, BoardSnapshot, Triggered, Activated,
-    Attached, LevelUp, AbilityGained,
+    Attached, LevelUp, AbilityGained, AbilityExpired,
     GameEnd, Unknown
 }
 

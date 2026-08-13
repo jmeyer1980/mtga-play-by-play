@@ -570,6 +570,8 @@ public sealed class EventExtractor(ICardDb cards)
                 // resolves" has to be on the page before the first strike it granted.
                 EmitAbilityGrants(tracker, ts, st);
 
+                EmitAbilityExpiries(tracker, ts, st);
+
                 EmitStatExpiry(game, tracker, ts, st, explained);
             }
         }
@@ -891,6 +893,47 @@ public sealed class EventExtractor(ICardDb cards)
                 TargetName = name,
                 CauseInstanceId = causeName is null ? null : causeId,
                 CauseName = causeName,
+                Detail = AbilityText.Join(clauses)
+            });
+        }
+    }
+
+    /// <summary>
+    /// Emits the granted abilities that wore off, one line per permanent. This is the
+    /// half of the story the grant line opened: a reader watching Battlesong Berserker
+    /// gain menace four times across a match had to infer the four expiries in between,
+    /// because Arena never announces one — the tracker reads it off the object's own
+    /// description instead, the way a statline wear-off is read.
+    /// </summary>
+    /// <remarks>
+    /// No cause is named. A wear-off has no actor — the effect simply reached its end —
+    /// and the grant line two turns up already said who put it there. Grants whose text
+    /// the database cannot name are dropped the same as at grant time: a line saying a
+    /// creature lost something it was never said to have would open more questions than
+    /// it answers.
+    /// </remarks>
+    private void EmitAbilityExpiries(GameStateTracker tracker, long ts, Emit st)
+    {
+        foreach (var expiries in tracker.NewAbilityExpiries.GroupBy(x => x.Affected))
+        {
+            var name = tracker.NameOf(expiries.Key);
+            if (CardNames.IsPlaceholder(name)) continue;
+
+            var clauses = expiries
+                .Select(x => cards.AbilityText(x.AbilityGrpId))
+                .Where(raw => raw is not null)
+                .Select(raw => AbilityText.Clause(raw!, out _))
+                .ToList();
+            if (clauses.Count == 0) continue;
+
+            st.SawCard(name);
+
+            st.Add(Base(tracker, ts, EventKind.AbilityExpired) with
+            {
+                ActorSeat = tracker.Get(expiries.Key)?.ControllerSeat is > 0 and var c
+                    ? c : tracker.ActiveSeat,
+                TargetInstanceId = expiries.Key,
+                TargetName = name,
                 Detail = AbilityText.Join(clauses)
             });
         }

@@ -366,6 +366,25 @@ public class NarratorTests
     }
 
     /// <summary>
+    /// Issue #7's missing line: the grant's other end. "Loses", the verb counters and
+    /// life already use, and no cause — a wear-off has no actor, and the grant line
+    /// already said who put the ability there.
+    /// </summary>
+    [Test]
+    public void An_expired_ability_reads_as_losing_it()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.AbilityExpired) with
+            {
+                TargetInstanceId = 405,
+                TargetName = "Battlesong Berserker 4/4",
+                Detail = "menace"
+            }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Battlesong Berserker 4/4 loses menace"));
+    }
+
+    /// <summary>
     /// Cause first and active, the same shape the destroy and exile lines already use.
     /// Without it three triggers in a row read identically and a reader cannot tell what
     /// the player did to set any of them off.

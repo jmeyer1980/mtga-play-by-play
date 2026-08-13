@@ -109,6 +109,14 @@ the reasoning is in the commit history:
 Llanowar Elves 2/2 first strike", via the card database's `Abilities` table. Grants that
 ride on a counter or restate a Class level line are deliberately left to those lines.
 
+Grant wear-offs render as of issue #7 — "Battlesong Berserker loses menace" — but they
+are *not* read from the annotation disappearing. That surface is sampled: across the
+archive an AddAbility id goes missing and returns under the same id 115 times, up to 86
+messages later, with the creature in play the whole while. The wear-off is read from the
+object's own `uniqueAbilities` losing a granted grpid, the same channel statline
+wear-offs use, and only for a permanent still on the battlefield — a creature that died
+did not "lose trample".
+
 ## Reporting a bug
 
 Use the issue template — it asks for the build stamp, which is the single most useful
