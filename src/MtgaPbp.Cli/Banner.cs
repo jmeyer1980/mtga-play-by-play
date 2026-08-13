@@ -44,6 +44,12 @@ public static class Banner
         if (art) sb.AppendLine(Art);
         sb.Append("  mtga-pbp ").Append(BuildInfo.Version);
         Console.WriteLine(sb.ToString());
+
+        // Only ever says anything when the exe sits inside a git working copy, which a
+        // released copy does not. Reads two files and starts no process — see WorkingCopy.
+        if (WorkingCopy.StaleNote(BuildInfo.Version, AppContext.BaseDirectory) is { } stale)
+            Console.WriteLine($"  {stale}");
+
         Console.WriteLine();
     }
 
