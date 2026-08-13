@@ -138,7 +138,7 @@ public sealed class EventExtractor(ICardDb cards)
         "AnnotationType_ObjectIdChanged",       // consumed by the tracker as aliasing
         "AnnotationType_AbilityInstanceDeleted",
         "AnnotationType_TappedUntappedPermanent",
-        "AnnotationType_UserActionTaken",
+        "AnnotationType_UserActionTaken",       // consumed by MarkActivations as attribution
         "AnnotationType_ResolutionStart",
         "AnnotationType_ResolutionComplete",
         "AnnotationType_LayeredEffectCreated",
@@ -383,6 +383,17 @@ public sealed class EventExtractor(ICardDb cards)
         public readonly Dictionary<int, int> Mulligans = [];
 
         /// <summary>
+        /// Ability instances a player deliberately activated, mapped to the seat that
+        /// acted, under the id Arena used at the time. From
+        /// <c>AnnotationType_UserActionTaken</c> with an actionType of 2 — whose
+        /// affector, unlike most affectors, really is the seat on every one in the
+        /// archive. Kept raw and resolved only when the game closes, because the
+        /// activation and the ability's creation arrive in different messages for a
+        /// quarter of the archive and the alias map is not complete until the end.
+        /// </summary>
+        public readonly Dictionary<int, int> Activations = [];
+
+        /// <summary>
         /// The last statline seen for each permanent, so a change that no annotation
         /// explains can be noticed. Per game, because instance ids are handed out again.
         /// </summary>
@@ -533,6 +544,23 @@ public sealed class EventExtractor(ICardDb cards)
                         FirstAffected(a) is { } spoken)
                         explained.Add(spoken);
 
+                // Which ability instances a player deliberately activated. Not an event
+                // of its own: the ability's AbilityInstanceCreated already produces the
+                // line, and this is what corrects that line's verb — an activation
+                // reported as "X's ability triggers" hides both the decision and the
+                // cost that was paid. 450 of these across the archive, actionType 2
+                // meaning "activate" (1 is a cast, 3 a land drop, 4 a mana ability).
+                foreach (var a in Json.Array(gsm, "annotations"))
+                {
+                    if (!GameStateTracker.HasType(a, "AnnotationType_UserActionTaken"))
+                        continue;
+                    if (GameStateTracker.DetailInt(a, "actionType") != 2) continue;
+                    if (Json.Int(a, "affectorId") is not { } actorSeat ||
+                        actorSeat is not (1 or 2)) continue;
+                    if (FirstAffected(a) is not { } abilityInst) continue;
+                    game.Activations[abilityInst] = actorSeat;
+                }
+
                 foreach (var a in Json.Array(gsm, "annotations"))
                     EmitFor(a, tracker, ts, st, countered);
 
@@ -547,6 +575,7 @@ public sealed class EventExtractor(ICardDb cards)
         // games — the ids are reused and the statline history starts over.
         foreach (var g in games)
         {
+            MarkActivations(g.Tracker, st, g);
             var labels = PermanentLabels.Build(g.Tracker, cards, Boundaries(st, g));
             NamePermanents(g.Tracker, labels, st, g);
             NameBoards(g.Tracker, labels, st, g);
@@ -1331,6 +1360,119 @@ public sealed class EventExtractor(ICardDb cards)
                     Detail = $"{was.Power}/{was.Toughness} → {now.Power}/{now.Toughness}"
                 });
             }
+    }
+
+    /// <summary>
+    /// Rewrites the trigger line of every ability its player deliberately activated:
+    /// "Lander's ability triggers" becomes "Opponent activates Lander". A correction,
+    /// not an addition — the trigger line is replaced in place, because the verb was
+    /// wrong, and a second line beside it would state 264 facts twice.
+    /// </summary>
+    /// <remarks>
+    /// Deferred rather than done while the messages stream past, because the activation
+    /// and the ability's creation are the same fact split across annotations that share
+    /// only the ability's instance id — and for 102 of the archive's 450 activations
+    /// they arrive in different messages, in either order. Runs before
+    /// <see cref="NamePermanents"/> so a renamed source is still a name that pass
+    /// recognises and can hang a disambiguating letter on.
+    /// <para>
+    /// A Class levelling up is also an activation, and its line is removed rather than
+    /// reworded: "Caretaker's Talent becomes level 2", emitted a message later, is this
+    /// same fact in Arena's own words, and 126 of the archive's 130 level lines sat
+    /// directly under a wrong-verb trigger line saying it a second time.
+    /// </para>
+    /// </remarks>
+    private static void MarkActivations(GameStateTracker tracker, Emit st, GameRun g)
+    {
+        if (g.Activations.Count == 0) return;
+
+        // Both sides are folded to canonical ids only now, with the game's whole alias
+        // map known — the activation names the id in use when the player acted, the
+        // creation the id in use when Arena announced the ability.
+        var activated = new Dictionary<int, int>();
+        foreach (var (id, seat) in g.Activations) activated[tracker.Resolve(id)] = seat;
+
+        // Every trigger line that was really an activation, with the permanent it
+        // belongs to. An ability whose permanent cannot be named keeps its trigger
+        // line: the verb is wrong, but a wrong verb still beats losing the fact.
+        var found = new List<(int Index, int Seat, int? SourceId, string SourceName)>();
+        for (var i = g.FirstSeq; i < g.EndSeq; i++)
+        {
+            var e = st.Events[i];
+            if (e.Kind != EventKind.Triggered || e.SourceInstanceId is not { } ability)
+                continue;
+            if (!activated.TryGetValue(tracker.Resolve(ability), out var seat)) continue;
+
+            var (sourceId, sourceName) = tracker.AbilitySource(ability);
+            if (sourceName is null) continue;
+            found.Add((i, seat, sourceId, sourceName));
+        }
+        if (found.Count == 0) return;
+
+        // A Class levelling up is an activation too, and its line is already on the
+        // page: "Caretaker's Talent becomes level 2", emitted a message later, is the
+        // same fact in Arena's own words. Each level line claims the nearest earlier
+        // unclaimed activation of its own permanent — one each, so a Class whose other
+        // ability was also activated near the level-up loses only the leveling line.
+        // The window is measured, not guessed: 126 of the archive's 130 level lines
+        // sit directly under their activation's line and the farthest is five rendered
+        // lines away, but the mana paid for the level costs events the page never
+        // shows, so the window is wider than the worst rendered distance.
+        const int levelUpWindow = 16;
+        var suppressed = new HashSet<int>();
+        for (var i = g.FirstSeq; i < g.EndSeq; i++)
+        {
+            if (st.Events[i] is not
+                { Kind: EventKind.LevelUp, SourceInstanceId: { } cls } level) continue;
+            var clsId = tracker.Resolve(cls);
+
+            var best = -1;
+            foreach (var (index, _, sourceId, sourceName) in found)
+            {
+                if (index >= i || i - index > levelUpWindow ||
+                    suppressed.Contains(index)) continue;
+                // By instance when the ability named its permanent, by name when it
+                // could only be named through its grpId — the level event's own name
+                // is raw here because this runs before NamePermanents letters it.
+                var same = (sourceId is { } sid && tracker.Resolve(sid) == clsId) ||
+                           string.Equals(sourceName, level.SourceName, StringComparison.Ordinal);
+                if (same && index > best) best = index;
+            }
+            if (best >= 0) suppressed.Add(best);
+        }
+
+        foreach (var (index, seat, sourceId, sourceName) in found)
+        {
+            var e = st.Events[index];
+            if (suppressed.Contains(index))
+            {
+                // Removed, not reworded: an activation with no name makes no sentence
+                // in either density, and the level line stays the one report.
+                st.Events[index] = e with
+                {
+                    Kind = EventKind.Activated,
+                    ActorSeat = seat,
+                    SourceName = null,
+                    SourceInstanceId = sourceId,
+                    CauseInstanceId = null,
+                    CauseName = null
+                };
+                continue;
+            }
+
+            st.SawCard(sourceName);
+            st.Events[index] = e with
+            {
+                Kind = EventKind.Activated,
+                ActorSeat = seat,
+                SourceInstanceId = sourceId,
+                SourceName = sourceName,
+                // The activation is the player's own act. Whatever TriggeringObject
+                // Arena may have named belonged to the sentence this one replaces.
+                CauseInstanceId = null,
+                CauseName = null
+            };
+        }
     }
 
     private static void NamePermanents(

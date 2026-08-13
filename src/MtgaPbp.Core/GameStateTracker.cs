@@ -483,6 +483,35 @@ public sealed class GameStateTracker(ICardDb cards)
     private static bool IsDerived(TrackedObject o) =>
         o.Type is "GameObjectType_Ability" or "GameObjectType_Emblem";
 
+    /// <summary>
+    /// The permanent an ability instance belongs to, named bare — "Lander", not
+    /// "Lander's ability". An activation line names what the player activated, and a
+    /// player activates the permanent, not the ability object Arena spawned for it.
+    /// </summary>
+    /// <remarks>
+    /// The parent instance is preferred over <c>objectSourceGrpId</c>, the reverse of
+    /// <see cref="NameOf(int)"/>'s order, because an instance id is something the
+    /// deferred naming pass can hang a disambiguating letter on — "Rabbit (a)" — while
+    /// a name reached through a grpId is only ever the printed card name. Both ends at
+    /// the same card when both resolve. (null, null) when neither does, and the caller
+    /// keeps whatever line it already had.
+    /// </remarks>
+    public (int? InstanceId, string? Name) AbilitySource(int abilityInstanceId)
+    {
+        var o = Get(abilityInstanceId);
+        if (o is null) return (null, null);
+
+        if (o.ParentId is { } parent)
+        {
+            var name = NameOf(parent);
+            if (!CardNames.IsPlaceholder(name)) return (parent, name);
+        }
+        if (o.ObjectSourceGrpId is { } srcGrp && cards.CardForGrpId(srcGrp) is { } src)
+            return (null, src.Name);
+
+        return (null, null);
+    }
+
     public string SeatName(int seat) => seat == LocalSeat ? "You" : "Opponent";
 
     /// <summary>
