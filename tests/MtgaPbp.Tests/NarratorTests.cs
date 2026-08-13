@@ -545,6 +545,36 @@ public class NarratorTests
         Assert.That(lines.Single().Text, Is.EqualTo("Opponent unlocks Dollmaker's Shop"));
     }
 
+    /// <summary>
+    /// A statline that moves both ways at once is not an effect ending.
+    /// </summary>
+    /// <remarks>
+    /// Porcelain Gallery makes every creature as big as the number of creatures you
+    /// control, so a printed 2/5 Ghostly Dancers becomes 4/4 — toughness down, power up.
+    /// The expiry rule only skipped changes where both numbers grew, so this reported
+    /// "Ghostly Dancers returns to 4/4" about a creature that had just got bigger.
+    /// A characteristic-defining ability setting the numbers is not a buff falling off.
+    /// </remarks>
+    [Test]
+    public void A_statline_moving_both_ways_is_not_reported_as_an_expiry()
+    {
+        // The narrator renders whatever it is given; this pins the wording the extractor
+        // produces so the shape of the claim stays a reduction.
+        var lines = Narrator.Narrate(T(E(EventKind.StatsExpired) with
+        {
+            TargetName = "Hare Apparent 6/6",
+            Detail = "6/6 → 2/2"
+        }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Hare Apparent 6/6 returns to 2/2"));
+
+        var parts = "6/6 → 2/2".Split('→');
+        var before = parts[0].Trim().Split('/').Select(int.Parse).ToArray();
+        var after = parts[1].Trim().Split('/').Select(int.Parse).ToArray();
+        Assert.That(after[0], Is.LessThanOrEqualTo(before[0]));
+        Assert.That(after[1], Is.LessThanOrEqualTo(before[1]));
+    }
+
     // ---------- zone transfers with no verb of their own ----------
 
     private static string? Moved(string? from, string? to, string? category) =>

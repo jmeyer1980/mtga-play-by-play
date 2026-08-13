@@ -1314,10 +1314,14 @@ public sealed class EventExtractor(ICardDb cards)
 
                 if (was == now || explained.Contains(id)) continue;
 
-                // Only shrinking. A statline growing with nothing to explain it is a
-                // layer the parser has not learned to read, not an effect ending, and
-                // reporting it as one would be inventing a cause.
-                if (now.Power >= was.Power && now.Toughness >= was.Toughness) continue;
+                // Only shrinking, and shrinking in both directions at once. A statline
+                // growing with nothing to explain it is a layer the parser has not
+                // learned to read, not an effect ending; and one that moves both ways —
+                // 2/5 to 4/4 — is a characteristic-defining ability setting the numbers
+                // rather than a buff falling off. Porcelain Gallery makes every creature
+                // as big as the number of creatures you control, so a printed 2/5 Ghostly
+                // Dancers "returns to 4/4" while its power has just gone up.
+                if (now.Power > was.Power || now.Toughness > was.Toughness) continue;
 
                 st.Add(Base(tracker, ts, EventKind.StatsExpired) with
                 {
