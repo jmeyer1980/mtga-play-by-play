@@ -1366,7 +1366,7 @@ public sealed class EventExtractor(ICardDb cards)
     /// Rewrites the trigger line of every ability its player deliberately activated:
     /// "Lander's ability triggers" becomes "Opponent activates Lander". A correction,
     /// not an addition — the trigger line is replaced in place, because the verb was
-    /// wrong, and a second line beside it would state 264 facts twice.
+    /// wrong, and a second line beside it would state 318 facts twice.
     /// </summary>
     /// <remarks>
     /// Deferred rather than done while the messages stream past, because the activation
@@ -1431,11 +1431,15 @@ public sealed class EventExtractor(ICardDb cards)
             {
                 if (index >= i || i - index > levelUpWindow ||
                     suppressed.Contains(index)) continue;
-                // By instance when the ability named its permanent, by name when it
-                // could only be named through its grpId — the level event's own name
-                // is raw here because this runs before NamePermanents letters it.
-                var same = (sourceId is { } sid && tracker.Resolve(sid) == clsId) ||
-                           string.Equals(sourceName, level.SourceName, StringComparison.Ordinal);
+                // By instance when the ability named its permanent, by name only when
+                // it could not — the level event's own name is raw here because this
+                // runs before NamePermanents letters it. The instance answer is final
+                // when there is one: Classes are not legendary, and with two copies of
+                // the same Class in play a bare name match would let one copy's level
+                // line swallow the other copy's genuine activation.
+                var same = sourceId is { } sid
+                    ? tracker.Resolve(sid) == clsId
+                    : string.Equals(sourceName, level.SourceName, StringComparison.Ordinal);
                 if (same && index > best) best = index;
             }
             if (best >= 0) suppressed.Add(best);

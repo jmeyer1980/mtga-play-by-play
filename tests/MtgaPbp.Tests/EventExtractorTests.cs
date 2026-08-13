@@ -752,7 +752,7 @@ public class EventExtractorTests
     /// <summary>
     /// Issue #3: a deliberate play was reported as "X's ability triggers" — the wrong
     /// verb, hiding both the decision and the cost paid. The trigger line is replaced,
-    /// not accompanied: 264 of these on the archive's pages would otherwise be said
+    /// not accompanied: 318 of these on the archive's pages would otherwise be said
     /// twice. The line names the permanent and the player, and drops any triggering
     /// object Arena also sent — the activation is the player's own act.
     /// </summary>
@@ -841,6 +841,53 @@ public class EventExtractorTests
             "the wrong-verb line must not survive");
         Assert.That(t.Events.Any(x => x.Kind == EventKind.Activated && x.SourceName is not null),
             Is.False, "and no activation line may replace it");
+    }
+
+    /// <summary>
+    /// Classes are not legendary, so two copies of the same Class can be in play at
+    /// once. When one copy levels up, only its own activation may be claimed: the
+    /// permanents share a printed name, and matching by name while the instance ids
+    /// disagree would let one copy's level line swallow the other copy's genuine
+    /// activation — reproducing the very doubling the claim exists to remove.
+    /// </summary>
+    [Test]
+    public void A_level_up_cannot_claim_a_same_named_siblings_activation()
+    {
+        // Copy A (700) levels with no announced activation of its own; copy B (750)
+        // genuinely activates through ability 900. Same printed name, different
+        // permanents.
+        var activation = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 700, "grpId": 7, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 1 },
+            { "instanceId": 750, "grpId": 7, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 1 },
+            { "instanceId": 900, "grpId": 8, "parentId": 750,
+              "type": "GameObjectType_Ability", "controllerSeatId": 1 } ],
+          "annotations": [
+            { "id": 41, "affectorId": 750, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_AbilityInstanceCreated" ] },
+            { "id": 42, "affectorId": 1, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_UserActionTaken" ], "details": [
+                { "key": "actionType", "valueInt32": [ 2 ] },
+                { "key": "abilityGrpId", "valueInt32": [ 8 ] } ] } ] }
+        """);
+        var level = Gre("""
+        { "type": "GameStateType_Full",
+          "persistentAnnotations": [ { "id": 3, "affectorId": 700,
+            "type": [ "AnnotationType_ClassLevel" ], "details": [
+              { "key": "Level", "valueInt32": [ 2 ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, activation, level);
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.LevelUp).SourceInstanceId,
+            Is.EqualTo(700));
+        var activated = t.Events.Single(x => x.Kind == EventKind.Activated);
+        Assert.That(activated.SourceName, Is.Not.Null,
+            "copy B's activation must survive copy A's level-up");
+        Assert.That(activated.SourceInstanceId, Is.EqualTo(750));
     }
 
     /// <summary>
