@@ -529,7 +529,13 @@ public static class Narrator
         EventKind.Scry => $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "scry", "scries", t)}",
         EventKind.Revealed when e.SourceName is not null => $"{e.SourceName} is revealed",
 
-        EventKind.ManaPaid when e.SourceName is not null => $"taps {e.SourceName} for mana",
+        // Named subject, like every other line. Without one this read as a continuation
+        // of whatever came before it — in a list where every other line begins with a
+        // player, "taps Plains for mana" attaches itself to the previous line's actor,
+        // and 4,528 verbose lines across 206 pages did exactly that.
+        EventKind.ManaPaid when e.SourceName is not null =>
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "tap", "taps", t)} " +
+            $"{e.SourceName} for mana",
         EventKind.PhaseChange when !string.IsNullOrWhiteSpace(e.Detail) => $"— {e.Detail} —",
         EventKind.PhaseChange => null,
         EventKind.Unknown => $"[unhandled: {e.RawType}]",
