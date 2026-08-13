@@ -382,6 +382,12 @@ public sealed class EventExtractor(ICardDb cards)
 
         public readonly List<DieRoll> Rolls = [];
         public readonly Dictionary<int, int> Mulligans = [];
+
+        /// <summary>
+        /// The last statline seen for each permanent, so a change that no annotation
+        /// explains can be noticed. Per game, because instance ids are handed out again.
+        /// </summary>
+        public readonly Dictionary<int, (int Power, int Toughness)> LastStats = [];
     }
 
     /// <summary>What Arena said about one finished game.</summary>
@@ -515,8 +521,23 @@ public sealed class EventExtractor(ICardDb cards)
                                              "AnnotationType_CounterRemoved"))
                         if (FirstAffected(a) is { } hit) countered.Add(hit);
 
+                // Every permanent any annotation in this message speaks about. A statline
+                // that moved while its object was named by something is already explained
+                // by whatever that something was.
+                var explained = new HashSet<int>();
+                foreach (var a in Json.Array(gsm, "annotations"))
+                    if (Json.Array(a, "type").Any(t => t.ValueKind == JsonValueKind.String &&
+                            t.GetString() is "AnnotationType_CounterAdded"
+                                          or "AnnotationType_CounterRemoved"
+                                          or "AnnotationType_PowerToughnessModCreated"
+                                          or "AnnotationType_ZoneTransfer") &&
+                        FirstAffected(a) is { } spoken)
+                        explained.Add(spoken);
+
                 foreach (var a in Json.Array(gsm, "annotations"))
                     EmitFor(a, tracker, ts, st, countered);
+
+                EmitStatExpiry(game, tracker, ts, st, explained);
             }
         }
 
@@ -1207,6 +1228,53 @@ public sealed class EventExtractor(ICardDb cards)
     /// need telling apart is a fact about the match, not about the message the line came
     /// out of. <see cref="PermanentLabels"/> holds the rule.
     /// </summary>
+    /// <summary>
+    /// A statline that moved with nothing in the message accounting for it — a temporary
+    /// effect ending.
+    /// </summary>
+    /// <remarks>
+    /// Arena announces a pump and never announces its expiry: there is no
+    /// <c>PowerToughnessModDeleted</c>, the effect simply stops applying and the object
+    /// starts reporting its base size again. So the only evidence is the statline itself
+    /// changing while no annotation names the permanent.
+    /// <para>
+    /// Restricted to creatures on the battlefield. A card's power is only a claim worth
+    /// making about it while it is in play, and objects moving between zones re-report
+    /// their printed size constantly — reading those as effects wearing off would bury
+    /// the real ones.
+    /// </para>
+    /// </remarks>
+    private static void EmitStatExpiry(
+        GameRun g, GameStateTracker tracker, long ts, Emit st, IReadOnlySet<int> explained)
+    {
+        foreach (var seat in (int[])[1, 2])
+            foreach (var o in tracker.CreaturesOnBattlefield(seat))
+            {
+                if (o.Power is not { } p || o.Toughness is not { } t) continue;
+
+                var id = tracker.Resolve(o.InstanceId);
+                var now = (Power: p, Toughness: t);
+
+                if (!g.LastStats.TryGetValue(id, out var was)) { g.LastStats[id] = now; continue; }
+                g.LastStats[id] = now;
+
+                if (was == now || explained.Contains(id)) continue;
+
+                // Only shrinking. A statline growing with nothing to explain it is a
+                // layer the parser has not learned to read, not an effect ending, and
+                // reporting it as one would be inventing a cause.
+                if (now.Power >= was.Power && now.Toughness >= was.Toughness) continue;
+
+                st.Add(Base(tracker, ts, EventKind.StatsExpired) with
+                {
+                    ActorSeat = o.ControllerSeat is > 0 ? o.ControllerSeat : tracker.ActiveSeat,
+                    TargetInstanceId = id,
+                    TargetName = tracker.NameOf(id),
+                    Detail = $"{was.Power}/{was.Toughness} → {now.Power}/{now.Toughness}"
+                });
+            }
+    }
+
     private static void NamePermanents(
         GameStateTracker tracker, PermanentLabels labels, Emit st, GameRun g)
     {
@@ -1219,7 +1287,8 @@ public sealed class EventExtractor(ICardDb cards)
             // A counter or a stat mod reports the change itself, so it names the size the
             // permanent was changed FROM. Everything else describes a permanent as it
             // stands at that moment.
-            var before = e.Kind is EventKind.CounterChanged or EventKind.StatsModified;
+            var before = e.Kind is EventKind.CounterChanged or EventKind.StatsModified
+                                or EventKind.StatsExpired;
 
             var source = Named(tracker, labels, e.SourceInstanceId, e.SourceName, e.Seq, before);
             var target = Named(tracker, labels, e.TargetInstanceId, e.TargetName, e.Seq, before);

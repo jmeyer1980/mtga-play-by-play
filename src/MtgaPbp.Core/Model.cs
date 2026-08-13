@@ -72,7 +72,7 @@ public enum EventKind
     GameStart, Mulligan, TurnStart, PhaseChange,
     LandPlayed, SpellCast, Resolved, Countered,
     Drew, Discarded, Destroyed, Sacrificed, Exiled, Returned,
-    StateBasedAction, ZoneMove, Milled, Surveilled, StatsModified,
+    StateBasedAction, ZoneMove, Milled, Surveilled, StatsModified, StatsExpired,
     Damage, LifeChanged, TokenCreated, CounterChanged,
     Scry, Revealed, ManaPaid, Attack, Block, BoardSnapshot, Triggered, Attached, LevelUp,
     GameEnd, Unknown

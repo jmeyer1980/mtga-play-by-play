@@ -474,6 +474,11 @@ public static class Narrator
         EventKind.StatsModified when e.TargetName is not null && e.Detail is not null =>
             $"{e.TargetName} gets {e.Detail}",
 
+        // The permanent is named as it stands now, with where it came from in the
+        // parenthesis, because the change has already happened by the time this is said.
+        EventKind.StatsExpired when e.TargetName is not null && e.Detail is not null =>
+            $"{e.TargetName} returns to {e.Detail.Split('→')[1].Trim()}",
+
         EventKind.CounterChanged when e.TargetName is not null && e.Amount != 0 =>
             $"{e.TargetName} {(e.Amount > 0 ? "gets" : "loses")} {Math.Abs(e.Amount)} " +
             $"{(e.Detail is null ? "" : e.Detail + " ")}counter" +

@@ -482,6 +482,28 @@ public class NarratorTests
         Assert.That(lines.Single().Text, Is.EqualTo($"Tifa Lockhart 3/4 gets {expected}"));
     }
 
+    /// <summary>
+    /// A temporary effect ending. Arena announces the pump and never announces its
+    /// expiry — there is no PowerToughnessModDeleted — so the only evidence is the
+    /// statline moving back while nothing in the message names the permanent.
+    /// </summary>
+    /// <remarks>
+    /// Named at the size it is losing, so the line carries both ends: "Tifa Lockhart 2/2
+    /// returns to 1/2". Naming it at the size it has now produced "Rabbit 2/2 returns to
+    /// 2/2", which says nothing twice.
+    /// </remarks>
+    [Test]
+    public void An_effect_wearing_off_names_the_size_it_is_losing()
+    {
+        var lines = Narrator.Narrate(T(E(EventKind.StatsExpired) with
+        {
+            TargetName = "Tifa Lockhart 2/2",
+            Detail = "2/2 → 1/2"
+        }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Tifa Lockhart 2/2 returns to 1/2"));
+    }
+
     // ---------- zone transfers with no verb of their own ----------
 
     private static string? Moved(string? from, string? to, string? category) =>
