@@ -40,6 +40,27 @@ public sealed class CardDb : ICardDb, IDisposable
                     .FirstOrDefault();
     }
 
+    /// <summary>
+    /// Every card name the database knows, for checking an imported collection against.
+    /// </summary>
+    /// <remarks>
+    /// Read straight from the localization table joined to Cards rather than card by
+    /// card: a collection is a few thousand names and one query is the difference
+    /// between instant and a visible pause. Duplicates are expected — a card printed in
+    /// several sets has a row each — and the caller wants a set anyway.
+    /// </remarks>
+    public IEnumerable<string> AllNames()
+    {
+        using var cmd = _con.CreateCommand();
+        cmd.CommandText =
+            "SELECT DISTINCT l.Loc FROM Cards c " +
+            "JOIN Localizations_enUS l ON l.LocId = c.TitleId " +
+            "WHERE l.Loc IS NOT NULL AND l.Loc <> ''";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+            if (!r.IsDBNull(0)) yield return r.GetString(0);
+    }
+
     public string? NameForLocId(int locId)
     {
         if (_locCache.TryGetValue(locId, out var hit)) return hit;

@@ -39,6 +39,7 @@ public static class Program
                 "build" => Build(cfg, open),
                 "stats" => Stats(cfg),
                 "watch" => Watch(cfg, operands),
+                "collection" => ImportCollection(cfg, operands.FirstOrDefault()),
                 "keep" => Favorite(cfg, operands.FirstOrDefault(), on: true),
                 "unkeep" => Favorite(cfg, operands.FirstOrDefault(), on: false),
                 "all" => Capture(cfg) is var c && c != 0 ? c : Build(cfg, open),
@@ -53,7 +54,7 @@ public static class Program
     }
 
     private static readonly string[] Commands =
-        ["capture", "build", "stats", "watch", "keep", "unkeep"];
+        ["capture", "build", "stats", "watch", "keep", "unkeep", "collection"];
 
     private static readonly string[] Options = ["--open", "--rebuild"];
 
@@ -102,6 +103,7 @@ public static class Program
             mtga-pbp build --rebuild  same as above (build never caches)
             mtga-pbp stats            unhandled annotations and unresolved cards
             mtga-pbp watch [port]     serve the report and keep it live (default 8787)
+            mtga-pbp collection <file> import a collection exported from elsewhere
             mtga-pbp keep <matchId>   never prune this match
             mtga-pbp unkeep <matchId> allow it to be pruned again
 
@@ -270,6 +272,81 @@ public static class Program
         }
 
         Console.WriteLine("stopped.");
+        return 0;
+    }
+
+    /// <summary>
+    /// Imports a collection exported from somewhere else and checks it against the card
+    /// database, so a file that half-resolves is caught here rather than quietly
+    /// answering "you do not own that" later.
+    /// </summary>
+    /// <remarks>
+    /// Arena no longer writes the collection to its log — verified against a clean login,
+    /// a craft and a full played session — so there is nothing to extract and this is the
+    /// supported route in. Any source works: a tracker's copy button, a memory-scanning
+    /// exporter, a hand-written list. The tool stays a program that only reads files.
+    /// </remarks>
+    private static int ImportCollection(Config cfg, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            Console.Error.WriteLine("""
+                usage: mtga-pbp collection <file>
+
+                The file is Arena's own decklist text, one card per line:
+
+                  4 Hare Apparent
+                  2 Ethereal Armor (DSK)
+
+                Export one from any tracker's collection view, or paste from Arena.
+                """);
+            return 2;
+        }
+
+        if (!File.Exists(path))
+        {
+            Console.Error.WriteLine($"error: no such file: {path}");
+            return 2;
+        }
+
+        var owned = CollectionFile.Parse(File.ReadAllLines(path), out var unreadable);
+        if (owned.Count == 0)
+        {
+            Console.Error.WriteLine(
+                $"error: {path} held no card entries. Expected lines like \"4 Hare Apparent\".");
+            return 2;
+        }
+
+        using var cards = OpenCards(cfg, out _);
+        var known = new HashSet<string>(cards.AllNames(), StringComparer.OrdinalIgnoreCase);
+        var unmatched = owned.Where(o => !known.Contains(o.Name)).ToList();
+
+        var target = Path.Combine(cfg.OutputDir, "collection.txt");
+        Directory.CreateDirectory(cfg.OutputDir);
+        File.WriteAllLines(target, owned.Select(o => $"{o.Count} {o.Name}"));
+
+        Console.WriteLine($"{owned.Count:N0} distinct cards, {owned.Sum(o => o.Count):N0} copies");
+        Console.WriteLine($"  matched against the card database: {owned.Count - unmatched.Count:N0}");
+        Console.WriteLine($"  stored: {target}");
+
+        // Said out loud, and never as a total on its own. A name the database does not
+        // know is a card this tool will report you do not own, which is the one wrong
+        // answer a collection can give.
+        if (unmatched.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"{unmatched.Count:N0} name(s) the card database does not know:");
+            foreach (var u in unmatched.Take(10)) Console.WriteLine($"    {u.Count} {u.Name}");
+            if (unmatched.Count > 10) Console.WriteLine($"    ... and {unmatched.Count - 10:N0} more");
+        }
+
+        if (unreadable.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"{unreadable.Count:N0} line(s) that began with a count and could not be read:");
+            foreach (var u in unreadable.Take(5)) Console.WriteLine($"    {u}");
+        }
+
         return 0;
     }
 
