@@ -391,7 +391,15 @@ public sealed class GameStateTracker(ICardDb cards)
         // bare null check would name them "" and stop before the links that work.
         if (o.NameLocId is { } loc && cards.NameForLocId(loc) is { Length: > 0 } byLoc)
             return byLoc;
-        if (cards.CardForGrpId(o.GrpId) is { } card) return card.Name;
+        // Only for objects whose grpId is a card. An ability's grpId indexes the card
+        // database's Abilities table, and the two id spaces overlap — 96573 is both
+        // Sazh's Chocobo's landfall ability and the card Ureni of the Unwritten. Asking
+        // Cards for it answered with a 7/7 that was never in the game, and the line read
+        // "Escape Tunnel triggers Ureni of the Unwritten": 294 trigger lines across 46
+        // matches naming a card the player never saw, and the same names poisoning the
+        // index's search text. The source and parent links below are the ones that
+        // resolve these correctly, and this lookup was reaching them first.
+        if (!IsDerived(o) && cards.CardForGrpId(o.GrpId) is { } card) return card.Name;
         if (o.ObjectSourceGrpId is { } srcGrp && cards.CardForGrpId(srcGrp) is { } src)
             return src.Name + Belonging(o);
 
@@ -414,6 +422,14 @@ public sealed class GameStateTracker(ICardDb cards)
     /// </summary>
     private static string Belonging(TrackedObject o) =>
         o.Type == "GameObjectType_Emblem" ? "'s emblem" : "'s ability";
+
+    /// <summary>
+    /// True for an object that is not a card and whose grpId therefore means something
+    /// else — an ability instance indexes the Abilities table, an emblem carries the
+    /// constant 2. Both have to be named through whatever produced them.
+    /// </summary>
+    private static bool IsDerived(TrackedObject o) =>
+        o.Type is "GameObjectType_Ability" or "GameObjectType_Emblem";
 
     public string SeatName(int seat) => seat == LocalSeat ? "You" : "Opponent";
 

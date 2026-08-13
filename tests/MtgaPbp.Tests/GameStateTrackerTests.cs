@@ -123,6 +123,32 @@ public class GameStateTrackerTests
         Assert.That(t.NameOf(523), Is.EqualTo("Temple of Plenty's emblem's ability"));
     }
 
+    /// <summary>
+    /// An ability is never named from the Cards table, because its grpId is not a card id.
+    /// </summary>
+    /// <remarks>
+    /// The two id spaces overlap. 96573 is both Sazh's Chocobo's landfall ability and the
+    /// card Ureni of the Unwritten, so asking Cards for it answered with a 7/7 that was
+    /// never in the game — "Escape Tunnel triggers Ureni of the Unwritten", 294 lines
+    /// across 46 matches, and the same wrong names in the index's search text. The source
+    /// and parent links resolve these correctly; the card lookup was reaching them first.
+    /// </remarks>
+    [Test]
+    public void NameOf_never_reads_an_abilitys_grpid_as_a_card_id()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full", "gameObjects": [
+          { "instanceId": 700, "grpId": 94131, "type": "GameObjectType_Ability",
+            "objectSourceGrpId": 94131, "ownerSeatId": 1, "controllerSeatId": 1 } ] }
+        """));
+
+        // 94131 is a real card in the fixture database. Read as this ability's own id it
+        // would name that card outright; read as its source it names the ability.
+        Assert.That(t.NameOf(700), Is.EqualTo("Temple of Plenty's ability"));
+        Assert.That(t.NameOf(700), Is.Not.EqualTo("Temple of Plenty"));
+    }
+
     [Test]
     public void NameOf_ignores_a_parent_it_cannot_name_either()
     {

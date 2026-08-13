@@ -46,7 +46,7 @@
 - Ajani's Pridemate resolves
 - Ajani's Pridemate triggers Hinterland Sanctifier's ability
 - Opponent gains 1 life
-- Deal Gone Bad triggers
+- Ajani's Pridemate's ability triggers
 - Ajani's Pridemate gets 1 +1/+1 counter
 - Opponent attacks with Hinterland Sanctifier
 - You cast Elspeth's Smite, targeting Hinterland Sanctifier
@@ -86,7 +86,7 @@
 - Leonin Vanguard's ability triggers
 - Leonin Vanguard gets +1/+1
 - Opponent gains 1 life
-- Deal Gone Bad triggers
+- Ajani's Pridemate's ability triggers
 - Ajani's Pridemate 3/3 gets 1 +1/+1 counter
 - Opponent attacks with Ajani's Pridemate 4/4
 - Opponent attacks with Rabbit ×3
@@ -112,7 +112,7 @@
 - Leonin Vanguard's ability triggers
 - Leonin Vanguard gets +1/+1
 - Opponent gains 1 life
-- Deal Gone Bad triggers
+- Ajani's Pridemate's ability triggers
 - Ajani's Pridemate 4/4 gets 1 +1/+1 counter
 - Opponent attacks with Ajani's Pridemate 5/5
 - Opponent attacks with Rabbit ×3
@@ -146,7 +146,7 @@
 - Leonin Vanguard's ability triggers
 - Leonin Vanguard gets +1/+1
 - Opponent gains 1 life
-- Deal Gone Bad triggers
+- Ajani's Pridemate's ability triggers
 - Ajani's Pridemate 5/5 gets 1 +1/+1 counter
 - You concede — opponent wins the match
 
