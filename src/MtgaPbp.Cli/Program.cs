@@ -320,6 +320,30 @@ public static class Program
         var summaries = new List<MatchSummary>();
         var unresolved = new SortedSet<string>(StringComparer.Ordinal);
 
+        // Every match in the order they were played, worked out before anything is
+        // extracted. The ledger already knows when each match started, so a page can be
+        // told its neighbours on the single pass that renders it — no second pass over
+        // the archive, and no holding two hundred transcripts in memory to sort them.
+        var chronological = archive.MatchIds()
+            .Select(id => (Id: id, At: archive.Meta(id)?.StartedAtMs ?? 0))
+            .OrderBy(m => m.At)
+            .ToList();
+        var position = chronological
+            .Select((m, i) => (m.Id, i))
+            .ToDictionary(p => p.Id, p => p.i, StringComparer.Ordinal);
+
+        Neighbours NeighboursOf(string id)
+        {
+            var i = position[id];
+            var newer = i + 1 < chronological.Count ? chronological[i + 1] : default;
+            var older = i > 0 ? chronological[i - 1] : default;
+            static string When(long at) =>
+                TranscriptSummary.Date(at).ToString("yyyy-MM-dd HH:mm");
+            return new Neighbours(
+                newer.Id, newer.Id is null ? null : When(newer.At),
+                older.Id, older.Id is null ? null : When(older.At));
+        }
+
         foreach (var matchId in archive.MatchIds())
         {
             var gamePath = Path.Combine(gamesDir, $"{matchId}.html");
@@ -327,7 +351,8 @@ public static class Program
             if (lines.Count == 0) continue;
 
             var transcript = extractor.Extract(matchId, lines);
-            File.WriteAllText(gamePath, GamePageRenderer.Render(transcript));
+            File.WriteAllText(gamePath,
+                GamePageRenderer.Render(transcript, NeighboursOf(matchId)));
             File.WriteAllText(Path.Combine(textDir, $"{matchId}.md"),
                 MarkdownRenderer.Render(transcript));
             summaries.Add(IndexRenderer.Summarize(transcript) with

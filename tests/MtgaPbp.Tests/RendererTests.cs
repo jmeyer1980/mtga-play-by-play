@@ -252,6 +252,59 @@ public class RendererTests
         Assert.That(s.EventName, Is.EqualTo("Ladder"));
     }
 
+    /// <summary>
+    /// The floating pager is plain links, and omits a direction at the ends of the
+    /// archive rather than rendering one that goes nowhere.
+    /// </summary>
+    /// <remarks>
+    /// Links, not buttons, and no script: a game page has to work opened straight off
+    /// disk where nothing can fetch, and an anchor additionally gives middle-click,
+    /// open-in-new-tab and link semantics to a screen reader. "Newer" and "older" rather
+    /// than "next" and "previous", because the index lists matches newest first — "next"
+    /// there means the older one and the opposite everywhere else.
+    /// </remarks>
+    [Test]
+    public void The_pager_links_to_the_matches_either_side_and_to_the_top()
+    {
+        var html = GamePageRenderer.Render(Sample(),
+            new Neighbours("newer-id", "2026-08-12 10:00", "older-id", "2026-08-11 09:00"));
+        var nav = Markup.Parse(html).Descendants("nav").Single();
+
+        Assert.That(nav.Attribute("aria-label")?.Value, Is.EqualTo("Match navigation"));
+
+        var links = nav.Descendants("a").ToList();
+        Assert.That(links, Has.Count.EqualTo(3));
+        Assert.That(links.Select(a => a.Attribute("href")?.Value),
+            Is.EqualTo(new[] { "newer-id.html", "#top", "older-id.html" }));
+
+        // The destination is in the accessible name: "Older" alone tells a screen reader
+        // user nothing about where they would land.
+        Assert.That(Markup.Spoken(links[0]), Does.Contain("Newer match"));
+        Assert.That(Markup.Spoken(links[0]), Does.Contain("2026-08-12 10:00"));
+        Assert.That(Markup.Spoken(links[2]), Does.Contain("older match"));
+
+        // Something to land on, and focusable so focus follows the view rather than
+        // staying four hundred lines down.
+        var h1 = Markup.Parse(html).Descendants("h1").Single();
+        Assert.That(h1.Attribute("id")?.Value, Is.EqualTo("top"));
+        Assert.That(h1.Attribute("tabindex")?.Value, Is.EqualTo("-1"));
+    }
+
+    [Test]
+    public void The_pager_omits_a_direction_that_has_no_match_rather_than_disabling_it()
+    {
+        // A focusable control that does nothing is worse than one that is not there.
+        var oldest = Markup.Parse(GamePageRenderer.Render(Sample(),
+            new Neighbours("newer-id", "2026-08-12 10:00", null, null)));
+        Assert.That(oldest.Descendants("nav").Single().Descendants("a").Count(),
+            Is.EqualTo(2));
+        Assert.That(oldest.Descendants("button").Any(b => b.Value.Contains("older")), Is.False);
+
+        // And a page rendered without neighbours at all grows no pager.
+        Assert.That(Markup.Parse(GamePageRenderer.Render(Sample())).Descendants("nav"),
+            Is.Empty);
+    }
+
     [Test]
     public void Index_embeds_data_rather_than_fetching_it()
     {

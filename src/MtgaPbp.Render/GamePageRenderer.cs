@@ -7,7 +7,7 @@ namespace MtgaPbp.Render;
 
 public static class GamePageRenderer
 {
-    public static string Render(Transcript t)
+    public static string Render(Transcript t, Neighbours? nav = null)
     {
         var sb = new StringBuilder();
         sb.Append($"""
@@ -19,7 +19,7 @@ public static class GamePageRenderer
             <main>
             <header>
               <p class="back"><a href="../index.html"><span aria-hidden="true">←</span> All games</a></p>
-              <h1>{E(TranscriptSummary.Title(t))}</h1>
+              <h1 id="top" tabindex="-1">{E(TranscriptSummary.Title(t))}</h1>
               <p class="sub">{Speech(TranscriptSummary.Subtitle(t))}</p>
               <div class="controls">
                 <button id="density-toggle" type="button"
@@ -52,6 +52,7 @@ public static class GamePageRenderer
 
         sb.Append($"""
             </main>
+            {Nav(nav)}
             <footer class="build">{E(BuildInfo.Line)}</footer>
             <script>{Script}</script></body></html>
             """);
@@ -194,6 +195,50 @@ public static class GamePageRenderer
     private static string Spoken(string glyph, string words) =>
         $"""<span aria-hidden="true">{glyph}</span><span class="vh">{words}</span>""";
 
+
+    /// <summary>
+    /// The floating links to the matches either side of this one, and back to the top.
+    /// </summary>
+    /// <remarks>
+    /// Plain anchors, rendered by the build. Not buttons and no script: a game page has
+    /// to work opened straight off disk, where nothing can fetch, and links additionally
+    /// give middle-click, open-in-new-tab, the browser's own history, and link semantics
+    /// to a screen reader — none of which a scripted button has.
+    /// <para>
+    /// It sits at the end of <c>main</c> rather than the start. Keyboard users then reach
+    /// it after the transcript, which is exactly when "older match" and "back to top" are
+    /// wanted, instead of paying three tab stops before every read; and with styling off
+    /// it linearises where it belongs.
+    /// </para>
+    /// <para>
+    /// A link is omitted at the ends of the archive rather than rendered disabled. A
+    /// focusable control that does nothing is worse than one that is not there. The
+    /// destination is named in the accessible name, because "Older" alone tells a screen
+    /// reader user nothing about where they would land.
+    /// </para>
+    /// </remarks>
+    private static string Nav(Neighbours? n)
+    {
+        if (n is null) return "";
+
+        var links = new List<string>();
+        if (n.NewerId is { } newer)
+            links.Add($"""
+                <a href="{E(newer)}.html"><span aria-hidden="true">&#8592;</span><span
+                class="vh">Newer match, </span>{E(n.NewerWhen ?? "newer")}</a>
+                """);
+
+        links.Add("""<a href="#top" class="top">Top</a>""");
+
+        if (n.OlderId is { } older)
+            links.Add($"""
+                <a href="{E(older)}.html">{E(n.OlderWhen ?? "older")}<span
+                class="vh">, older match</span><span aria-hidden="true">&#8594;</span></a>
+                """);
+
+        return $"""<nav class="pager" aria-label="Match navigation">{string.Join("", links)}</nav>""";
+    }
+
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 
     // Contrast, measured against both backdrops `color-scheme: light dark` produces
@@ -231,9 +276,35 @@ public static class GamePageRenderer
         button{font:inherit;padding:.3rem .8rem;cursor:pointer;min-height:1.75rem}
         .status{font-size:.85rem;opacity:.75}
         :focus-visible{outline:2px solid currentColor;outline-offset:2px}
+        /* Room for the pager, plus the strip iOS Safari reserves for its own chrome —
+           without it a fixed bar sits on top of the last lines of the transcript. */
+        body{padding-bottom:5rem}
+        .pager{position:fixed;left:0;right:0;bottom:0;display:flex;gap:.5rem;
+               justify-content:center;align-items:center;flex-wrap:wrap;
+               padding:.5rem .5rem calc(.5rem + env(safe-area-inset-bottom));
+               background:Canvas;border-top:1px solid rgba(128,128,128,.45)}
+        /* 2.75rem, not the 1.75rem the header buttons use. Both clear WCAG 2.2 AA's
+           24px floor, but a floating overlay is the worst place to sit at the floor. */
+        .pager a{display:inline-flex;align-items:center;gap:.35rem;
+                 min-height:2.75rem;padding:0 .9rem;border-radius:.4rem;
+                 border:1px solid rgba(128,128,128,.45);text-decoration:none;
+                 font-size:.9rem}
+        .pager a:hover{background:rgba(128,128,128,.15)}
+        .pager .top{opacity:.75}
+        /* Never hidden on scroll: a control that leaves the tab order mid-session is
+           worse for a keyboard user than one that is always there. */
+        @media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
+        @media print{
+          .controls,.back,.pager{display:none}
+          body{padding-bottom:0}
+          details{display:block}
+          details>summary{list-style:none}
+          h2,h3{break-after:avoid}
+          li{break-inside:avoid}
+        }
         @media (prefers-color-scheme:dark){.warn{border-left-color:#e0a33a}}
         @media (forced-colors:active){
-          .sub,.board,.warn,.status,.back a,h2,h3,.note,.deck .unseen,.build{opacity:1}
+          .sub,.board,.warn,.status,.back a,h2,h3,.note,.deck .unseen,.build,.pager .top{opacity:1}
         }
         """;
 

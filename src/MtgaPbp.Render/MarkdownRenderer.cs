@@ -168,9 +168,16 @@ public static class TranscriptSummary
     /// </summary>
     public static TimeZoneInfo DisplayTimeZone { get; set; } = TimeZoneInfo.Local;
 
-    public static DateTimeOffset Date(Transcript t) =>
+    public static DateTimeOffset Date(Transcript t) => Date(t.StartedAtMs);
+
+    /// <summary>
+    /// The same conversion from a bare timestamp, for callers that have the archive's
+    /// ledger but not a transcript — the neighbour links, which know when the adjacent
+    /// matches were played long before those matches are extracted.
+    /// </summary>
+    public static DateTimeOffset Date(long startedAtMs) =>
         TimeZoneInfo.ConvertTime(
-            DateTimeOffset.FromUnixTimeMilliseconds(t.StartedAtMs), DisplayTimeZone);
+            DateTimeOffset.FromUnixTimeMilliseconds(startedAtMs), DisplayTimeZone);
 
     /// <summary>
     /// How many turns were played, across every game of the match.
