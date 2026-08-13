@@ -356,7 +356,10 @@ public sealed class GameStateTracker(ICardDb cards)
         var grpids = DetailInts(pa, "grpid");
         if (grpids.Count == 0) return;
 
+        // Resolved like the affected ids are, so grants that name the same granter
+        // under an aliased id still group into one line downstream.
         var affector = Json.Int(pa, "affectorId");
+        if (affector is { } af && af > 2) affector = Resolve(af);
         foreach (var x in Json.Array(pa, "affectedIds"))
         {
             // Seats 1 and 2 are players; a granted ability lands on a permanent.
