@@ -357,6 +357,30 @@ public class NarratorTests
     }
 
     /// <summary>
+    /// Issue #3's proposed wording, verbatim: the player and the permanent, active
+    /// voice, because activating is something a player chose to do — unlike a trigger,
+    /// which the game did to them.
+    /// </summary>
+    [Test]
+    public void An_activation_names_the_player_and_the_permanent()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Activated) with { SourceName = "Lander", ActorSeat = 2 }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Opponent activates Lander"));
+    }
+
+    [Test]
+    public void Your_own_activation_conjugates_for_you()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Activated) with { SourceName = "Abandoned Air Temple", ActorSeat = 1 }),
+            Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("You activate Abandoned Air Temple"));
+    }
+
+    /// <summary>
     /// Naming the cause is what stops repeated triggers folding into one another when
     /// they were in fact set off by different permanents — the collapse is by rendered
     /// text, so a line that says more collapses less.

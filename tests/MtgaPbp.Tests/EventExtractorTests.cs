@@ -719,6 +719,217 @@ public class EventExtractorTests
     }
 
     /// <summary>
+    /// One message carrying an ability being created and the player's own act of
+    /// activating it. Shaped after the archive: UserActionTaken's affector is the seat —
+    /// on all 450 activations, unlike most affectors — and its affected id is the
+    /// ability instance the AbilityInstanceCreated beside it announces. The ability
+    /// object names its permanent through parentId alone, the way a real one does.
+    /// </summary>
+    private static string ActivationObjects => """
+        { "instanceId": 800, "grpId": 5, "name": 1001,
+          "type": "GameObjectType_Card", "controllerSeatId": 2 },
+        { "instanceId": 900, "grpId": 7, "parentId": 800,
+          "type": "GameObjectType_Ability", "controllerSeatId": 2 }
+    """;
+
+    private static string CreationMessage => Gre($$"""
+    { "type": "GameStateType_Full",
+      "gameObjects": [ {{ActivationObjects}} ],
+      "annotations": [
+        { "id": 41, "affectorId": 800, "affectedIds": [ 900 ],
+          "type": [ "AnnotationType_AbilityInstanceCreated" ] } ] }
+    """);
+
+    private static string ActivationMessage(int abilityInstance, int actionType = 2) => Gre($$"""
+    { "type": "GameStateType_Full",
+      "annotations": [
+        { "id": 42, "affectorId": 2, "affectedIds": [ {{abilityInstance}} ],
+          "type": [ "AnnotationType_UserActionTaken" ], "details": [
+            { "key": "actionType", "valueInt32": [ {{actionType}} ] },
+            { "key": "abilityGrpId", "valueInt32": [ 7 ] } ] } ] }
+    """);
+
+    /// <summary>
+    /// Issue #3: a deliberate play was reported as "X's ability triggers" — the wrong
+    /// verb, hiding both the decision and the cost paid. The trigger line is replaced,
+    /// not accompanied: 318 of these on the archive's pages would otherwise be said
+    /// twice. The line names the permanent and the player, and drops any triggering
+    /// object Arena also sent — the activation is the player's own act.
+    /// </summary>
+    [Test]
+    public void An_activated_ability_is_an_activation_not_a_trigger()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ {{ActivationObjects}},
+            { "instanceId": 801, "grpId": 6, "name": 1000,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 } ],
+          "persistentAnnotations": [
+            { "id": 40, "affectorId": 900, "affectedIds": [ 801 ],
+              "type": [ "AnnotationType_TriggeringObject" ] } ],
+          "annotations": [
+            { "id": 41, "affectorId": 800, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_AbilityInstanceCreated" ] },
+            { "id": 42, "affectorId": 2, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_UserActionTaken" ], "details": [
+                { "key": "actionType", "valueInt32": [ 2 ] },
+                { "key": "abilityGrpId", "valueInt32": [ 7 ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Triggered), Is.False,
+            "the trigger line must be replaced, not doubled");
+        var e = t.Events.Single(x => x.Kind == EventKind.Activated);
+        Assert.That(e.SourceName, Is.EqualTo("Llanowar Elves"), "the permanent, not its ability");
+        Assert.That(e.SourceInstanceId, Is.EqualTo(800));
+        Assert.That(e.ActorSeat, Is.EqualTo(2), "the seat UserActionTaken names");
+        Assert.That(e.CauseName, Is.Null, "an activation is nobody's trigger");
+    }
+
+    /// <summary>
+    /// The activation and the ability's creation arrive in different messages for 102
+    /// of the archive's 450 activations, in either order — the two annotations share
+    /// only the ability's instance id. Correlating per message would leave every one of
+    /// those said with the wrong verb.
+    /// </summary>
+    [Test]
+    public void An_activation_finds_its_ability_across_messages()
+    {
+        var t = Run(RoomLine, MulliganLine, CreationMessage, ActivationMessage(900));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Triggered), Is.False);
+        var e = t.Events.Single(x => x.Kind == EventKind.Activated);
+        Assert.That(e.SourceName, Is.EqualTo("Llanowar Elves"));
+        Assert.That(e.ActorSeat, Is.EqualTo(2));
+    }
+
+    /// <summary>
+    /// A Class levelling up is an activation too, but "Caretaker's Talent becomes
+    /// level 2" — emitted a message later — is the same fact in Arena's own words.
+    /// 126 of the archive's 130 level lines sat directly under a wrong-verb trigger
+    /// line saying it a second time; the activation's line goes away entirely rather
+    /// than staying to say it with a better verb.
+    /// </summary>
+    [Test]
+    public void A_class_level_up_keeps_only_its_level_line()
+    {
+        var creation = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 700, "grpId": 7, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 1 },
+            { "instanceId": 900, "grpId": 8, "parentId": 700,
+              "type": "GameObjectType_Ability", "controllerSeatId": 1 } ],
+          "annotations": [
+            { "id": 41, "affectorId": 700, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_AbilityInstanceCreated" ] },
+            { "id": 42, "affectorId": 1, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_UserActionTaken" ], "details": [
+                { "key": "actionType", "valueInt32": [ 2 ] },
+                { "key": "abilityGrpId", "valueInt32": [ 8 ] } ] } ] }
+        """);
+        var level = Gre("""
+        { "type": "GameStateType_Full",
+          "persistentAnnotations": [ { "id": 3, "affectorId": 700,
+            "type": [ "AnnotationType_ClassLevel" ], "details": [
+              { "key": "Level", "valueInt32": [ 2 ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, creation, level);
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.LevelUp).Amount, Is.EqualTo(2));
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Triggered), Is.False,
+            "the wrong-verb line must not survive");
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Activated && x.SourceName is not null),
+            Is.False, "and no activation line may replace it");
+    }
+
+    /// <summary>
+    /// Classes are not legendary, so two copies of the same Class can be in play at
+    /// once. When one copy levels up, only its own activation may be claimed: the
+    /// permanents share a printed name, and matching by name while the instance ids
+    /// disagree would let one copy's level line swallow the other copy's genuine
+    /// activation — reproducing the very doubling the claim exists to remove.
+    /// </summary>
+    [Test]
+    public void A_level_up_cannot_claim_a_same_named_siblings_activation()
+    {
+        // Copy A (700) levels with no announced activation of its own; copy B (750)
+        // genuinely activates through ability 900. Same printed name, different
+        // permanents.
+        var activation = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 700, "grpId": 7, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 1 },
+            { "instanceId": 750, "grpId": 7, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 1 },
+            { "instanceId": 900, "grpId": 8, "parentId": 750,
+              "type": "GameObjectType_Ability", "controllerSeatId": 1 } ],
+          "annotations": [
+            { "id": 41, "affectorId": 750, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_AbilityInstanceCreated" ] },
+            { "id": 42, "affectorId": 1, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_UserActionTaken" ], "details": [
+                { "key": "actionType", "valueInt32": [ 2 ] },
+                { "key": "abilityGrpId", "valueInt32": [ 8 ] } ] } ] }
+        """);
+        var level = Gre("""
+        { "type": "GameStateType_Full",
+          "persistentAnnotations": [ { "id": 3, "affectorId": 700,
+            "type": [ "AnnotationType_ClassLevel" ], "details": [
+              { "key": "Level", "valueInt32": [ 2 ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, activation, level);
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.LevelUp).SourceInstanceId,
+            Is.EqualTo(700));
+        var activated = t.Events.Single(x => x.Kind == EventKind.Activated);
+        Assert.That(activated.SourceName, Is.Not.Null,
+            "copy B's activation must survive copy A's level-up");
+        Assert.That(activated.SourceInstanceId, Is.EqualTo(750));
+    }
+
+    /// <summary>
+    /// Only actionType 2 is an activation — 1 is a cast, 3 a land drop, 4 a mana
+    /// ability. A mana ability's UserActionTaken naming the same instance must not
+    /// turn a genuine trigger into a claim the player activated it.
+    /// </summary>
+    [Test]
+    public void A_user_action_that_is_not_an_activation_leaves_the_trigger_alone()
+    {
+        var t = Run(RoomLine, MulliganLine, CreationMessage,
+            ActivationMessage(900, actionType: 4));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Activated), Is.False);
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Triggered).SourceName,
+            Is.EqualTo("Llanowar Elves's ability"));
+    }
+
+    /// <summary>
+    /// Arena renames instances mid-game, and an activation can arrive under a later id
+    /// than the creation it belongs to. Both sides fold through the alias map — which
+    /// is only complete when the game closes, and is why the match is made then.
+    /// </summary>
+    [Test]
+    public void An_activation_under_a_renamed_id_still_finds_its_ability()
+    {
+        var rename = Gre("""
+        { "type": "GameStateType_Full",
+          "annotations": [
+            { "id": 43, "affectorId": 900, "affectedIds": [ 910 ],
+              "type": [ "AnnotationType_ObjectIdChanged" ], "details": [
+                { "key": "orig_id", "valueInt32": [ 900 ] },
+                { "key": "new_id",  "valueInt32": [ 910 ] } ] } ] }
+        """);
+        var t = Run(RoomLine, MulliganLine, CreationMessage, rename, ActivationMessage(910));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Triggered), Is.False);
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Activated).SourceName,
+            Is.EqualTo("Llanowar Elves"));
+    }
+
+    /// <summary>
     /// The blind spot this closes: persistentAnnotations is a second annotation array,
     /// and because nothing counted it, TargetSpec and ClassLevel both sat unread in it
     /// while `stats` reported a clean bill.

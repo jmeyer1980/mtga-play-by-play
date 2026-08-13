@@ -503,6 +503,13 @@ public static class Narrator
             $"{e.CauseName} triggers {e.SourceName}",
         EventKind.Triggered when e.SourceName is not null => $"{e.SourceName} triggers",
 
+        // The player and the permanent, not the ability: "Opponent activates Lander"
+        // is the deliberate play "Lander's ability triggers" misreported. What the
+        // activation did lands on the following lines, same as any resolution.
+        EventKind.Activated when e.SourceName is not null =>
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "activate", "activates", t)} " +
+            e.SourceName,
+
         // Passive on purpose. The same annotation covers an aura arriving on a creature
         // and a player equipping a sword, and "Opponent equips" would be a claim about
         // who acted that the log does not make for the first of those.
