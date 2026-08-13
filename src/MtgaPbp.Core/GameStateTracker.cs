@@ -53,6 +53,7 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly Dictionary<int, int> _alias = [];   // old id -> new id
     private readonly Dictionary<int, int> _life = [];
     private readonly Dictionary<int, string> _zoneTypes = [];
+    private readonly Dictionary<int, int> _zoneOwners = [];
     private readonly Dictionary<int, List<int>> _targets = [];   // source id -> target ids
     private readonly Dictionary<int, List<StatSample>> _stats = [];
     private readonly Dictionary<int, int> _classLevels = [];
@@ -69,6 +70,13 @@ public sealed class GameStateTracker(ICardDb cards)
     public IReadOnlyDictionary<int, int> Life => _life;
     public IReadOnlyDictionary<int, TrackedObject> Objects => _objects;
     public IReadOnlyDictionary<int, string> ZoneTypes => _zoneTypes;
+
+    /// <summary>
+    /// Whose zone this is, for the zones that belong to a player. Null for the shared
+    /// ones and for a zone the log has not described.
+    /// </summary>
+    public int? ZoneOwner(int zoneId) =>
+        _zoneOwners.TryGetValue(zoneId, out var seat) ? seat : null;
 
     private readonly List<int> _newAttackers = [];
     private readonly List<int> _newBlockers = [];
@@ -159,6 +167,10 @@ public sealed class GameStateTracker(ICardDb cards)
         {
             if (Json.Int(z, "zoneId") is { } zid && Json.Str(z, "type") is { } zt)
                 _zoneTypes[zid] = zt;
+            // Only the per-player zones carry one — a hand, a library, a graveyard.
+            // The battlefield, the stack and exile are shared and name no owner.
+            if (Json.Int(z, "zoneId") is { } oid && Json.Int(z, "ownerSeatId") is { } os2)
+                _zoneOwners[oid] = os2;
         }
 
         foreach (var go in Json.Array(gsm, "gameObjects")) UpsertObject(go);

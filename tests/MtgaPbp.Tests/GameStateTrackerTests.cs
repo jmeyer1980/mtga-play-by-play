@@ -154,6 +154,32 @@ public class GameStateTrackerTests
         Assert.That(t.Get(81)!.Power, Is.EqualTo(0));
     }
 
+    /// <summary>
+    /// Per-player zones name their owner, which is who a card moving into one belongs to.
+    /// </summary>
+    /// <remarks>
+    /// A card the client never saw has no game object and therefore no controller. The
+    /// extractor used to fall straight through to the active player, which credited the
+    /// opponent's draws to you — they draw on your turn too, and 40 draws across 22
+    /// matches read "You draw Unknown card" when both zones belonged to seat two.
+    /// </remarks>
+    [Test]
+    public void Zones_that_belong_to_a_player_say_so()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full", "zones": [
+          { "zoneId": 35, "type": "ZoneType_Hand", "ownerSeatId": 2 },
+          { "zoneId": 36, "type": "ZoneType_Library", "ownerSeatId": 2 },
+          { "zoneId": 28, "type": "ZoneType_Battlefield" } ] }
+        """));
+
+        Assert.That(t.ZoneOwner(35), Is.EqualTo(2));
+        Assert.That(t.ZoneOwner(36), Is.EqualTo(2));
+        Assert.That(t.ZoneOwner(28), Is.Null, "the battlefield is shared and names no owner");
+        Assert.That(t.ZoneOwner(999), Is.Null, "a zone the log never described");
+    }
+
     [Test]
     public void NameOf_degrades_to_grpid_when_unresolvable()
     {

@@ -451,6 +451,11 @@ public static class Narrator
         EventKind.StateBasedAction when e.SourceName is not null =>
             $"{e.SourceName} is put into the graveyard",
 
+        // Zero is not a small amount of damage, it is none — a 0/4 blocker deals no
+        // damage at all under the rules, and "Gleaming Barrier deals 0 damage to Hare
+        // Apparent" describes an event that did not happen. Guarded the same way
+        // LifeChanged below already is.
+        EventKind.Damage when e.Amount == 0 => null,
         EventKind.Damage when e.TargetSeat is not null =>
             $"{e.SourceName ?? "Something"} deals {e.Amount} damage to {Who(e.TargetSeat, t)}",
         EventKind.Damage when e.TargetName is not null =>

@@ -913,6 +913,17 @@ public sealed class EventExtractor(ICardDb cards)
                 // unknown; whoever's turn it is did it.
                 var controller = objId is { } id2 ? tracker.Get(id2)?.ControllerSeat : null;
 
+                // A card the client never saw has no game object, so it has no controller
+                // — but the zone it landed in has an owner, and that is whose card it is.
+                // Falling straight through to the active player credited the opponent's
+                // draws to you: they draw on your turn too, from a card-draw effect or an
+                // end-step trigger, and 40 draws across 22 matches read "You draw Unknown
+                // card" when the library and hand both belonged to seat two. Every one of
+                // the 40 leaned the same way, because the active player is the only seat
+                // the fallback can name.
+                var zoneOwner = GameStateTracker.DetailInt(a, "zone_dest") is { } zd
+                    ? tracker.ZoneOwner(zd) : null;
+
                 // What caused the move. Present on every Destroy, Exile, Return, Mill
                 // and Countered in the sample archive, and it is the difference
                 // between "Hare Apparent is destroyed" and "Split Up destroys Hare
@@ -938,7 +949,7 @@ public sealed class EventExtractor(ICardDb cards)
                 {
                     SourceInstanceId = objId,
                     SourceName = name,
-                    ActorSeat = controller is > 0 ? controller : tracker.ActiveSeat,
+                    ActorSeat = controller is > 0 ? controller : zoneOwner ?? tracker.ActiveSeat,
                     CauseInstanceId = causeName is null ? null : cause,
                     CauseName = causeName,
                     Detail = category,
