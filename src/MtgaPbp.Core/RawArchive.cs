@@ -106,7 +106,14 @@ public sealed class RawArchive
             .OrderBy(e => e.StartedAtMs)
             .ToList();
 
-        var excess = _ledger.Count - keep;
+        // Measured against the prunable matches, not the whole ledger. Counting
+        // favourites into the total while taking the excess from a list that excludes
+        // them meant every favourite silently cost one ordinary match its place — and
+        // once a player had favourited `keep` matches, every match afterwards was
+        // captured and deleted in the same run, while capture still reported it as
+        // captured. The documented rule, in the README and in the summary above, is
+        // that the cap applies to everything except favourites.
+        var excess = prunable.Count - keep;
         if (excess <= 0) return [];
 
         var removed = new List<string>();

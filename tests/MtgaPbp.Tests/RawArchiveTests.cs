@@ -89,8 +89,40 @@ public class RawArchiveTests
 
         a.Prune(keep: 3);
 
+        // The cap counts prunable matches only, so three of m2..m5 survive alongside
+        // the favourite. The old expectation here was { m1, m4, m5 } — it asserted that
+        // m3 had been deleted, which is the documented contract inverted, so the test
+        // named for protecting favourites was in fact protecting the bug that made them
+        // cost ordinary matches their place.
         Assert.That(a.Contains("m1"), Is.True, "the oldest match was favourited");
-        Assert.That(a.MatchIds(), Is.EquivalentTo(new[] { "m1", "m4", "m5" }));
+        Assert.That(a.MatchIds(), Is.EquivalentTo(new[] { "m1", "m3", "m4", "m5" }));
+    }
+
+    /// <summary>
+    /// The arrangement the arithmetic got wrong, and the one the README states outright:
+    /// "a cap of 60 with 70 kept matches keeps all 70".
+    /// </summary>
+    /// <remarks>
+    /// With favourites counted into the total, this pruned every ordinary match and then
+    /// the one just captured — so a player who had starred `keep` matches lost every
+    /// match they played from then on, in the same run that reported capturing it.
+    /// </remarks>
+    [Test]
+    public void A_favourite_never_costs_an_ordinary_match_its_place()
+    {
+        var a = new RawArchive(_root);
+        for (var i = 1; i <= 6; i++) { a.Write(At($"f{i}", i * 1000)); a.SetFavorite($"f{i}", true); }
+        for (var i = 1; i <= 4; i++) a.Write(At($"m{i}", 10_000 + i * 1000));
+
+        Assert.That(a.Prune(keep: 6), Is.Empty,
+            "six favourites and four ordinary matches, under a cap of six, is nothing to prune");
+        Assert.That(a.MatchIds(), Has.Exactly(10).Items);
+
+        // And the cap still bites once the prunable matches alone exceed it.
+        for (var i = 5; i <= 9; i++) a.Write(At($"m{i}", 10_000 + i * 1000));
+        Assert.That(a.Prune(keep: 6), Is.EquivalentTo(new[] { "m1", "m2", "m3" }));
+        Assert.That(a.MatchIds().Count(id => id.StartsWith('f')), Is.EqualTo(6),
+            "and never a favourite");
     }
 
     [Test]
