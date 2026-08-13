@@ -1391,4 +1391,25 @@ public class EventExtractorTests
 
         Assert.That(t.Events.Any(x => x.Kind == EventKind.AbilityExpired), Is.False);
     }
+
+    /// <summary>
+    /// PR #8 review: a grant that duplicated a printed ability ends invisibly — the
+    /// grpid never leaves the object's description — but it must still retire in the
+    /// registry when its entry drops out. Left standing, the printed ability leaving
+    /// later for its own reasons — a transform, a face-down flip — would be misread
+    /// as that long-gone grant finally wearing off.
+    /// </summary>
+    [Test]
+    public void A_masked_wear_off_does_not_resurface_when_the_printed_ability_leaves()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            // Printed first strike (id 40) plus the granted copy (id 55).
+            BattlefieldGrant("[ 6 ]",
+                uniq: """{ "id": 40, "grpId": 6 }, { "id": 55, "grpId": 6 }"""),
+            Resend(uniq: """{ "id": 40, "grpId": 6 }"""),   // grant ends, masked
+            Resend());                                       // printed leaves: transform
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.AbilityExpired), Is.False,
+            "the grant already ended, invisibly; the transform is not its wear-off");
+    }
 }
