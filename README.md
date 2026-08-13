@@ -68,6 +68,8 @@ cd C:\path\to\mtga-pbp
 | `.\mtga-pbp.exe capture` | capture only |
 | `.\mtga-pbp.exe build` | re-derive the whole site from the archive |
 | `.\mtga-pbp.exe stats` | unhandled annotation types and unresolved cards |
+| `.\mtga-pbp.exe collection <file>` | import a collection exported from elsewhere |
+| `.\mtga-pbp.exe why <matchId> [turn]` | show a turn beside the log behind it |
 | `.\mtga-pbp.exe keep <matchId>` | never prune this match |
 | `.\mtga-pbp.exe unkeep <matchId>` | allow it to be pruned again |
 
@@ -235,8 +237,10 @@ unmarked, because its span would run into the result screen rather than into a t
 Everything else you would want is there, for both players: what each spell targeted
 (`Opponent casts Bitter Triumph, targeting Ghostly Dancers`), what caused each effect
 (`Deadly Cover-Up exiles Toby, Beastie Befriender`), where scried cards went, which
-abilities triggered, and how the match really ended — a concede and a timeout no
-longer look the same as losing on board.
+abilities triggered, which abilities were granted and when they wore off
+(`Battlesong Berserker gives Giant Cindermaw 5/3 menace`; later, `Battlesong
+Berserker loses menace`), and how the match really ended — a concede and a timeout
+no longer look the same as losing on board.
 
 ## Install
 
