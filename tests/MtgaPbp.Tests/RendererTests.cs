@@ -140,6 +140,29 @@ public class RendererTests
         }
     }
 
+    /// <summary>
+    /// The archive's first drawn match rendered as "Lost 0-0": no winning team, and
+    /// "no winning team" fell through to the losing branch. A draw is a result of its
+    /// own and has to say so — issue #9.
+    /// </summary>
+    [Test]
+    public void Result_says_drew_for_a_drawn_match()
+    {
+        var t = Sample() with { WinningTeamId = null, GamesWon = 0, GamesLost = 0, Drawn = true };
+        Assert.That(TranscriptSummary.Result(t), Is.EqualTo("Drew 0-0"));
+    }
+
+    /// <summary>
+    /// The guard the draw must not regress: a log that stopped early still reads
+    /// Unfinished, never Drew — drawn means Arena said so, not "no winner found".
+    /// </summary>
+    [Test]
+    public void Result_still_says_unfinished_when_the_log_stopped_early()
+    {
+        var t = Sample(incomplete: true) with { WinningTeamId = null };
+        Assert.That(TranscriptSummary.Result(t), Is.EqualTo("Unfinished"));
+    }
+
     // ---------- Task 8: markdown ----------
 
     [Test]
@@ -250,6 +273,20 @@ public class RendererTests
         Assert.That(s.Result, Is.EqualTo("Won 2-1"));
         Assert.That(s.Cards, Does.Contain("Lightning Bolt"));
         Assert.That(s.EventName, Is.EqualTo("Ladder"));
+    }
+
+    /// <summary>
+    /// The row class used to be a Won-prefix coin flip, so a draw was styled as a
+    /// loss. It gets its own state instead: dimmed like a loss — winning stays the
+    /// only highlighted result — but never labelled as one.
+    /// </summary>
+    [Test]
+    public void Index_gives_a_draw_its_own_row_state()
+    {
+        var drawn = Sample() with { WinningTeamId = null, GamesWon = 0, GamesLost = 0, Drawn = true };
+        var html = IndexRenderer.Render([IndexRenderer.Summarize(drawn)]);
+        Assert.That(html, Does.Contain("class=\"draw\">Drew 0-0"));
+        Assert.That(html, Does.Not.Contain("Lost 0-0"));
     }
 
     /// <summary>

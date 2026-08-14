@@ -117,6 +117,10 @@ public static class TranscriptSummary
     public static string Result(Transcript t)
     {
         if (t.Incomplete && t.WinningTeamId is null) return "Unfinished";
+        // Before the won/lost coin flip: a draw has no WinningTeamId, and "no
+        // winning team" otherwise reads as "you did not win" — which is how the
+        // archive's first drawn match came to say "Lost 0-0".
+        if (t.Drawn) return $"Drew {t.GamesWon}-{t.GamesLost}";
         var won = t.WinningTeamId is not null && t.WinningTeamId == t.You?.Seat;
         return $"{(won ? "Won" : "Lost")} {t.GamesWon}-{t.GamesLost}";
     }

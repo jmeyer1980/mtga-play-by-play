@@ -85,6 +85,15 @@ public sealed record Transcript(
     public IReadOnlyList<GameRecord> Games { get; init; } = [];
 
     /// <summary>
+    /// Arena said <c>ResultType_Draw</c> for the match, in so many words. Only that:
+    /// a completed match with no winner found is not a draw, it is a bug, and an
+    /// incomplete one is <see cref="Incomplete"/> — so this flag never stands in for
+    /// either. Carried separately from <see cref="WinningTeamId"/> because a draw is
+    /// a result, not the absence of one.
+    /// </summary>
+    public bool Drawn { get; init; }
+
+    /// <summary>
     /// Types found in <c>gameStateMessage.persistentAnnotations</c> that nothing reads
     /// and nobody has ruled out, counted once per distinct fact. Diagnostic only: none
     /// of it reaches the transcript.
@@ -414,6 +423,7 @@ public sealed class EventExtractor(ICardDb cards)
         int? localSeat = null, fallbackSeat = null, winningTeam = null;
         int gamesForTeam1 = 0, gamesForTeam2 = 0;
         var sawFinal = false;
+        var drawn = false;
         string? endReason = null;
         var gaps = new List<LogGap>();
 
@@ -455,7 +465,7 @@ public sealed class EventExtractor(ICardDb cards)
                 {
                     sawFinal = true;
                     ReadResults(fmr, ref winningTeam, ref gamesForTeam1, ref gamesForTeam2,
-                                ref endReason);
+                                ref endReason, ref drawn);
                     var final = ReadGameOutcomes(fmr, "resultList");
                     if (final.Count > outcomes.Count) outcomes = final;
                 }
@@ -612,7 +622,11 @@ public sealed class EventExtractor(ICardDb cards)
                 GameNumber = games[^1].Number,
                 Kind = EventKind.GameEnd,
                 Amount = winningTeam ?? 0,
-                Detail = EndLine(winningTeam, yourTeam, endReason, "the match"),
+                // A draw has no winner for EndLine to name, which would leave the
+                // page ending mid-sentence — the match was called, and the
+                // transcript has to say so.
+                Detail = drawn ? "The match ends in a draw — nobody wins"
+                               : EndLine(winningTeam, yourTeam, endReason, "the match"),
                 RawType = endReason
             });
         }
@@ -624,6 +638,7 @@ public sealed class EventExtractor(ICardDb cards)
             BuildDeck(decks, you, games), records.Count > 0 ? records[0].Opening : null)
         {
             Games = records,
+            Drawn = drawn,
             UnknownPersistentAnnotations = st.UnknownPersistent
         };
     }
@@ -1398,7 +1413,7 @@ public sealed class EventExtractor(ICardDb cards)
 
     private static void ReadResults(
         JsonElement fmr, ref int? winningTeam, ref int team1Games, ref int team2Games,
-        ref string? reason)
+        ref string? reason, ref bool drawn)
     {
         foreach (var r in Json.Array(fmr, "resultList"))
         {
@@ -1407,6 +1422,12 @@ public sealed class EventExtractor(ICardDb cards)
             // matches end in a concede, which "wins the match" hides entirely.
             if (Json.Str(r, "reason") is { } why && why != "ResultReason_Game")
                 reason ??= why;
+            // A draw is the one result that carries no winningTeamId, so it has to be
+            // read before the guard below skips the entry. Match scope only: a drawn
+            // game inside a Bo3 does not make the match a draw, it just counts for
+            // neither tally — which the guard already arranges.
+            if (scope == "MatchScope_Match" && Json.Str(r, "result") == "ResultType_Draw")
+                drawn = true;
             if (Json.Int(r, "winningTeamId") is not { } team) continue;
             if (scope == "MatchScope_Match") winningTeam = team;
             else if (scope == "MatchScope_Game")

@@ -72,7 +72,8 @@ public static class IndexRenderer
                 """);
             foreach (var r in ordered)
             {
-                var cls = r.Result.StartsWith("Won", StringComparison.Ordinal) ? "win" : "loss";
+                var cls = r.Result.StartsWith("Won", StringComparison.Ordinal) ? "win"
+                    : r.Result.StartsWith("Drew", StringComparison.Ordinal) ? "draw" : "loss";
                 var haystack = string.Join(' ',
                     r.Opponent, r.EventName, r.Result, r.Date, string.Join(' ', r.Cards))
                     .ToLowerInvariant();
@@ -205,7 +206,7 @@ public static class IndexRenderer
         a{color:inherit}
         tbody a{display:inline-block;padding-block:.15rem}
         .win{color:#137333}
-        .loss{opacity:.7}
+        .loss,.draw{opacity:.7}
         .empty{opacity:.7}
         .note{opacity:.7;font-size:.85rem;max-width:44rem}
         body.live #keep-note{display:none}
@@ -227,7 +228,7 @@ public static class IndexRenderer
           .star.on{color:#f2c14a}
         }
         @media (forced-colors:active){
-          .sub,.loss,.empty,.note,th,#live,.build{opacity:1}
+          .sub,.loss,.draw,.empty,.note,th,#live,.build{opacity:1}
           .star{color:ButtonText}
           .star.on{color:Highlight}
         }
