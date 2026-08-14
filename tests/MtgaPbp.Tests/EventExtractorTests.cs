@@ -207,6 +207,62 @@ public class EventExtractorTests
         Assert.That(t.Events.Any(x => x.Kind == EventKind.GameEnd), Is.True);
     }
 
+    /// <summary>
+    /// The archive's first drawn match, shaped from the real one (issue #9): the
+    /// server called the match off before either player acted, so the log is three
+    /// lines with no seat ever identified, and the only result is a match-scope
+    /// ResultType_Draw with no winningTeamId. That absence used to leave the draw
+    /// unrecorded, and the page said "Lost 0-0".
+    /// </summary>
+    [Test]
+    public void Extract_records_a_drawn_match_from_the_final_result()
+    {
+        var final = """
+        { "timestamp": "2000", "matchGameRoomStateChangedEvent": { "gameRoomInfo": {
+            "gameRoomConfig": { "matchId": "m1" },
+            "finalMatchResult": { "matchId": "m1",
+              "matchCompletedReason": "MatchCompletedReasonType_Success",
+              "resultList": [
+                { "scope": "MatchScope_Match", "result": "ResultType_Draw",
+                  "reason": "ResultReason_Force" } ] } } } }
+        """;
+        var t = Run(RoomLine, final);
+
+        Assert.That(t.Drawn, Is.True);
+        Assert.That(t.WinningTeamId, Is.Null);
+        Assert.That(t.Incomplete, Is.False, "the match completed; it was drawn, not cut off");
+        Assert.That(t.GamesWon, Is.Zero);
+        Assert.That(t.GamesLost, Is.Zero);
+
+        var end = t.Events.Single(x => x.Kind == EventKind.GameEnd);
+        Assert.That(end.Detail, Is.EqualTo("The match ends in a draw — nobody wins"));
+    }
+
+    /// <summary>
+    /// A drawn game inside a Bo3 counts for neither tally and does not make the
+    /// match a draw. No archived match has one yet; this pins the behaviour so a
+    /// future one cannot be miscounted as anyone's win.
+    /// </summary>
+    [Test]
+    public void Extract_keeps_a_drawn_game_out_of_the_games_tally()
+    {
+        var final = """
+        { "timestamp": "2000", "matchGameRoomStateChangedEvent": { "gameRoomInfo": {
+            "gameRoomConfig": { "matchId": "m1" },
+            "finalMatchResult": { "matchId": "m1", "resultList": [
+              { "scope": "MatchScope_Game",  "winningTeamId": 1 },
+              { "scope": "MatchScope_Game",  "result": "ResultType_Draw" },
+              { "scope": "MatchScope_Game",  "winningTeamId": 2 },
+              { "scope": "MatchScope_Match", "winningTeamId": 1 } ] } } } }
+        """;
+        var t = Run(RoomLine, MulliganLine, final);
+
+        Assert.That(t.Drawn, Is.False, "a drawn game does not make the match a draw");
+        Assert.That(t.WinningTeamId, Is.EqualTo(1));
+        Assert.That(t.GamesWon, Is.EqualTo(1));
+        Assert.That(t.GamesLost, Is.EqualTo(1));
+    }
+
     [Test]
     public void Extract_collects_card_names_for_the_search_index()
     {
