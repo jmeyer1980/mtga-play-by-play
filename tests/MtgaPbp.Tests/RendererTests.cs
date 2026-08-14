@@ -153,6 +153,17 @@ public class RendererTests
     }
 
     /// <summary>
+    /// A Bo3 that reached 1-1 before the match was called still shows the games that
+    /// were played — the draw replaces the verdict, not the tally.
+    /// </summary>
+    [Test]
+    public void Result_keeps_the_games_tally_in_a_drawn_match()
+    {
+        var t = Sample() with { WinningTeamId = null, GamesWon = 1, GamesLost = 1, Drawn = true };
+        Assert.That(TranscriptSummary.Result(t), Is.EqualTo("Drew 1-1"));
+    }
+
+    /// <summary>
     /// The guard the draw must not regress: a log that stopped early still reads
     /// Unfinished, never Drew — drawn means Arena said so, not "no winner found".
     /// </summary>
