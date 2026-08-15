@@ -107,14 +107,14 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly Dictionary<int, Dictionary<int, int>> _grantedAbilities = [];
 
     /// <summary>
-    /// Creatures that declared an attack in the message just applied. Combat is not
+    /// Creatures whose attack was submitted in the message just applied. Combat is not
     /// announced by an annotation — it only shows up as a state change on the object —
-    /// so these are reported once, on the transition into the declared state.
+    /// so these are reported once, on the transition into the attacking state.
     /// Cleared at the start of every <see cref="Apply"/>.
     /// </summary>
     public IReadOnlyList<int> NewAttackers => _newAttackers;
 
-    /// <summary>Creatures that declared a block in the message just applied.</summary>
+    /// <summary>Creatures whose block was submitted in the message just applied.</summary>
     public IReadOnlyList<int> NewBlockers => _newBlockers;
 
     /// <summary>
