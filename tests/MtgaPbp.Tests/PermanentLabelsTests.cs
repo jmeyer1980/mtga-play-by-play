@@ -68,7 +68,7 @@ public class PermanentLabelsTests
           "controllerSeatId": 1, "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
           "power": {{power}}, "toughness": {{toughness}}
           {{(attacking
-              ? """, "attackState": "AttackState_Declared", "attackInfo": { "targetId": 2 }"""
+              ? """, "attackState": "AttackState_Attacking", "attackInfo": { "targetId": 2 }"""
               : "")}} }
         """;
 

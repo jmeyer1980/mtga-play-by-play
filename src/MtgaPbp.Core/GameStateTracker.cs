@@ -107,14 +107,14 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly Dictionary<int, Dictionary<int, int>> _grantedAbilities = [];
 
     /// <summary>
-    /// Creatures that declared an attack in the message just applied. Combat is not
+    /// Creatures whose attack was submitted in the message just applied. Combat is not
     /// announced by an annotation — it only shows up as a state change on the object —
-    /// so these are reported once, on the transition into the declared state.
+    /// so these are reported once, on the transition into the attacking state.
     /// Cleared at the start of every <see cref="Apply"/>.
     /// </summary>
     public IReadOnlyList<int> NewAttackers => _newAttackers;
 
-    /// <summary>Creatures that declared a block in the message just applied.</summary>
+    /// <summary>Creatures whose block was submitted in the message just applied.</summary>
     public IReadOnlyList<int> NewBlockers => _newBlockers;
 
     /// <summary>
@@ -379,23 +379,30 @@ public sealed class GameStateTracker(ICardDb cards)
         }
 
         // Report only the transition into combat, so a creature that stays attacking
-        // across many diffs is announced once.
+        // across many diffs is announced once. The transition that counts is into
+        // Attacking/Blocking, not Declared: Declared is the provisional state Arena
+        // streams per click while the player is still arranging combat, and a
+        // declared creature can be reassigned — or withdrawn, in which case no
+        // further combat state ever arrives for it. Announcing at Declared is how a
+        // block the player moved elsewhere got narrated against the wrong attacker
+        // (issue #11), with the stale pairing kept because Declared → Declared is
+        // not a transition.
         if (Json.Str(go, "attackState") is { } atk)
         {
-            // Compare against the attacking states specifically, not "has any state":
+            // Compare against the attacking state specifically, not "has any state":
             // a creature attacks on many turns, and its state returns to none in
             // between. Testing for a non-empty string would report only its first
             // attack of the game and silently drop every later one.
-            var wasAttacking = obj.AttackState is "AttackState_Declared" or "AttackState_Attacking";
+            var wasAttacking = obj.AttackState is "AttackState_Attacking";
             obj.AttackState = atk;
-            if (!wasAttacking && atk is "AttackState_Declared" or "AttackState_Attacking")
+            if (!wasAttacking && atk is "AttackState_Attacking")
                 _newAttackers.Add(id);
         }
         if (Json.Str(go, "blockState") is { } blk)
         {
-            var wasBlocking = obj.BlockState is "BlockState_Declared" or "BlockState_Blocking";
+            var wasBlocking = obj.BlockState is "BlockState_Blocking";
             obj.BlockState = blk;
-            if (!wasBlocking && blk is "BlockState_Declared" or "BlockState_Blocking")
+            if (!wasBlocking && blk is "BlockState_Blocking")
                 _newBlockers.Add(id);
         }
     }

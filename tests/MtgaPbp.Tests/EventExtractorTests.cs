@@ -308,12 +308,12 @@ public class EventExtractorTests
         """));
 
     [Test]
-    public void Extract_emits_an_attack_when_a_creature_is_declared()
+    public void Extract_emits_an_attack_when_a_creature_attacks()
     {
         var t = Run(RoomLine, MulliganLine, Gre("""
         { "type": "GameStateType_Full", "turnInfo": { "turnNumber": 5, "activePlayer": 2 },
           "gameObjects": [ { "instanceId": 377, "grpId": 9, "name": 1001,
-            "controllerSeatId": 2, "attackState": "AttackState_Declared",
+            "controllerSeatId": 2, "attackState": "AttackState_Attacking",
             "attackInfo": { "targetId": 1 } } ] }
         """));
 
@@ -331,13 +331,68 @@ public class EventExtractorTests
           "gameObjects": [
             { "instanceId": 388, "grpId": 8, "name": 1000, "controllerSeatId": 1 },
             { "instanceId": 448, "grpId": 9, "name": 1001, "controllerSeatId": 2,
-              "blockState": "BlockState_Declared",
+              "blockState": "BlockState_Blocking",
               "blockInfo": { "attackerIds": [ 388 ] } } ] }
         """));
 
         var e = t.Events.Single(x => x.Kind == EventKind.Block);
         Assert.That(e.SourceName, Is.EqualTo("Llanowar Elves"));
         Assert.That(e.TargetName, Is.EqualTo("Lightning Bolt"));
+    }
+
+    /// <summary>
+    /// Issue #11: the player clicked a blocker onto one attacker, moved it onto
+    /// another, then submitted. Each click streams its own Declared diff; only the
+    /// submitted pairing becomes Blocking. The transcript must name the attacker
+    /// that was actually blocked, not the first one clicked.
+    /// </summary>
+    [Test]
+    public void Extract_reports_the_block_a_reassigned_blocker_finally_submitted()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            Gre("""
+            { "type": "GameStateType_Full", "turnInfo": { "turnNumber": 5, "activePlayer": 1 },
+              "gameObjects": [
+                { "instanceId": 388, "grpId": 8, "name": 1000, "controllerSeatId": 1 },
+                { "instanceId": 389, "grpId": 9, "name": 1001, "controllerSeatId": 1 },
+                { "instanceId": 448, "grpId": 9, "name": 1001, "controllerSeatId": 2,
+                  "blockState": "BlockState_Declared",
+                  "blockInfo": { "attackerIds": [ 389 ] } } ] }
+            """),
+            Gre("""
+            { "type": "GameStateType_Diff", "gameObjects": [
+                { "instanceId": 448, "grpId": 9, "name": 1001, "controllerSeatId": 2,
+                  "blockState": "BlockState_Declared",
+                  "blockInfo": { "attackerIds": [ 388 ] } } ] }
+            """),
+            Gre("""
+            { "type": "GameStateType_Diff", "gameObjects": [
+                { "instanceId": 448, "grpId": 9, "name": 1001, "controllerSeatId": 2,
+                  "blockState": "BlockState_Blocking",
+                  "blockInfo": { "attackerIds": [ 388 ] } } ] }
+            """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Block);
+        Assert.That(e.TargetName, Is.EqualTo("Lightning Bolt"),
+            "the attacker named must be the one the submitted block was against");
+    }
+
+    /// <summary>
+    /// The other face of issue #11: an attacker clicked and then taken back before
+    /// submitting streams a Declared diff and then nothing — no Attacking state, no
+    /// damage. It must not appear in the transcript as an attack.
+    /// </summary>
+    [Test]
+    public void Extract_ignores_an_attack_the_player_took_back_before_submitting()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full", "turnInfo": { "turnNumber": 5, "activePlayer": 2 },
+          "gameObjects": [ { "instanceId": 377, "grpId": 9, "name": 1001,
+            "controllerSeatId": 2, "attackState": "AttackState_Declared",
+            "attackInfo": { "targetId": 1 } } ] }
+        """));
+
+        Assert.That(t.Events.Where(x => x.Kind == EventKind.Attack), Is.Empty);
     }
 
     [Test]

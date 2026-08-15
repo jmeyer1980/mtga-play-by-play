@@ -117,7 +117,6 @@
 - Ajani's Pridemate 4/4 gets 1 +1/+1 counter
 - Opponent attacks with Ajani's Pridemate 5/5
 - Opponent attacks with Rabbit ×3
-- Opponent attacks with Leonin Vanguard 2/2
 - Rabbit blocks Ajani's Pridemate 5/5
 - Ajani's Pridemate 5/5 deals 5 damage to Rabbit
 - Rabbit deals 1 damage to Ajani's Pridemate 5/5
