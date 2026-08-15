@@ -399,13 +399,13 @@ public class GameStateTrackerTests
     }
 
     [Test]
-    public void Apply_reports_creatures_that_just_declared_an_attack()
+    public void Apply_reports_creatures_whose_attack_was_submitted()
     {
         var t = NewTracker();
         t.Apply(Msg("""
         { "type": "GameStateType_Diff", "gameObjects": [
           { "instanceId": 377, "grpId": 94816, "name": 648, "controllerSeatId": 2,
-            "attackState": "AttackState_Declared", "attackInfo": { "targetId": 1 } } ] }
+            "attackState": "AttackState_Attacking", "attackInfo": { "targetId": 1 } } ] }
         """));
 
         Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 377 }));
@@ -419,7 +419,7 @@ public class GameStateTrackerTests
         t.Apply(Msg("""
         { "type": "GameStateType_Diff", "gameObjects": [
           { "instanceId": 377, "grpId": 1, "controllerSeatId": 2,
-            "attackState": "AttackState_Declared", "attackInfo": { "targetId": 1 } } ] }
+            "attackState": "AttackState_Attacking", "attackInfo": { "targetId": 1 } } ] }
         """));
         t.Apply(Msg("""
         { "type": "GameStateType_Diff", "gameObjects": [
@@ -427,7 +427,7 @@ public class GameStateTrackerTests
             "attackState": "AttackState_Attacking", "attackInfo": { "targetId": 1 } } ] }
         """));
 
-        Assert.That(t.NewAttackers, Is.Empty, "attackers are reported once, at declaration");
+        Assert.That(t.NewAttackers, Is.Empty, "attackers are reported once, at submission");
     }
 
     [Test]
@@ -440,13 +440,13 @@ public class GameStateTrackerTests
                 "attackState": "{{state}}", "attackInfo": { "targetId": 1 } } ] }
             """;
 
-        t.Apply(Msg(Attack("AttackState_Declared")));
+        t.Apply(Msg(Attack("AttackState_Attacking")));
         Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 377 }), "first attack");
 
         t.Apply(Msg(Attack("AttackState_None")));       // combat ends
         Assert.That(t.NewAttackers, Is.Empty);
 
-        t.Apply(Msg(Attack("AttackState_Declared")));   // attacks again next turn
+        t.Apply(Msg(Attack("AttackState_Attacking")));  // attacks again next turn
         Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 377 }), "second attack");
     }
 
@@ -459,24 +459,64 @@ public class GameStateTrackerTests
     {
         var t = NewTracker();
         string Turn(int n) => $$"""{ "type": "GameStateType_Diff", "turnInfo": { "turnNumber": {{n}} } }""";
-        const string Declare = """
+        const string Attack = """
             { "type": "GameStateType_Diff", "gameObjects": [
               { "instanceId": 299, "grpId": 1, "controllerSeatId": 2,
-                "attackState": "AttackState_Declared", "attackInfo": { "targetId": 1 } } ] }
+                "attackState": "AttackState_Attacking", "attackInfo": { "targetId": 1 } } ] }
             """;
 
         t.Apply(Msg(Turn(5)));
-        t.Apply(Msg(Declare));
+        t.Apply(Msg(Attack));
         Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 299 }));
 
         t.Apply(Msg(Turn(7)));                 // no AttackState_None ever arrives
-        t.Apply(Msg(Declare));
+        t.Apply(Msg(Attack));
         Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 299 }),
             "the same creature attacking on a later turn must be reported again");
     }
 
     [Test]
-    public void Apply_reports_creatures_that_just_declared_a_block()
+    public void Apply_reports_creatures_whose_block_was_submitted()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 448, "grpId": 105186, "controllerSeatId": 2,
+            "blockState": "BlockState_Blocking",
+            "blockInfo": { "attackerIds": [ 388 ] } } ] }
+        """));
+
+        Assert.That(t.NewBlockers, Is.EquivalentTo(new[] { 448 }));
+        Assert.That(t.Get(448)!.BlockedAttackerIds, Is.EquivalentTo(new[] { 388 }));
+    }
+
+    /// <summary>
+    /// Declared is the provisional state Arena streams per click while the player is
+    /// still arranging combat; a declared attacker can be withdrawn before submitting
+    /// and then no confirming state ever arrives (issue #11's ghost "You attack with
+    /// Rabbit ×2"). Only Attacking is a commitment.
+    /// </summary>
+    [Test]
+    public void Apply_waits_for_the_submitted_attack_before_reporting_it()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 377, "grpId": 94816, "name": 648, "controllerSeatId": 2,
+            "attackState": "AttackState_Declared", "attackInfo": { "targetId": 1 } } ] }
+        """));
+        Assert.That(t.NewAttackers, Is.Empty, "a declared attack is still provisional");
+
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 377, "grpId": 94816, "name": 648, "controllerSeatId": 2,
+            "attackState": "AttackState_Attacking", "attackInfo": { "targetId": 1 } } ] }
+        """));
+        Assert.That(t.NewAttackers, Is.EquivalentTo(new[] { 377 }));
+    }
+
+    [Test]
+    public void Apply_waits_for_the_submitted_block_before_reporting_it()
     {
         var t = NewTracker();
         t.Apply(Msg("""
@@ -485,9 +525,41 @@ public class GameStateTrackerTests
             "blockState": "BlockState_Declared",
             "blockInfo": { "attackerIds": [ 388 ] } } ] }
         """));
+        Assert.That(t.NewBlockers, Is.Empty, "a declared block is still provisional");
 
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 448, "grpId": 105186, "controllerSeatId": 2,
+            "blockState": "BlockState_Blocking",
+            "blockInfo": { "attackerIds": [ 388 ] } } ] }
+        """));
         Assert.That(t.NewBlockers, Is.EquivalentTo(new[] { 448 }));
-        Assert.That(t.Get(448)!.BlockedAttackerIds, Is.EquivalentTo(new[] { 388 }));
+    }
+
+    /// <summary>
+    /// The shape of issue #11: the player clicked a Toy onto Sazh Katzroy, changed
+    /// their mind, and moved it onto Bartz and Boko before submitting. Each click is
+    /// its own Declared diff; only the last pairing is confirmed as Blocking.
+    /// </summary>
+    [Test]
+    public void A_blocker_reassigned_before_submitting_reports_the_final_attacker()
+    {
+        var t = NewTracker();
+        string Block(string state, int attacker) => $$"""
+            { "type": "GameStateType_Diff", "gameObjects": [
+              { "instanceId": 448, "grpId": 105186, "controllerSeatId": 2,
+                "blockState": "{{state}}",
+                "blockInfo": { "attackerIds": [ {{attacker}} ] } } ] }
+            """;
+
+        t.Apply(Msg(Block("BlockState_Declared", 999)));
+        t.Apply(Msg(Block("BlockState_Declared", 388)));
+        Assert.That(t.NewBlockers, Is.Empty, "no click is worth announcing");
+
+        t.Apply(Msg(Block("BlockState_Blocking", 388)));
+        Assert.That(t.NewBlockers, Is.EquivalentTo(new[] { 448 }));
+        Assert.That(t.Get(448)!.BlockedAttackerIds, Is.EquivalentTo(new[] { 388 }),
+            "the block that counts is the one that was submitted");
     }
 
     [Test]
@@ -496,7 +568,7 @@ public class GameStateTrackerTests
         var t = NewTracker();
         t.Apply(Msg("""
         { "type": "GameStateType_Diff", "gameObjects": [
-          { "instanceId": 1, "grpId": 1, "attackState": "AttackState_Declared" } ] }
+          { "instanceId": 1, "grpId": 1, "attackState": "AttackState_Attacking" } ] }
         """));
         t.Apply(Msg("""{ "type": "GameStateType_Diff" }"""));
         Assert.That(t.NewAttackers, Is.Empty);
