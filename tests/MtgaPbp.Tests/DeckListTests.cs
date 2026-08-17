@@ -266,10 +266,10 @@ public class DeckListTests
     }
 
     [Test]
-    public void Names_folds_art_variants_that_share_a_name()
+    public void CommanderNames_folds_art_variants_that_share_a_name()
     {
         // Two printings of one card are one commander, same rule as the decklist.
-        Assert.That(DeckList.Names([9, 10], new Cards()),
+        Assert.That(DeckList.CommanderNames([9, 10], new Cards()),
             Is.EqualTo(new[] { "Banishing Light" }));
     }
 }

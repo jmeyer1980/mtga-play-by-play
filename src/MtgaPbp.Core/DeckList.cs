@@ -138,7 +138,7 @@ public static class DeckList
     /// the same card are one card in two printings. Registration order rather than
     /// alphabetical because a partner pair is one choice, not a list to be resorted.
     /// </remarks>
-    public static IReadOnlyList<string> Names(IReadOnlyList<int> grpIds, ICardDb cards)
+    public static IReadOnlyList<string> CommanderNames(IReadOnlyList<int> grpIds, ICardDb cards)
     {
         var names = new List<string>();
         foreach (var grpId in grpIds)

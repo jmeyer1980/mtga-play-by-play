@@ -790,7 +790,8 @@ public sealed class EventExtractor(ICardDb cards)
             .Select(o => o.GrpId)
             .ToHashSet();
 
-        return (DeckList.Build(grpIds, cards, seen), DeckList.Names(mine.Commanders, cards));
+        return (DeckList.Build(grpIds, cards, seen),
+                DeckList.CommanderNames(mine.Commanders, cards));
     }
 
     /// <summary>
