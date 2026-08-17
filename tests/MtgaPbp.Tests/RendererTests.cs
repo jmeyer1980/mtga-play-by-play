@@ -777,17 +777,41 @@ public class RendererTests
         // One gap and several read differently, and "1 game-state updates" undermines
         // the credibility of the only sentence on the page whose job is to be believed.
         Assert.That(MarkdownRenderer.Render(Sample(gaps: [SummarizedGap()])),
-            Does.Contain("1 game-state update out of the log"));
+            Does.Contain("in place of 1 game-state update that grew too large"));
 
         Assert.That(MarkdownRenderer.Render(Sample(gaps: [SummarizedGap(), SummarizedGap(20)])),
-            Does.Contain("2 game-state updates out of the log"));
+            Does.Contain("in place of 2 game-state updates that grew too large"));
 
         // A torn envelope is a different sentence, because it is a different cause:
         // Arena refused to write one, the other never arrived intact.
         var both = MarkdownRenderer.Render(Sample(gaps:
             [SummarizedGap(), new LogGap(LogGapKind.Torn, 99, 0, 0, [])]));
-        Assert.That(both, Does.Contain("1 game-state update out of the log"));
+        Assert.That(both, Does.Contain("1 game-state update that grew too large"));
         Assert.That(both, Does.Contain("1 log line ended mid-message"));
+    }
+
+    /// <summary>
+    /// The warning names its mechanism and closes the recovery question (#15). Told
+    /// only "missing", a careful reader's next move is a re-run — and it cannot help,
+    /// because the summarized body was never written and the torn one was destroyed
+    /// as it was. The note has to say so, or the reader spends the effort finding out.
+    /// </summary>
+    [Test]
+    public void The_warning_names_the_mechanism_and_says_the_loss_is_permanent()
+    {
+        var summarized = TranscriptSummary.GapWarning(Sample(gaps: [SummarizedGap()]))!;
+
+        // A summary is Arena's decision at a size limit, not damage or packet loss —
+        // the difference tells a reader whether their log file is healthy.
+        Assert.That(summarized, Does.Contain("Arena wrote a one-line summary"));
+        Assert.That(summarized, Does.Contain("no re-scan can recover it"));
+
+        var torn = TranscriptSummary.GapWarning(
+            Sample(gaps: [new LogGap(LogGapKind.Torn, 99, 0, 0, [])]))!;
+        Assert.That(torn, Does.Contain("ended mid-message"));
+        Assert.That(torn, Does.Not.Contain("summary"),
+            "nothing was summarized here, and saying so would misname the failure");
+        Assert.That(torn, Does.Contain("no re-scan can recover it"));
     }
 
     [Test]
