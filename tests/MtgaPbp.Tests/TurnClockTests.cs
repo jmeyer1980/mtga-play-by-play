@@ -241,6 +241,22 @@ public class TurnClockTests
         Assert.That(TranscriptSummary.TimingNoteText, Does.Contain("not any one player's"));
     }
 
+    /// <summary>
+    /// A mark on one turn and not the next reads as a clock that works sometimes —
+    /// two archived matches had turn one as their only slow turn, which reads exactly
+    /// like "only the first turn is timed". The note has to state which turns get a
+    /// mark, and its threshold is the rule's own constant so the sentence cannot say
+    /// one number while the code applies another.
+    /// </summary>
+    [Test]
+    public void The_note_says_which_turns_carry_a_time_at_all()
+    {
+        Assert.That(TranscriptSummary.TimingNoteText,
+            Does.Contain($"{TurnClock.LongTurnSeconds} seconds"));
+        Assert.That(TranscriptSummary.TimingNoteText,
+            Does.Contain("the last turn of a game is never timed"));
+    }
+
     [Test]
     public void The_page_and_the_markdown_export_carry_the_note_in_the_same_place()
     {

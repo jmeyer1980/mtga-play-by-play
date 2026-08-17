@@ -122,6 +122,15 @@ public static class TranscriptSummary
     /// objects" is Arena's vocabulary, not a player's, and the number a player can act
     /// on is simply "some of this is not here". The counts are kept on the events and
     /// reported by <c>mtga-pbp stats</c>, where a diagnostic audience wants them.
+    /// <para>
+    /// Each cause names its mechanism, and the note closes by saying the loss is
+    /// permanent (#15). A summarized update is Arena hitting its own size limit and
+    /// writing a one-line summary instead — a decision, not damage — while a torn line
+    /// is damage; a reader told only "missing" cannot tell which happened, and their
+    /// natural next move is a re-run, which cannot help. The closing sentence is
+    /// worded to be true of both kinds: the summarized body was never written, and
+    /// the torn one was destroyed as it was.
+    /// </para>
     /// </remarks>
     public static string? GapWarning(Transcript t)
     {
@@ -132,14 +141,16 @@ public static class TranscriptSummary
 
         var causes = new List<string>();
         if (summarized > 0)
-            causes.Add($"Arena left {Count(summarized, "game-state update")} out of the log");
+            causes.Add("Arena wrote a one-line summary in place of " +
+                       $"{Count(summarized, "game-state update")} that grew too large");
         if (torn > 0)
             causes.Add($"{Count(torn, "log line")} ended mid-message");
 
         // No pronoun for the missing messages: "what happened in it" and "in them" both
         // need the count to agree, and one gap is as common as several.
         return $"Part of this match is missing — {string.Join(", and ", causes)}, " +
-               "so this transcript is not a complete account of the match.";
+               "so this transcript is not a complete account of the match. " +
+               "What is missing was lost as the log was written, and no re-scan can recover it.";
     }
 
     private static string Count(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
@@ -186,14 +197,26 @@ public static class TranscriptSummary
     /// reason it exists — a duration on the opponent's turn invites being read as the
     /// opponent's thinking time, and it is not that. It cannot be, because the span
     /// also holds your own blocking decisions and every animation Arena played.
+    /// <para>
+    /// It also says which turns carry a time at all (#15). A mark that appears on one
+    /// turn and not the next reads as a clock that works sometimes — two archived
+    /// matches had turn one as their only slow turn, which reads exactly like "only
+    /// the first turn is timed" — so the threshold and the never-timed final turn are
+    /// stated rather than left for the reader to reverse-engineer. The threshold is
+    /// interpolated from <see cref="TurnClock.LongTurnSeconds"/> so the sentence
+    /// cannot drift from the rule it describes.
+    /// </para>
     /// </remarks>
     public static string? TimingNote(Transcript t) =>
         TurnClock.LongTurns(t).Count > 0 ? TimingNoteText : null;
 
-    public const string TimingNoteText =
+    public static readonly string TimingNoteText =
         "A turn's elapsed time is wall clock, from that turn starting to the next one " +
         "starting. It covers both players' decisions along with animation and network " +
-        "time, so it is not any one player's thinking time.";
+        "time, so it is not any one player's thinking time. Only a turn that ran past " +
+        $"{TurnClock.LongTurnSeconds} seconds is marked — quicker turns pass without " +
+        "note — and the last turn of a game is never timed, because its end cannot be " +
+        "told apart from the result screen after it.";
 
     /// <summary>
     /// Zone match times are rendered in. Local by default, because you want to see
