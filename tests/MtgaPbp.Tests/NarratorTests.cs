@@ -155,6 +155,42 @@ public class NarratorTests
             "verbose keeps them so the gap stays visible");
     }
 
+    /// <summary>
+    /// A dead commander really is put into the graveyard, and then a second
+    /// state-based action carries it home. Phrasing that trip in the graveyard's
+    /// words rendered "is put into the graveyard ×2" for one Elspeth (#18) — two
+    /// true zone changes folded into one impossible line.
+    /// </summary>
+    [Test]
+    public void A_state_based_action_bound_for_the_command_zone_says_so()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.StateBasedAction, 0) with
+            { SourceName = "Elspeth, Storm Slayer", FromZone = "ZoneType_Battlefield", ToZone = "ZoneType_Graveyard" },
+            E(EventKind.StateBasedAction, 1) with
+            { SourceName = "Elspeth, Storm Slayer", FromZone = "ZoneType_Graveyard", ToZone = "ZoneType_Command" }), Density.Beats);
+
+        Assert.That(lines.Select(l => l.Text), Is.EqualTo(new[]
+        {
+            "Elspeth, Storm Slayer is put into the graveyard",
+            "Elspeth, Storm Slayer returns to the command zone",
+        }));
+    }
+
+    /// <summary>
+    /// Every other state-based action keeps today's words — including one whose
+    /// destination the log never recorded, because the graveyard is where every SBA
+    /// this was measured against sends its card, except the commander's ride home.
+    /// </summary>
+    [Test]
+    public void A_state_based_action_with_no_recorded_destination_keeps_the_graveyard_wording()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.StateBasedAction) with { SourceName = "Hare Apparent" }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Hare Apparent is put into the graveyard"));
+    }
+
     [Test]
     public void Turn_header_shows_both_life_totals_you_first()
     {

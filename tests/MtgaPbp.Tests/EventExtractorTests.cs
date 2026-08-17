@@ -12,6 +12,7 @@ public class EventExtractorTests
             648 => "Plains",
             1000 => "Lightning Bolt",
             1001 => "Llanowar Elves",
+            1002 => "Elspeth, Storm Slayer",
             _ => null
         };
         public CardInfo? CardForGrpId(int grpId) => null;
@@ -131,6 +132,51 @@ public class EventExtractorTests
             Assert.That(t.Events.Select(x => x.Kind), Does.Contain(expected),
                 $"category {category} should map to {expected}");
         }
+    }
+
+    /// <summary>
+    /// The two-transfer, two-rename sequence a commander's death actually writes
+    /// (issue #18, match 47acdef8 turn 17): battlefield to graveyard by
+    /// SBA_ZeroLoyalty, a rename, then graveyard to command zone by SBA_Commander.
+    /// The second trip used to lose its destination at extraction and render in the
+    /// graveyard's words, and the ×N fold collapsed the two identical sentences into
+    /// "is put into the graveyard ×2" — one Elspeth, buried twice.
+    /// </summary>
+    [Test]
+    public void Extract_keeps_the_destination_of_a_commanders_trip_home()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "turnInfo": { "turnNumber": 17, "activePlayer": 2 },
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" },
+                     { "zoneId": 33, "type": "ZoneType_Graveyard", "ownerSeatId": 1 },
+                     { "zoneId": 26, "type": "ZoneType_Command", "ownerSeatId": 1 } ],
+          "gameObjects": [ { "instanceId": 675, "grpId": 7, "name": 1002,
+                             "type": "GameObjectType_Card", "controllerSeatId": 1,
+                             "zoneId": 28 } ],
+          "annotations": [
+            { "id": 1, "affectedIds": [ 675 ], "type": [ "AnnotationType_ObjectIdChanged" ],
+              "details": [ { "key": "orig_id", "valueInt32": [ 675 ] },
+                           { "key": "new_id",  "valueInt32": [ 698 ] } ] },
+            { "id": 2, "affectedIds": [ 698 ], "type": [ "AnnotationType_ZoneTransfer" ],
+              "details": [ { "key": "zone_src",  "valueInt32": [ 28 ] },
+                           { "key": "zone_dest", "valueInt32": [ 33 ] },
+                           { "key": "category", "valueString": [ "SBA_ZeroLoyalty" ] } ] },
+            { "id": 3, "affectedIds": [ 698 ], "type": [ "AnnotationType_ObjectIdChanged" ],
+              "details": [ { "key": "orig_id", "valueInt32": [ 698 ] },
+                           { "key": "new_id",  "valueInt32": [ 699 ] } ] },
+            { "id": 4, "affectedIds": [ 699 ], "type": [ "AnnotationType_ZoneTransfer" ],
+              "details": [ { "key": "zone_src",  "valueInt32": [ 33 ] },
+                           { "key": "zone_dest", "valueInt32": [ 26 ] },
+                           { "key": "category", "valueString": [ "SBA_Commander" ] } ] } ] }
+        """));
+
+        var sbas = t.Events.Where(e => e.Kind == EventKind.StateBasedAction).ToList();
+        Assert.That(sbas, Has.Count.EqualTo(2));
+        Assert.That(sbas.Select(e => e.SourceName),
+            Is.All.EqualTo("Elspeth, Storm Slayer"), "both hops are the same card through renames");
+        Assert.That(sbas[0].ToZone, Is.EqualTo("ZoneType_Graveyard"));
+        Assert.That(sbas[1].ToZone, Is.EqualTo("ZoneType_Command"));
     }
 
     [Test]
