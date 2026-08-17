@@ -85,6 +85,19 @@ public sealed record Transcript(
     public IReadOnlyList<GameRecord> Games { get; init; } = [];
 
     /// <summary>
+    /// The commanders registered beside <see cref="Deck"/>, by name, in registration
+    /// order. Separate from the deck because a commander is not a library card: it
+    /// begins in the command zone, is cast from there, and returns there — rendered as
+    /// a decklist row it would read as a card that could be drawn. A list because
+    /// Arena's own <c>deckConstraintInfo</c> for Brawl allows two (partner
+    /// commanders). Empty when the deck message carried no <c>commanderCards</c>,
+    /// which is every non-Brawl format and every match archived before the slicer
+    /// kept <c>ConnectResp</c> — so absence means "no commander recorded", never
+    /// "this deck had no commander".
+    /// </summary>
+    public IReadOnlyList<string> Commanders { get; init; } = [];
+
+    /// <summary>
     /// Arena said <c>ResultType_Draw</c> for the match, in so many words. Only that:
     /// a completed match with no winner found is not a draw, it is a bug, and an
     /// incomplete one is <see cref="Incomplete"/> — so this flag never stands in for
@@ -430,7 +443,7 @@ public sealed class EventExtractor(ICardDb cards)
         // Collected rather than resolved on sight: the deck message arrives before the
         // MulliganReq that says which seat is ours, so there is nothing to check it
         // against yet when it goes past.
-        var decks = new List<(int? Seat, IReadOnlyList<int> GrpIds)>();
+        var decks = new List<(int? Seat, IReadOnlyList<int> GrpIds, IReadOnlyList<int> Commanders)>();
 
         // How each finished game went, in game order. Arena states this twice: the
         // gameInfo of every message carries the results so far, and finalMatchResult
@@ -631,14 +644,16 @@ public sealed class EventExtractor(ICardDb cards)
             });
         }
 
+        var (deck, commanders) = BuildDeck(decks, you, games);
         return new Transcript(
             matchId, started, ended, eventName, you, opp,
             winningTeam, won, lost, Incomplete: !sawFinal,
             st.Events, st.Unknown, st.CardsSeen, st.Unresolved, gaps,
-            BuildDeck(decks, you, games), records.Count > 0 ? records[0].Opening : null)
+            deck, records.Count > 0 ? records[0].Opening : null)
         {
             Games = records,
             Drawn = drawn,
+            Commanders = commanders,
             UnknownPersistentAnnotations = st.UnknownPersistent
         };
     }
@@ -741,7 +756,9 @@ public sealed class EventExtractor(ICardDb cards)
     }
 
     /// <summary>
-    /// The decklist, attributed to the local seat or not shown at all.
+    /// The decklist and its commanders, attributed to the local seat or not shown at
+    /// all. The two travel together because they arrive together: a commander taken
+    /// from one message and a deck from another could describe two different decks.
     /// </summary>
     /// <remarks>
     /// Arena addresses the deck message to a seat, and it named the local player in all
@@ -754,14 +771,14 @@ public sealed class EventExtractor(ICardDb cards)
     /// ever reach the same match the later one is the nearer to it.
     /// </para>
     /// </remarks>
-    private IReadOnlyList<DeckEntry> BuildDeck(
-        List<(int? Seat, IReadOnlyList<int> GrpIds)> decks, PlayerInfo? you,
-        List<GameRun> games)
+    private (IReadOnlyList<DeckEntry> Deck, IReadOnlyList<string> Commanders) BuildDeck(
+        List<(int? Seat, IReadOnlyList<int> GrpIds, IReadOnlyList<int> Commanders)> decks,
+        PlayerInfo? you, List<GameRun> games)
     {
-        if (you is null) return [];
+        if (you is null) return ([], []);
 
         var mine = decks.LastOrDefault(d => d.Seat == you.Seat);
-        if (mine.GrpIds is not { Count: > 0 } grpIds) return [];
+        if (mine.GrpIds is not { Count: > 0 } grpIds) return ([], []);
 
         // Owning a game object is the client's own record of having held the card.
         // A card that stayed in the library the whole match never gets one, which is
@@ -773,7 +790,8 @@ public sealed class EventExtractor(ICardDb cards)
             .Select(o => o.GrpId)
             .ToHashSet();
 
-        return DeckList.Build(grpIds, cards, seen);
+        return (DeckList.Build(grpIds, cards, seen),
+                DeckList.CommanderNames(mine.Commanders, cards));
     }
 
     /// <summary>

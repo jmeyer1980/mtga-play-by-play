@@ -23,6 +23,8 @@ public class DeckListTests
             9 => new CardInfo(9, "Banishing Light", "Enchantment", null, null, false),
             10 => new CardInfo(10, "Banishing Light", "Enchantment", null, null, false),
             11 => new CardInfo(11, "Arcane Signet", "Artifact", null, null, false),
+            12 => new CardInfo(12, "Lumra, Bellow of the Woods", "Creature", null, null, false),
+            13 => new CardInfo(13, "Ardenn, Intrepid Archaeologist", "Creature", null, null, false),
             _ => null
         };
 
@@ -195,5 +197,79 @@ public class DeckListTests
     {
         var t = Run(Connect(1, 7, 11), RoomLine, MulliganLine, Owned(1, 7, 100));
         Assert.That(t.CardsSeen, Does.Not.Contain("Arcane Signet"));
+    }
+
+    // ---------- the commander, end to end ----------
+
+    /// <summary>
+    /// The same message with <c>commanderCards</c> beside the library, which is what a
+    /// Brawl match's <c>deckMessage</c> looks like.
+    /// </summary>
+    private static string ConnectBrawl(int seat, int[] grpIds, params int[] commanders) => $$"""
+    { "timestamp": "999", "greToClientEvent": { "greToClientMessages": [
+      { "type": "GREMessageType_ConnectResp", "systemSeatIds": [ {{seat}} ],
+        "connectResp": { "deckMessage": {
+          "deckCards": [ {{string.Join(", ", grpIds)}} ],
+          "commanderCards": [ {{string.Join(", ", commanders)}} ] } } } ] } }
+    """;
+
+    [Test]
+    public void Extract_reads_the_commander_beside_the_deck()
+    {
+        var t = Run(ConnectBrawl(1, [7, 7, 11], 12), RoomLine, MulliganLine);
+
+        Assert.That(t.Commanders, Is.EqualTo(new[] { "Lumra, Bellow of the Woods" }));
+        // Never a decklist row: the commander starts in the command zone, so a row
+        // would claim a card that could be drawn — the same lie as omitting it.
+        Assert.That(t.Deck.Select(d => d.Name), Does.Not.Contain("Lumra, Bellow of the Woods"));
+    }
+
+    /// <summary>
+    /// Arena's own <c>deckConstraintInfo</c> says <c>maxCommanderSize: 2</c>, so the
+    /// model is a list and a partner pair keeps its registration order.
+    /// </summary>
+    [Test]
+    public void Extract_reads_partner_commanders_in_registration_order()
+    {
+        var t = Run(ConnectBrawl(1, [7], 13, 12), RoomLine, MulliganLine);
+
+        Assert.That(t.Commanders, Is.EqualTo(new[]
+            { "Ardenn, Intrepid Archaeologist", "Lumra, Bellow of the Woods" }));
+    }
+
+    [Test]
+    public void Extract_has_no_commander_when_the_message_carries_none()
+    {
+        // Every non-Brawl format, and every match archived before the field was kept.
+        // Absence means "no commander recorded", and the page renders as it always did.
+        Assert.That(Run(Connect(1, 7), RoomLine, MulliganLine).Commanders, Is.Empty);
+    }
+
+    /// <summary>
+    /// The commander travels with the deck it commands: the seat check that drops a
+    /// mis-addressed decklist drops its commander too, for the same reason.
+    /// </summary>
+    [Test]
+    public void Extract_drops_the_commander_with_a_deck_addressed_to_the_other_seat()
+    {
+        var t = Run(ConnectBrawl(2, [7], 12), RoomLine, MulliganLine);
+
+        Assert.That(t.Deck, Is.Empty);
+        Assert.That(t.Commanders, Is.Empty);
+    }
+
+    [Test]
+    public void Extract_names_a_commander_the_database_does_not_know()
+    {
+        Assert.That(Run(ConnectBrawl(1, [7], 404), RoomLine, MulliganLine).Commanders,
+            Is.EqualTo(new[] { "Card #404" }));
+    }
+
+    [Test]
+    public void CommanderNames_folds_art_variants_that_share_a_name()
+    {
+        // Two printings of one card are one commander, same rule as the decklist.
+        Assert.That(DeckList.CommanderNames([9, 10], new Cards()),
+            Is.EqualTo(new[] { "Banishing Light" }));
     }
 }

@@ -79,8 +79,15 @@ public static class GamePageRenderer
         sb.Append($"""
             <details class="deck" id="deck">
             <summary>{E(TranscriptSummary.DeckHeading(t))}</summary>
-            <ul class="cards" role="list">
             """);
+
+        // A paragraph above the list, never a row in it: the list is the library, and
+        // a screen reader entering it announces how many distinct cards it holds — the
+        // commander is not one of them and could never be drawn from it.
+        if (TranscriptSummary.CommanderLine(t) is { } commander)
+            sb.Append($"""<p class="commander">{E(commander)}</p>""");
+
+        sb.Append("""<ul class="cards" role="list">""");
 
         foreach (var card in t.Deck)
         {
@@ -266,6 +273,7 @@ public static class GamePageRenderer
         .warn{border-left:3px solid #a35b00;padding-left:.8rem;opacity:.85}
         .deck{margin:.6rem 0}
         .deck summary{cursor:pointer}
+        .deck .commander{margin:.4rem 0 0 1.5rem}
         .deck .cards{list-style:none;margin:.4rem 0;padding:0 0 0 1.5rem}
         .deck .cards li{margin:.1rem 0}
         .deck .unseen{opacity:.65}
@@ -389,6 +397,10 @@ public static class GamePageRenderer
             var deck = document.getElementById('deck');
             if (deck) {
               out.push('## ' + textOf(deck.querySelector('summary')), '');
+              // The commander travels with the deck it commands, as a plain sentence
+              // rather than a list line — the same shape the markdown export writes.
+              var commander = deck.querySelector('.commander');
+              if (commander) out.push(textOf(commander), '');
               var cards = deck.querySelectorAll('li');
               for (var c = 0; c < cards.length; c++) out.push('- ' + textOf(cards[c]));
               out.push('', '*' + textOf(deck.querySelector('.note')) + '*', '');
