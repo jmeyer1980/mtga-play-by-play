@@ -96,7 +96,8 @@ public class RendererTests
 
     internal static Transcript Sample(
         bool incomplete = false, IReadOnlyList<LogGap>? gaps = null,
-        IReadOnlyList<DeckEntry>? deck = null, bool opening = true) => new(
+        IReadOnlyList<DeckEntry>? deck = null, bool opening = true,
+        IReadOnlyList<string>? commanders = null) => new(
         "abc-123", 1786326812781, 1786327812781, "Ladder",
         new PlayerInfo(1, "ME", "PlayerOne", "SteamWindows"),
         new PlayerInfo(2, "THEM", "PlayerTwo", "iPhone"),
@@ -114,7 +115,8 @@ public class RendererTests
         new Dictionary<string, int>(),
         gaps ?? [],
         deck ?? [],
-        opening ? SampleOpening() : null);
+        opening ? SampleOpening() : null)
+        { Commanders = commanders ?? [] };
 
     [Test]
     public void Match_times_render_in_the_configured_time_zone()
@@ -1032,6 +1034,97 @@ public class RendererTests
 
         Assert.That(copied, Is.EqualTo(exported));
         Assert.That(copied, Has.Count.EqualTo(3));
+    }
+
+    // ---------- the commander ----------
+
+    /// <summary>The same sample deck, registered with a commander beside it.</summary>
+    private static Transcript BrawlSample(params string[] commanders) =>
+        Sample(deck: SampleDeck(), commanders: commanders);
+
+    /// <summary>
+    /// The heading carries the commander's existence and the body carries its name.
+    /// Both, not either: the heading is the collapsed disclosure's only visible line,
+    /// so "(7 cards)" alone would describe an illegal Brawl deck — the very bug the
+    /// commander section exists to fix — while a name in the heading would run long.
+    /// </summary>
+    [Test]
+    public void Markdown_names_the_commander_between_the_deck_heading_and_its_cards()
+    {
+        var md = MarkdownRenderer.Render(BrawlSample("Lumra, Bellow of the Woods"))
+            .ReplaceLineEndings("\n");
+
+        Assert.That(md, Does.Contain(
+            "## Your deck (7 cards and a commander)\n\nCommander: Lumra, Bellow of the Woods\n\n- "));
+    }
+
+    /// <summary>
+    /// Arena's own deck constraints allow two commanders, so a partner pair renders
+    /// both. Registration order, not alphabetical: the pair is one choice.
+    /// </summary>
+    [Test]
+    public void Markdown_renders_both_partner_commanders()
+    {
+        var md = MarkdownRenderer.Render(
+                BrawlSample("Rograkh, Son of Rohgahh", "Ardenn, Intrepid Archaeologist"))
+            .ReplaceLineEndings("\n");
+
+        Assert.That(md, Does.Contain("## Your deck (7 cards and 2 commanders)"));
+        Assert.That(md, Does.Contain(
+            "\nCommanders: Rograkh, Son of Rohgahh and Ardenn, Intrepid Archaeologist\n"));
+    }
+
+    /// <summary>
+    /// The commander is a paragraph above the cards list, never a row in it. A row
+    /// would imply a card that could be drawn, and would change what a screen reader
+    /// announces on entering the list — "how many distinct cards the library holds".
+    /// </summary>
+    [Test]
+    public void GamePage_keeps_the_commander_out_of_the_cards_list()
+    {
+        var deck = Markup.Parse(GamePageRenderer.Render(BrawlSample("Lumra, Bellow of the Woods")))
+            .Descendants("details").Single(d => d.Attribute("id")?.Value == "deck");
+
+        Assert.That(deck.Elements("summary").Single().Value,
+            Is.EqualTo("Your deck (7 cards and a commander)"));
+        Assert.That(deck.Descendants("p")
+                .Single(p => p.Attribute("class")?.Value == "commander").Value,
+            Is.EqualTo("Commander: Lumra, Bellow of the Woods"));
+        Assert.That(deck.Descendants("li").Count(), Is.EqualTo(3),
+            "the list is the library, and the commander is not in it");
+    }
+
+    /// <summary>
+    /// The clipboard and the .md file are meant to be the same document, and the
+    /// commander line is part of that document now.
+    /// </summary>
+    [Test]
+    public void Copying_the_page_reproduces_the_markdown_export_of_the_commander()
+    {
+        var t = BrawlSample("Lumra, Bellow of the Woods");
+
+        var copied = Markup.Parse(GamePageRenderer.Render(t)).Descendants("p")
+            .Single(p => p.Attribute("class")?.Value == "commander");
+        var exported = MarkdownRenderer.Render(t).ReplaceLineEndings("\n").Split('\n')
+            .Single(l => l.StartsWith("Commander:", StringComparison.Ordinal));
+
+        Assert.That(Markup.Clipboard(copied), Is.EqualTo(exported));
+    }
+
+    /// <summary>
+    /// A match with no commander recorded renders exactly as it did before the field
+    /// was parsed — most of the archive predates it, and every constructed match
+    /// lacks it by nature.
+    /// </summary>
+    [Test]
+    public void A_match_without_a_commander_renders_no_commander_anywhere()
+    {
+        var md = MarkdownRenderer.Render(Sample(deck: SampleDeck()));
+        Assert.That(md, Does.Contain("## Your deck (7 cards)"));
+        Assert.That(md, Does.Not.Contain("Commander"));
+
+        Assert.That(Markup.Parse(GameDeckHtml()).Descendants("p")
+            .Any(p => p.Attribute("class")?.Value == "commander"), Is.False);
     }
 
     [Test]

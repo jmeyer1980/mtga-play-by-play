@@ -28,6 +28,8 @@ public static class MarkdownRenderer
         if (t.Deck.Count > 0)
         {
             sb.AppendLine($"## {TranscriptSummary.DeckHeading(t)}").AppendLine();
+            if (TranscriptSummary.CommanderLine(t) is { } commander)
+                sb.AppendLine(commander).AppendLine();
             foreach (var card in t.Deck)
                 sb.AppendLine($"- {TranscriptSummary.DeckLine(card)}");
             sb.AppendLine().AppendLine($"*{TranscriptSummary.DeckNote}*");
@@ -57,8 +59,36 @@ public static class TranscriptSummary
     /// The decklist's heading. It counts cards rather than naming the deck, because
     /// the log carries a list of ids and nothing else — any name would be a guess.
     /// </summary>
-    public static string DeckHeading(Transcript t) =>
-        $"Your deck ({t.Deck.Sum(d => d.Count)} cards)";
+    /// <remarks>
+    /// The count stays the library's count even in Brawl, where the whole deck is one
+    /// card bigger: the commander is announced in words instead, because "(99 cards)"
+    /// alone describes an illegal deck and "(100 cards)" would count a card that is
+    /// not in the pile the number is read against. The heading has to carry the fact
+    /// itself because it is also the collapsed disclosure's only visible line — the
+    /// commander's name, which lives inside the body, would otherwise vanish with it.
+    /// </remarks>
+    public static string DeckHeading(Transcript t)
+    {
+        var cards = $"{t.Deck.Sum(d => d.Count)} cards";
+        return t.Commanders.Count switch
+        {
+            0 => $"Your deck ({cards})",
+            1 => $"Your deck ({cards} and a commander)",
+            var n => $"Your deck ({cards} and {n} commanders)"
+        };
+    }
+
+    /// <summary>
+    /// The commanders by name, or null when the match recorded none. A sentence
+    /// rather than a decklist row: a decklist row implies a card that could be
+    /// drawn, and the commander sits in the command zone from the first shuffle.
+    /// </summary>
+    public static string? CommanderLine(Transcript t) => t.Commanders.Count switch
+    {
+        0 => null,
+        1 => $"Commander: {t.Commanders[0]}",
+        _ => $"Commanders: {string.Join(" and ", t.Commanders)}"
+    };
 
     /// <summary>
     /// One decklist line. Shared with the game page so a copied transcript and the
