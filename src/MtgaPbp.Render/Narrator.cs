@@ -448,8 +448,17 @@ public static class Narrator
 
         EventKind.Surveilled when e.SourceName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "surveil", "surveils", t)} {e.SourceName}",
+        // The graveyard is where every state-based action in the archive sends its
+        // card — zero toughness, lethal damage, zero loyalty, the legend rule — except
+        // one: SBA_Commander is the commander leaving the graveyard for the command
+        // zone, and phrasing that trip in the graveyard's words buried Elspeth twice
+        // on one line ("is put into the graveyard ×2", #18). An unrecorded destination
+        // keeps the graveyard wording, because it is the right guess for every SBA
+        // this has ever been measured against.
         EventKind.StateBasedAction when e.SourceName is not null =>
-            $"{e.SourceName} is put into the graveyard",
+            e.ToZone == "ZoneType_Command"
+                ? $"{e.SourceName} returns to the command zone"
+                : $"{e.SourceName} is put into the graveyard",
 
         // Zero is not a small amount of damage, it is none — a 0/4 blocker deals no
         // damage at all under the rules, and "Gleaming Barrier deals 0 damage to Hare

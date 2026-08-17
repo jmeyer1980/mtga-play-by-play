@@ -1147,8 +1147,12 @@ public sealed class EventExtractor(ICardDb cards)
                 // Carried for the categories whose destination is not implied by the
                 // verb. A Destroy reads as a destroy wherever the card landed, but a
                 // Return goes to hand 61 times and to the battlefield 47 in this archive
-                // and used to claim "to hand" for all 108 of them.
-                var wantsZone = kind is EventKind.ZoneMove or EventKind.Returned;
+                // and used to claim "to hand" for all 108 of them. A state-based action
+                // needs it for one case: every SBA in the archive ends in the graveyard
+                // except SBA_Commander, which is the commander leaving it — dropping the
+                // destination rendered that trip home as a second burial (#18).
+                var wantsZone = kind
+                    is EventKind.ZoneMove or EventKind.Returned or EventKind.StateBasedAction;
                 string? Zone(string key) => wantsZone &&
                     GameStateTracker.DetailInt(a, key) is { } z &&
                     tracker.ZoneTypes.TryGetValue(z, out var name2) ? name2 : null;
