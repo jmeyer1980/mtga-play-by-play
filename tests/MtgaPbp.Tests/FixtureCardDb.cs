@@ -20,7 +20,15 @@ namespace MtgaPbp.Tests;
 public sealed class FixtureCardDb : ICardDb
 {
     public sealed record Card(
-        string Name, string Types, string? Power, string? Toughness, bool IsToken);
+        string Name, string Types, string? Power, string? Toughness, bool IsToken)
+    {
+        /// <summary>
+        /// Mirrors <see cref="CardInfo.ColorIdentity"/>, and an init property for the
+        /// same reason <see cref="Data.Abilities"/> is one: a card-names.json written
+        /// before colours existed still deserializes, and reads back as "nobody said".
+        /// </summary>
+        public string? ColorIdentity { get; init; }
+    }
 
     public sealed record Data(
         Dictionary<int, string> Locs,
@@ -67,6 +75,7 @@ public sealed class FixtureCardDb : ICardDb
     public CardInfo? CardForGrpId(int grpId) =>
         _data.Cards.TryGetValue(grpId, out var c)
             ? new CardInfo(grpId, c.Name, c.Types, c.Power, c.Toughness, c.IsToken)
+              { ColorIdentity = c.ColorIdentity }
             : null;
 
     public string? EnumName(string type, int value) =>

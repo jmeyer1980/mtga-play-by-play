@@ -15,13 +15,16 @@ public class CardDbTests
         using var con = new SqliteConnection($"Data Source={_dbPath}");
         con.Open();
         Exec(con, @"CREATE TABLE Cards (GrpId INT PRIMARY KEY, TitleId INT, Types TEXT,
-                                        Power TEXT, Toughness TEXT, IsToken BOOLEAN)");
+                                        Power TEXT, Toughness TEXT, IsToken BOOLEAN,
+                                        ColorIdentity TEXT)");
         Exec(con, @"CREATE TABLE Localizations_enUS (LocId INT, Formatted INT, Loc TEXT,
                                                      PRIMARY KEY (LocId, Formatted))");
         // Real DB stores card titles at Formatted = 1 only.
-        Exec(con, "INSERT INTO Cards VALUES (96179, 648, '5', '', '', 0)");
+        Exec(con, "INSERT INTO Cards VALUES (96179, 648, '5', '', '', 0, '1')");
         Exec(con, "INSERT INTO Localizations_enUS VALUES (648, 1, 'Plains')");
-        Exec(con, "INSERT INTO Cards VALUES (91843, 700, '2', '1', '1', 1)");
+        // A token, and the real database's own way of saying colourless: the empty
+        // string, never null. See CardInfo.ColorIdentity for why the two differ.
+        Exec(con, "INSERT INTO Cards VALUES (91843, 700, '2', '1', '1', 1, '')");
         Exec(con, "INSERT INTO Localizations_enUS VALUES (700, 1, 'Rabbit')");
         // A LocId that also has a Formatted=0 row, to prove ordering is stable.
         Exec(con, "INSERT INTO Localizations_enUS VALUES (900, 0, 'plain text')");
@@ -50,6 +53,19 @@ public class CardDbTests
         Assert.That(card, Is.Not.Null);
         Assert.That(card!.Name, Is.EqualTo("Plains"));
         Assert.That(card.IsToken, Is.False);
+        Assert.That(card.ColorIdentity, Is.EqualTo("1"));
+    }
+
+    /// <summary>
+    /// Colourless is the empty string in the shipped database, and null is nobody
+    /// having said. Collapsing them would put "colourless" on every row rendered from
+    /// a card source that predates the column.
+    /// </summary>
+    [Test]
+    public void CardForGrpId_keeps_colourless_apart_from_unrecorded()
+    {
+        using var db = new CardDb(_dbPath);
+        Assert.That(db.CardForGrpId(91843)!.ColorIdentity, Is.EqualTo(""));
     }
 
     [Test]

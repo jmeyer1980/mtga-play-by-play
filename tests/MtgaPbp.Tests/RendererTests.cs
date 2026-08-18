@@ -97,7 +97,7 @@ public class RendererTests
     internal static Transcript Sample(
         bool incomplete = false, IReadOnlyList<LogGap>? gaps = null,
         IReadOnlyList<DeckEntry>? deck = null, bool opening = true,
-        IReadOnlyList<string>? commanders = null) => new(
+        IReadOnlyList<string>? commanders = null, string? colors = null) => new(
         "abc-123", 1786326812781, 1786327812781, "Ladder",
         new PlayerInfo(1, "ME", "PlayerOne", "SteamWindows"),
         new PlayerInfo(2, "THEM", "PlayerTwo", "iPhone"),
@@ -116,7 +116,7 @@ public class RendererTests
         gaps ?? [],
         deck ?? [],
         opening ? SampleOpening() : null)
-        { Commanders = commanders ?? [] };
+        { Commanders = commanders ?? [], DeckColors = colors };
 
     [Test]
     public void Match_times_render_in_the_configured_time_zone()
@@ -431,6 +431,74 @@ public class RendererTests
         Assert.That(IndexRenderer.Render([]), Does.Contain("No games"));
     }
 
+    // ---------- Issue 24: which deck was played ----------
+
+    /// <summary>
+    /// Arena never sends a deck name, so the column says colours. Letters for the eye,
+    /// spelled out for a synthesiser — which would otherwise read "WU" as a word.
+    /// </summary>
+    [Test]
+    public void Index_names_the_deck_by_its_colours_twice()
+    {
+        var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample(colors: "WU"))]);
+
+        Assert.That(html, Does.Contain("<th scope=\"col\">Deck</th>"));
+        Assert.That(html, Does.Contain("<span aria-hidden=\"true\">WU</span>"));
+        Assert.That(html, Does.Contain("<span class=\"vh\">white and blue</span>"));
+    }
+
+    /// <summary>
+    /// 101 of the archived matches predate the deck being captured at all. An empty
+    /// cell is the only honest thing to put there — "colourless", a dash or a question
+    /// mark would each be a claim about a deck nobody has a record of.
+    /// </summary>
+    [Test]
+    public void Index_leaves_the_deck_cell_empty_when_no_deck_was_registered()
+    {
+        var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample())]);
+
+        Assert.That(html, Does.Contain("<th scope=\"col\">Deck</th>"));
+        Assert.That(html, Does.Contain("<td class=\"deck\"></td>"));
+        Assert.That(html, Does.Not.Contain("colourless"));
+    }
+
+    [Test]
+    public void Index_lets_a_colour_be_searched_by_letter_or_by_name()
+    {
+        var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample(colors: "WU"))]);
+        var haystack = html[html.IndexOf("data-search=\"", StringComparison.Ordinal)..];
+        haystack = haystack[..haystack.IndexOf('"', 13)];
+
+        Assert.That(haystack, Does.Contain("wu"));
+        Assert.That(haystack, Does.Contain("white and blue"));
+    }
+
+    /// <summary>
+    /// A row whose deck nobody recorded must not answer a colour search. Filtering on
+    /// "white" would otherwise return matches that have no claim to be white.
+    /// </summary>
+    [Test]
+    public void Index_does_not_let_a_deckless_match_answer_a_colour_search()
+    {
+        var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample())]);
+        var haystack = html[html.IndexOf("data-search=\"", StringComparison.Ordinal)..];
+        haystack = haystack[..haystack.IndexOf('"', 13)];
+
+        Assert.That(haystack, Does.Not.Contain("white"));
+    }
+
+    /// <summary>
+    /// The colour has to reach the row from the transcript on its own — the ids it was
+    /// derived from are gone by the time a summary is built, so nothing downstream can
+    /// recover it if this link is dropped.
+    /// </summary>
+    [Test]
+    public void Summarize_carries_the_deck_colours_through()
+    {
+        Assert.That(IndexRenderer.Summarize(Sample(colors: "BG")).Colors, Is.EqualTo("BG"));
+        Assert.That(IndexRenderer.Summarize(Sample()).Colors, Is.Null);
+    }
+
     // ---------- Task 11: usable with a screen reader ----------
     //
     // The premise of the whole project is that a text transcript is the one MTG Arena
@@ -566,7 +634,7 @@ public class RendererTests
         var root = Markup.Parse(IndexHtml());
         var columns = root.Descendants("thead").Single().Descendants("th").ToList();
 
-        Assert.That(columns, Has.Count.EqualTo(7));
+        Assert.That(columns, Has.Count.EqualTo(8));
         foreach (var th in columns)
         {
             Assert.That(th.Attribute("scope")?.Value, Is.EqualTo("col"));

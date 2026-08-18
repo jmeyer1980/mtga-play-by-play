@@ -163,6 +163,19 @@ public class GoldenFileTests
     }
 
     /// <summary>
+    /// The sample match is the case the land rule exists for: a mono-white deck whose
+    /// mana base includes Temple of Enlightenment, Temple of Silence and Temple of
+    /// Plenty. Counting lands would report it as a four-colour deck — which is the
+    /// whole reason they are left out — so this is asserted against the real decklist
+    /// rather than a hand-built one.
+    /// </summary>
+    [Test]
+    public void The_deck_is_named_by_the_colours_of_its_spells_not_of_its_lands()
+    {
+        Assert.That(Extract().DeckColors, Is.EqualTo("W"));
+    }
+
+    /// <summary>
     /// This test used to assert the opposite, on the belief that Arena never sends
     /// targets. It does — as AnnotationType_TargetSpec inside persistentAnnotations,
     /// an array the parser did not read. That was a stale assumption, not an accepted

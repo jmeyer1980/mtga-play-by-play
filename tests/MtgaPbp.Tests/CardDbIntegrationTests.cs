@@ -77,5 +77,11 @@ public class CardDbIntegrationTests
             "the checked-in name fixture has drifted from the real card database");
         Assert.That(transcript.Events.Select(e => e.Detail),
             Is.EqualTo(viaReal.Events.Select(e => e.Detail)));
+
+        // Colours are the one thing the fixture carries that no rendered line spells
+        // out, so nothing above would notice the ColorIdentity column drifting.
+        Assert.That(transcript.DeckColors, Is.EqualTo(viaReal.DeckColors));
+        Assert.That(viaReal.DeckColors, Is.Not.Null,
+            "the sample match registers a deck, so the real database can colour it");
     }
 }

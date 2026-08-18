@@ -39,7 +39,10 @@ public class CardNameFixtureGenerator
             var card = inner.CardForGrpId(grpId);
             if (card is not null)
                 Cards[grpId] = new FixtureCardDb.Card(
-                    card.Name, card.Types, card.Power, card.Toughness, card.IsToken);
+                    card.Name, card.Types, card.Power, card.Toughness, card.IsToken)
+                {
+                    ColorIdentity = card.ColorIdentity
+                };
             return card;
         }
 

@@ -46,273 +46,312 @@
       "Types": "4",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "86722": {
       "Name": "Virtue of Loyalty",
       "Types": "3",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "86974": {
       "Name": "Agatha\u0027s Soul Cauldron",
       "Types": "1",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": ""
     },
     "87141": {
       "Name": "Dusk Rose Reliquary",
       "Types": "1",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "91542": {
       "Name": "Caretaker\u0027s Talent",
       "Types": "3",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "91543": {
       "Name": "Carrot Cake",
       "Types": "1",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "91552": {
       "Name": "Hop to It",
       "Types": "10",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "91565": {
       "Name": "Season of the Burrow",
       "Types": "10",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "91843": {
       "Name": "Rabbit",
       "Types": "2",
       "Power": "1",
       "Toughness": "1",
-      "IsToken": true
+      "IsToken": true,
+      "ColorIdentity": ""
     },
     "92060": {
       "Name": "Dollmaker\u0027s Shop // Porcelain Gallery",
       "Types": "3",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "92065": {
       "Name": "Ethereal Armor",
       "Types": "3",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "92071": {
       "Name": "Ghostly Dancers",
       "Types": "2",
       "Power": "2",
       "Toughness": "5",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "92083": {
       "Name": "Overlord of the Mistmoors",
       "Types": "3,2",
       "Power": "6",
       "Toughness": "6",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "92092": {
       "Name": "Split Up",
       "Types": "10",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "92097": {
       "Name": "Toby, Beastie Befriender",
       "Types": "2",
       "Power": "1",
       "Toughness": "1",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "93636": {
       "Name": "Hinterland Sanctifier",
       "Types": "2",
       "Power": "1",
       "Toughness": "2",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "93648": {
       "Name": "Leonin Vanguard",
       "Types": "2",
       "Power": "1",
       "Toughness": "1",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "93728": {
       "Name": "Hare Apparent",
       "Types": "2",
       "Power": "2",
       "Toughness": "2",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "93806": {
       "Name": "Searslicer Goblin",
       "Types": "2",
       "Power": "2",
       "Toughness": "1",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "4"
     },
     "93848": {
       "Name": "Ajani\u0027s Pridemate",
       "Types": "2",
       "Power": "2",
       "Toughness": "2",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "93850": {
       "Name": "Authority of the Consuls",
       "Types": "3",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "93908": {
       "Name": "Fanatical Firebrand",
       "Types": "2",
       "Power": "1",
       "Toughness": "1",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "4"
     },
     "93917": {
       "Name": "Krenko, Mob Boss",
       "Types": "2",
       "Power": "3",
       "Toughness": "3",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "4"
     },
     "94008": {
       "Name": "Release the Dogs",
       "Types": "10",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "94126": {
       "Name": "Temple of Enlightenment",
       "Types": "5",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "2,1"
     },
     "94131": {
       "Name": "Temple of Plenty",
       "Types": "5",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "5,1"
     },
     "94132": {
       "Name": "Temple of Silence",
       "Types": "5",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "3,1"
     },
     "94160": {
       "Name": "Rabbit",
       "Types": "2",
       "Power": "1",
       "Toughness": "1",
-      "IsToken": true
+      "IsToken": true,
+      "ColorIdentity": ""
     },
     "94173": {
       "Name": "Goblin",
       "Types": "2",
       "Power": "1",
       "Toughness": "1",
-      "IsToken": true
+      "IsToken": true,
+      "ColorIdentity": ""
     },
     "95526": {
       "Name": "Elspeth, Storm Slayer",
       "Types": "8",
       "Power": "",
       "Toughness": "5",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "96179": {
       "Name": "Plains",
       "Types": "5",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "97544": {
       "Name": "Abandoned Air Temple",
       "Types": "5",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "98411": {
       "Name": "Boggart Mischief",
       "Types": "11,3",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "3"
     },
     "98414": {
       "Name": "Champion of the Weird",
       "Types": "2",
       "Power": "5",
       "Toughness": "5",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "3"
     },
     "98528": {
       "Name": "Boggart Cursecrafter",
       "Types": "2",
       "Power": "2",
       "Toughness": "3",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "3,4"
     },
     "98601": {
       "Name": "Goblin",
       "Types": "2",
       "Power": "1",
       "Toughness": "1",
-      "IsToken": true
+      "IsToken": true,
+      "ColorIdentity": ""
     },
     "103538": {
       "Name": "The Great Goblin",
       "Types": "2",
       "Power": "3",
       "Toughness": "2",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "3,4"
     },
     "104905": {
       "Name": "Crowd of True Believers",
       "Types": "2",
       "Power": "1",
       "Toughness": "2",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     },
     "105275": {
       "Name": "Plains",
       "Types": "5",
       "Power": "",
       "Toughness": "",
-      "IsToken": false
+      "IsToken": false,
+      "ColorIdentity": "1"
     }
   },
   "Enums": {

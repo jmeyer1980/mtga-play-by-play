@@ -98,6 +98,19 @@ public sealed record Transcript(
     public IReadOnlyList<string> Commanders { get; init; } = [];
 
     /// <summary>
+    /// The colour identity of <see cref="Deck"/> as WUBRG letters — see
+    /// <see cref="MtgaPbp.Core.DeckColors"/> for how it is derived and what "C" means.
+    /// Null when the log carried no deck, which is the same set of matches
+    /// <see cref="Deck"/> is empty for.
+    /// </summary>
+    /// <remarks>
+    /// Worked out here rather than by whoever renders it, because here is the last place
+    /// the grpIds still exist: <see cref="Deck"/> is names and counts, <see
+    /// cref="Commanders"/> is names, and the card database can only be asked about ids.
+    /// </remarks>
+    public string? DeckColors { get; init; }
+
+    /// <summary>
     /// Arena said <c>ResultType_Draw</c> for the match, in so many words. Only that:
     /// a completed match with no winner found is not a draw, it is a bug, and an
     /// incomplete one is <see cref="Incomplete"/> — so this flag never stands in for
@@ -644,7 +657,7 @@ public sealed class EventExtractor(ICardDb cards)
             });
         }
 
-        var (deck, commanders) = BuildDeck(decks, you, games);
+        var (deck, commanders, colors) = BuildDeck(decks, you, games);
         return new Transcript(
             matchId, started, ended, eventName, you, opp,
             winningTeam, won, lost, Incomplete: !sawFinal,
@@ -654,6 +667,7 @@ public sealed class EventExtractor(ICardDb cards)
             Games = records,
             Drawn = drawn,
             Commanders = commanders,
+            DeckColors = colors,
             UnknownPersistentAnnotations = st.UnknownPersistent
         };
     }
@@ -756,9 +770,10 @@ public sealed class EventExtractor(ICardDb cards)
     }
 
     /// <summary>
-    /// The decklist and its commanders, attributed to the local seat or not shown at
-    /// all. The two travel together because they arrive together: a commander taken
-    /// from one message and a deck from another could describe two different decks.
+    /// The decklist, its commanders and its colours, attributed to the local seat or not
+    /// shown at all. They travel together because they arrive together: a commander
+    /// taken from one message and a deck from another could describe two different
+    /// decks, and the colours are read off both.
     /// </summary>
     /// <remarks>
     /// Arena addresses the deck message to a seat, and it named the local player in all
@@ -771,14 +786,15 @@ public sealed class EventExtractor(ICardDb cards)
     /// ever reach the same match the later one is the nearer to it.
     /// </para>
     /// </remarks>
-    private (IReadOnlyList<DeckEntry> Deck, IReadOnlyList<string> Commanders) BuildDeck(
-        List<(int? Seat, IReadOnlyList<int> GrpIds, IReadOnlyList<int> Commanders)> decks,
-        PlayerInfo? you, List<GameRun> games)
+    private (IReadOnlyList<DeckEntry> Deck, IReadOnlyList<string> Commanders, string? Colors)
+        BuildDeck(
+            List<(int? Seat, IReadOnlyList<int> GrpIds, IReadOnlyList<int> Commanders)> decks,
+            PlayerInfo? you, List<GameRun> games)
     {
-        if (you is null) return ([], []);
+        if (you is null) return ([], [], null);
 
         var mine = decks.LastOrDefault(d => d.Seat == you.Seat);
-        if (mine.GrpIds is not { Count: > 0 } grpIds) return ([], []);
+        if (mine.GrpIds is not { Count: > 0 } grpIds) return ([], [], null);
 
         // Owning a game object is the client's own record of having held the card.
         // A card that stayed in the library the whole match never gets one, which is
@@ -791,7 +807,8 @@ public sealed class EventExtractor(ICardDb cards)
             .ToHashSet();
 
         return (DeckList.Build(grpIds, cards, seen),
-                DeckList.CommanderNames(mine.Commanders, cards));
+                DeckList.CommanderNames(mine.Commanders, cards),
+                DeckColors.Of(grpIds, mine.Commanders, cards));
     }
 
     /// <summary>

@@ -164,7 +164,14 @@ out/text/<matchId>.md            markdown, for pasting into chat
 ```
 
 Open `out/index.html` in any browser. Search filters on opponent, event, result,
-date, and every card that appeared.
+date, deck colours, and every card that appeared.
+
+The Deck column says which deck you played, as WUBRG letters — Arena never sends a
+deck name, so colour is the only thing that tells one of yours from another. In Brawl
+it is the commander's colour identity; otherwise it is the colours of the deck's
+nonland cards, so a utility land does not turn a two-colour deck into a three-colour
+one. Search accepts either form: `wu` and `blue` both find the same rows. The cell is
+blank for matches archived before the deck was captured.
 
 Every page and every markdown export ends with the build that wrote it, and
 `watch` prints the same line on startup:
