@@ -16,6 +16,7 @@ public class PermanentLabelsTests
     private const int HareApparent = 2;  // printed 2/2
     private const int EtherealArmor = 3;
     private const int Wildcard = 4;      // printed */*
+    private const int Businessperson = 5; // a name only ever reached by being renamed
 
     private sealed class FakeCardDb : ICardDb
     {
@@ -25,6 +26,7 @@ public class PermanentLabelsTests
             HareApparent => "Hare Apparent",
             EtherealArmor => "Ethereal Armor",
             Wildcard => "Wildcard",
+            Businessperson => "Legitimate Businessperson",
             _ => null
         };
 
@@ -65,6 +67,17 @@ public class PermanentLabelsTests
     private static string Creature(int id, int grpId, int power, int toughness,
                                    bool attacking = false) => $$"""
         { "instanceId": {{id}}, "grpId": {{grpId}}, "name": {{grpId}},
+          "controllerSeatId": 1, "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
+          "power": {{power}}, "toughness": {{toughness}}
+          {{(attacking
+              ? """, "attackState": "AttackState_Attacking", "attackInfo": { "targetId": 2 }"""
+              : "")}} }
+        """;
+
+    /// <summary>The same creature, reporting a name that is not its card's.</summary>
+    private static string Renamed(int id, int grpId, int nameLocId, int power, int toughness,
+                                  bool attacking = false) => $$"""
+        { "instanceId": {{id}}, "grpId": {{grpId}}, "name": {{nameLocId}},
           "controllerSeatId": 1, "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
           "power": {{power}}, "toughness": {{toughness}}
           {{(attacking
@@ -386,5 +399,61 @@ public class PermanentLabelsTests
 
         Assert.That(lines.Single(l => l.StartsWith("You cast", StringComparison.Ordinal)),
             Is.EqualTo("You cast Ethereal Armor, targeting Rabbit B (1/1 → 6/6)"));
+    }
+
+    // ---------- a rename does not reach backwards ----------
+
+    [Test]
+    public void A_renamed_permanent_keeps_its_old_name_on_earlier_boards()
+    {
+        // Witness Protection renames what it enchants, and Arena reports that by
+        // changing the same instance's name locId mid-stream. Board lines are written in
+        // a second pass, once the whole log has been read, so the end-of-game name used
+        // to be stamped onto every turn — naming a creature after a card that had not
+        // been drawn yet. Issue #23.
+        var boards = Lines(
+                Turn(1, Creature(10, HareApparent, 2, 2)),
+                Turn(2, Creature(10, HareApparent, 2, 2)),
+                Turn(3, Renamed(10, HareApparent, Businessperson, 2, 2)))
+            .Where(l => l.Contains("control", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(boards.First(), Does.Contain("Hare Apparent"),
+                "the first board predates the rename");
+            Assert.That(boards.First(), Does.Not.Contain("Legitimate Businessperson"),
+                "the rename must not reach backwards");
+            Assert.That(boards.Last(), Does.Contain("Legitimate Businessperson"),
+                "and the board after it must carry the new name");
+        });
+    }
+
+    [Test]
+    public void A_permanent_that_was_never_renamed_is_unaffected()
+    {
+        // The fallback chain in NameOf names emblems, abilities and tokens that localize
+        // to nothing; as-of-turn naming defers to it and must not shadow it.
+        var attacks = Attacks(
+            Turn(1, Creature(10, HareApparent, 2, 2)),
+            Turn(2, Creature(10, HareApparent, 3, 3, attacking: true)));
+
+        Assert.That(attacks, Is.EqualTo(new[] { "You attack with Hare Apparent 3/3" }));
+    }
+
+    [Test]
+    public void A_spell_names_the_target_it_was_pointed_at_not_what_it_became()
+    {
+        // The aura that renames is the aura being cast, so the target's new name is
+        // produced by this very resolution. Naming the cast after it would report the
+        // player targeting something that did not exist when they targeted it — the
+        // same backwards leak as the board lines, reached through FillTargets. #23.
+        var cast = Lines([
+                Turn(1, Creature(10, Rabbit, 1, 1)),
+                .. Aura(target: 10, before: 1, after: 5),
+                Turn(2, Renamed(10, Rabbit, Businessperson, 5, 5))
+            ]).Single(l => l.StartsWith("You cast", StringComparison.Ordinal));
+
+        Assert.That(cast, Is.EqualTo("You cast Ethereal Armor, targeting Rabbit (1/1 → 5/5)"));
     }
 }

@@ -64,6 +64,23 @@ public sealed class TrackedObject
 /// </remarks>
 public readonly record struct StatSample(int Stamp, int Power, int Toughness, bool InPlay);
 
+/// <summary>
+/// What an object was called at one point in the match, and from when.
+/// </summary>
+/// <remarks>
+/// A permanent's name is not fixed. Witness Protection renames what it enchants, and
+/// Arena reports that honestly: the same instance's <c>name</c> locId changes mid-stream
+/// while its grpId stays put. 73 of 467 archived matches contain at least one such
+/// rename.
+/// <para>
+/// Stamped for the same reason <see cref="StatSample"/> is. Labels for a turn's board
+/// are built once the whole log has been read, so anything read from final object state
+/// describes the end of the game rather than the line being written — which is how a
+/// creature came to be named nine turns before its name existed.
+/// </para>
+/// </remarks>
+public readonly record struct NameSample(int Stamp, int NameLocId);
+
 public sealed class GameStateTracker(ICardDb cards)
 {
     private readonly Dictionary<int, TrackedObject> _objects = [];
@@ -74,6 +91,7 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly Dictionary<int, int> _zoneOwners = [];
     private readonly Dictionary<int, List<int>> _targets = [];   // source id -> target ids
     private readonly Dictionary<int, List<StatSample>> _stats = [];
+    private readonly Dictionary<int, List<NameSample>> _names = [];
     private readonly Dictionary<int, int> _classLevels = [];
     private readonly Dictionary<int, int> _triggerCauses = [];   // ability id -> what set it off
     private int _stamp;
@@ -175,6 +193,14 @@ public sealed class GameStateTracker(ICardDb cards)
     /// </summary>
     public IEnumerable<(int InstanceId, IReadOnlyList<StatSample> Samples)> StatHistory =>
         _stats.OrderBy(p => p.Key).Select(p => (p.Key, (IReadOnlyList<StatSample>)p.Value));
+
+    /// <summary>
+    /// Every name each object has answered to, in the order it took them on. Recorded
+    /// under whichever id Arena was using at the time, exactly like
+    /// <see cref="StatHistory"/> — callers fold on <see cref="Resolve"/>.
+    /// </summary>
+    public IEnumerable<(int InstanceId, IReadOnlyList<NameSample> Samples)> NameHistory =>
+        _names.OrderBy(p => p.Key).Select(p => (p.Key, (IReadOnlyList<NameSample>)p.Value));
 
     /// <param name="stamp">
     /// The sequence number the next event out of this message will carry, so statline
@@ -292,7 +318,18 @@ public sealed class GameStateTracker(ICardDb cards)
         var wasInPlay = InPlay(obj);
 
         if (Json.Int(go, "grpId") is { } grp) obj.GrpId = grp;
-        if (Json.Int(go, "name") is { } nm) obj.NameLocId = nm;
+        if (Json.Int(go, "name") is { } nm)
+        {
+            // Only transitions are logged. An object reports its name on every message
+            // it appears in, and storing all of them would bury the handful that mean
+            // something under thousands that repeat the previous one.
+            if (obj.NameLocId != nm)
+            {
+                if (!_names.TryGetValue(id, out var names)) _names[id] = names = [];
+                names.Add(new NameSample(_stamp, nm));
+            }
+            obj.NameLocId = nm;
+        }
         if (Json.Str(go, "type") is { } ty) obj.Type = ty;
         if (Json.Int(go, "ownerSeatId") is { } os) obj.OwnerSeat = os;
         if (Json.Int(go, "controllerSeatId") is { } cs) obj.ControllerSeat = cs;

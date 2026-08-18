@@ -1694,8 +1694,13 @@ public sealed class EventExtractor(ICardDb cards)
             if (seq < g.FirstSeq || seq >= g.EndSeq) continue;
             st.Events[seq] = st.Events[seq] with
             {
+                // As of this snapshot, not as of the end of the game. A permanent can
+                // be renamed mid-match — Witness Protection does it — and this pass runs
+                // once the whole log has been read, so reading the tracker's final state
+                // here named a creature after a card that was still in its owner's
+                // library at the time. 73 of 467 archived matches contain a rename.
                 Detail = string.Join(", ", creatures.Select(c =>
-                    tracker.NameOf(c.Id) + labels.Suffix(c.Id, seq) + c.Stats))
+                    labels.NameAt(c.Id, seq) + labels.Suffix(c.Id, seq) + c.Stats))
             };
         }
     }
@@ -1724,6 +1729,11 @@ public sealed class EventExtractor(ICardDb cards)
             var named = new List<string>();
             foreach (var target in targets)
             {
+                // Deliberately the tracker's name, not the as-of one. SawCard feeds the
+                // deck list's "not seen" markers, which match on the card a player
+                // registered — and a locname resolves a double-faced card to "A // B",
+                // which matches no deck entry. Only the rendered text below is
+                // as-of-cast; what the match is recorded as having seen is not.
                 var name = tracker.NameOf(target);
                 if (CardNames.IsPlaceholder(name)) continue;
                 st.SawCard(name);
