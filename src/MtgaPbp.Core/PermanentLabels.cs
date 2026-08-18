@@ -266,7 +266,11 @@ public sealed class PermanentLabels
     /// </param>
     public string Buff(int instanceId, int castStamp, int settledStamp)
     {
-        var name = _tracker.NameOf(instanceId);
+        // As of the cast, not the resolution: this line reports what was targeted, and
+        // a spell that renames what it enchants would otherwise report the name its own
+        // resolution produced — "targeting Legitimate Businessperson" for a creature
+        // that was a Phyrexian Germ at the moment the player pointed at it.
+        var name = NameAt(instanceId, castStamp);
         if (CardNames.IsPlaceholder(name)) return name;
 
         var id = _tracker.Resolve(instanceId);

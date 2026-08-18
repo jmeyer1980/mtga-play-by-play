@@ -1729,6 +1729,11 @@ public sealed class EventExtractor(ICardDb cards)
             var named = new List<string>();
             foreach (var target in targets)
             {
+                // Deliberately the tracker's name, not the as-of one. SawCard feeds the
+                // deck list's "not seen" markers, which match on the card a player
+                // registered — and a locname resolves a double-faced card to "A // B",
+                // which matches no deck entry. Only the rendered text below is
+                // as-of-cast; what the match is recorded as having seen is not.
                 var name = tracker.NameOf(target);
                 if (CardNames.IsPlaceholder(name)) continue;
                 st.SawCard(name);

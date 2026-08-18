@@ -440,4 +440,20 @@ public class PermanentLabelsTests
 
         Assert.That(attacks, Is.EqualTo(new[] { "You attack with Hare Apparent 3/3" }));
     }
+
+    [Test]
+    public void A_spell_names_the_target_it_was_pointed_at_not_what_it_became()
+    {
+        // The aura that renames is the aura being cast, so the target's new name is
+        // produced by this very resolution. Naming the cast after it would report the
+        // player targeting something that did not exist when they targeted it — the
+        // same backwards leak as the board lines, reached through FillTargets. #23.
+        var cast = Lines([
+                Turn(1, Creature(10, Rabbit, 1, 1)),
+                .. Aura(target: 10, before: 1, after: 5),
+                Turn(2, Renamed(10, Rabbit, Businessperson, 5, 5))
+            ]).Single(l => l.StartsWith("You cast", StringComparison.Ordinal));
+
+        Assert.That(cast, Is.EqualTo("You cast Ethereal Armor, targeting Rabbit (1/1 → 5/5)"));
+    }
 }
