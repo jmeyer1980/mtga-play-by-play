@@ -402,6 +402,67 @@ public class NarratorTests
     }
 
     /// <summary>
+    /// Issue #22's missing line, in the same cause-first shape. "Temporary" is the whole
+    /// of what the log supports about the duration: the annotation's code is in no table
+    /// Arena ships, and the two codes in the archive do not mean the same length, so
+    /// "until end of turn" would be a length nobody measured.
+    /// </summary>
+    [Test]
+    public void A_copy_names_the_permanent_the_card_and_who_did_it()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Copied) with
+            {
+                SourceInstanceId = 755,
+                SourceName = "Lembas",
+                TargetName = "Iron Man, Futurist Paragon",
+                CauseInstanceId = 712,
+                CauseName = "Shuri, Wakandan Inventor",
+                Detail = EventExtractor.TemporaryCopy
+            }), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo(
+            "Shuri, Wakandan Inventor makes Lembas a temporary copy of " +
+            "Iron Man, Futurist Paragon"));
+    }
+
+    [Test]
+    public void A_permanent_that_copies_something_itself_needs_no_cause()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Copied) with
+            {
+                SourceInstanceId = 440,
+                SourceName = "Oko, the Ringleader",
+                TargetName = "Hare Apparent",
+                Detail = EventExtractor.TemporaryCopy
+            }), Density.Beats);
+
+        Assert.That(lines.Single().Text,
+            Is.EqualTo("Oko, the Ringleader becomes a temporary copy of Hare Apparent"));
+    }
+
+    /// <summary>
+    /// A clone that arrived copying something never changed — "becomes" would send the
+    /// reader back looking for a moment that did not happen.
+    /// </summary>
+    [Test]
+    public void A_clone_enters_as_a_copy_rather_than_becoming_one()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Copied) with
+            {
+                SourceInstanceId = 474,
+                SourceName = "Spark Double",
+                TargetName = "Volo, Guide to Monsters",
+                Detail = EventExtractor.PermanentCopy
+            }), Density.Beats);
+
+        Assert.That(lines.Single().Text,
+            Is.EqualTo("Spark Double enters as a copy of Volo, Guide to Monsters"));
+    }
+
+    /// <summary>
     /// Issue #7's missing line: the grant's other end. "Loses", the verb counters and
     /// life already use, and no cause — a wear-off has no actor, and the grant line
     /// already said who put the ability there.

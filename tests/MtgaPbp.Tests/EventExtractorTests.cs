@@ -13,9 +13,33 @@ public class EventExtractorTests
             1000 => "Lightning Bolt",
             1001 => "Llanowar Elves",
             1002 => "Elspeth, Storm Slayer",
+
+            // The copy tests need a permanent whose locId name and grpId disagree,
+            // which is what a copy effect produces and nothing else here does.
+            2041 => "Lembas",
+            2042 => "Iron Man, Futurist Paragon",
+            2043 => "Shuri, Wakandan Inventor",
+            2044 => "Waxen Shapethief",
+            2045 => "Aurora Awakener",
+            2046 => "Taskmaster, Mercenary Mimic",
             _ => null
         };
-        public CardInfo? CardForGrpId(int grpId) => null;
+        /// <summary>
+        /// Only the grpIds the copy tests need. A copy line has to name the card a
+        /// permanent IS rather than what it answers to, so it is the one thing here
+        /// that reads this rather than the locId table above.
+        /// </summary>
+        public CardInfo? CardForGrpId(int grpId) => grpId switch
+        {
+            5 => new CardInfo(5, "Llanowar Elves", "2", "1", "1", false),
+            41 => new CardInfo(41, "Lembas", "1", null, null, false),
+            42 => new CardInfo(42, "Iron Man, Futurist Paragon", "1,2", "4", "4", false),
+            43 => new CardInfo(43, "Shuri, Wakandan Inventor", "2", "3", "2", false),
+            44 => new CardInfo(44, "Waxen Shapethief", "2", "3", "3", false),
+            45 => new CardInfo(45, "Taskmaster, Mercenary Mimic", "2", "1", "1", false),
+            46 => new CardInfo(46, "Toby, Beastie Befriender", "2", "2", "3", false),
+            _ => null
+        };
         public string? EnumName(string type, int value) => (type, value) switch
         {
             ("Phase", 3) => "Combat",
@@ -1568,5 +1592,171 @@ public class EventExtractorTests
 
         Assert.That(t.Events.Any(x => x.Kind == EventKind.AbilityExpired), Is.False,
             "the grant already ended, invisibly; the transform is not its wear-off");
+    }
+
+    // ---------- Issue 22: a permanent becomes a copy ----------
+
+    /// <summary>
+    /// A permanent mid-copy as Arena actually describes it: the object keeps its own
+    /// grpId and takes the copied card's <c>name</c> locId. 900 is a Lembas answering
+    /// to "Iron Man, Futurist Paragon"; 901 is the Shuri that did it.
+    /// </summary>
+    private static string CopyObjects(int name900 = 2042) => $$"""
+        { "instanceId": 900, "grpId": 41, "name": {{name900}},
+          "type": "GameObjectType_Card", "controllerSeatId": 1 },
+        { "instanceId": 901, "grpId": 43, "name": 2043,
+          "type": "GameObjectType_Card", "controllerSeatId": 1 }
+    """;
+
+    private static string CopyMessage(
+        string affector = "901", string affected = "[ 900 ]", int copyFrom = 42,
+        string duration = """, { "key": "Duration", "valueInt32": [ 1227 ] }""",
+        int annId = 70, int name900 = 2042) =>
+        Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ {{CopyObjects(name900)}} ],
+          "persistentAnnotations": [
+            { "id": {{annId}}, "affectorId": {{affector}}, "affectedIds": {{affected}},
+              "type": [ "AnnotationType_CopiedObject", "AnnotationType_LayeredEffect" ],
+              "details": [ { "key": "copyFromGrpid", "valueInt32": [ {{copyFrom}} ] }
+                           {{duration}} ] } ] }
+        """);
+
+    /// <summary>
+    /// The line the archive's clearest case is missing. Activating Shuri produced
+    /// "Iron Man, Futurist Paragon's ability triggers ×2" with one Iron Man on the
+    /// battlefield, and nothing said where the second came from.
+    /// </summary>
+    [Test]
+    public void A_permanent_that_becomes_a_copy_says_so()
+    {
+        var t = Run(RoomLine, MulliganLine, CopyMessage());
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Copied);
+        Assert.That(e.SourceName, Is.EqualTo("Lembas"));
+        Assert.That(e.SourceInstanceId, Is.EqualTo(900));
+        Assert.That(e.TargetName, Is.EqualTo("Iron Man, Futurist Paragon"));
+        Assert.That(e.CauseName, Is.EqualTo("Shuri, Wakandan Inventor"));
+    }
+
+    /// <summary>
+    /// The trap this whole line lives inside. By the time the annotation is read the
+    /// object already answers to the copied card's name, so naming it the usual way
+    /// produces "Iron Man, Futurist Paragon becomes a copy of Iron Man, Futurist
+    /// Paragon". The grpId is what still knows which card it is.
+    /// </summary>
+    [Test]
+    public void A_copy_is_named_by_the_card_it_is_not_by_the_name_it_answers_to()
+    {
+        var t = Run(RoomLine, MulliganLine, CopyMessage());
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Copied);
+        Assert.That(e.SourceName, Is.Not.EqualTo(e.TargetName),
+            "a permanent cannot be reported as becoming a copy of itself");
+    }
+
+    /// <summary>
+    /// The same trap one pass later. NamePermanents rewrites every event's names once
+    /// the whole log has been read, and it leaves a name alone only when it disagrees
+    /// with the tracker's — so a copy that WEARS OFF, leaving the permanent under its
+    /// own name at the end, is exactly the one it would overwrite. Three of the
+    /// archive's thirteen do that.
+    /// </summary>
+    [Test]
+    public void A_copy_that_wore_off_still_names_the_permanent_that_changed()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            CopyMessage(),
+            // The effect ends: the object goes back to answering to Lembas, which is
+            // what the tracker will report as its final name.
+            CopyMessage(annId: 71, name900: 2041));
+
+        var e = t.Events.First(x => x.Kind == EventKind.Copied);
+        Assert.That(e.SourceName, Is.EqualTo("Lembas"));
+    }
+
+    /// <summary>
+    /// Arena's 4294967293 affector — -3 read as unsigned — marks a clone arriving
+    /// already copying something under its own replacement effect. Nothing changed
+    /// about it, so "becomes" would send the reader looking for a moment that never
+    /// happened, and there is no permanent to blame it on.
+    /// </summary>
+    [Test]
+    public void A_clone_that_arrives_copying_something_enters_as_a_copy()
+    {
+        var t = Run(RoomLine, MulliganLine,
+            CopyMessage(affector: "4294967293", duration: ""));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Copied);
+        Assert.That(e.CauseName, Is.Null);
+        Assert.That(e.Detail, Is.EqualTo(EventExtractor.PermanentCopy));
+    }
+
+    [Test]
+    public void A_copy_with_a_duration_is_marked_temporary()
+    {
+        var t = Run(RoomLine, MulliganLine, CopyMessage());
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Copied).Detail,
+            Is.EqualTo(EventExtractor.TemporaryCopy));
+    }
+
+    /// <summary>
+    /// A permanent copying something under its own ability is one permanent, not two.
+    /// Oko, the Ringleader does it in the archive.
+    /// </summary>
+    [Test]
+    public void A_permanent_that_copies_something_itself_is_not_its_own_cause()
+    {
+        var t = Run(RoomLine, MulliganLine, CopyMessage(affector: "900"));
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Copied).CauseName, Is.Null);
+    }
+
+    /// <summary>
+    /// Taskmaster, Mercenary Mimic keeps its own name while copying — "except his name
+    /// is Taskmaster, Mercenary Mimic" — so its copies leave no trace in the name
+    /// channel at all. Watching for renames instead of reading this annotation would
+    /// drop them silently, which is why the annotation is the source of truth.
+    /// </summary>
+    [Test]
+    public void A_copy_that_never_moves_the_name_is_still_reported()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 900, "grpId": 45, "name": 2046,
+              "type": "GameObjectType_Card", "controllerSeatId": 1 } ],
+          "persistentAnnotations": [
+            { "id": 72, "affectorId": 900, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_CopiedObject" ],
+              "details": [ { "key": "copyFromGrpid", "valueInt32": [ 46 ] },
+                           { "key": "Duration", "valueInt32": [ 3128 ] } ] } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.Copied);
+        Assert.That(e.SourceName, Is.EqualTo("Taskmaster, Mercenary Mimic"));
+        Assert.That(e.TargetName, Is.EqualTo("Toby, Beastie Befriender"));
+    }
+
+    /// <summary>
+    /// A resync replays the whole persistent surface. The annotation is not a standing
+    /// fact — all 13 in the archive appear in exactly one message — so a second sighting
+    /// is a repeat, not a second copy.
+    /// </summary>
+    [Test]
+    public void The_same_copy_seen_twice_is_reported_once()
+    {
+        var t = Run(RoomLine, MulliganLine, CopyMessage(), CopyMessage());
+        Assert.That(t.Events.Count(x => x.Kind == EventKind.Copied), Is.EqualTo(1));
+    }
+
+    /// <summary>
+    /// A card the database cannot name is dropped rather than rendered as an id. The
+    /// same bargain the grant lines strike.
+    /// </summary>
+    [Test]
+    public void A_copy_of_a_card_the_database_cannot_name_is_dropped()
+    {
+        var t = Run(RoomLine, MulliganLine, CopyMessage(copyFrom: 9999));
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Copied), Is.False);
     }
 }

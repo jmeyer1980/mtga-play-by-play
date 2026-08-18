@@ -208,6 +208,7 @@ public sealed class EventExtractor(ICardDb cards)
         "AnnotationType_ClassLevel",        // the level a Class enchantment reached
         "AnnotationType_TriggeringObject",  // what set a triggered ability off
         "AnnotationType_AddAbility",        // an ability granted — first strike, flying
+        "AnnotationType_CopiedObject",      // a permanent became a copy of a card
     };
 
     /// <summary>
@@ -550,6 +551,7 @@ public sealed class EventExtractor(ICardDb cards)
                 tracker.Apply(gsm, st.Seq);
                 EmitCombat(tracker, ts, st);
                 EmitLevels(tracker, ts, st);
+                EmitCopies(tracker, ts, st);
 
                 // Inventory only — nothing here reaches the transcript. persistentAnnotations
                 // is a second annotation surface the extractor never used to look at, so
@@ -884,6 +886,71 @@ public sealed class EventExtractor(ICardDb cards)
             });
         }
     }
+
+    /// <summary>
+    /// Emits one line per permanent that became a copy of a card. Without it the page
+    /// shows an activation, then a consequence that cannot be accounted for: the archive's
+    /// clearest case activates Shuri, Wakandan Inventor and reports "Iron Man, Futurist
+    /// Paragon's ability triggers ×2" with exactly one Iron Man on the battlefield. Every
+    /// line is true and the play — a Lembas turned into a second Iron Man, dodging the
+    /// legend rule for a second animation trigger — is nowhere on the page.
+    /// </summary>
+    /// <remarks>
+    /// Two sentences, because there are two things happening under one annotation. Seven
+    /// of the archive's thirteen name an affector and carry a duration: an effect changed
+    /// a permanent already in play. The other six carry Arena's "nobody" sentinel and no
+    /// duration, and every one of them is a clone card — Waxen Shapethief, Spark Double,
+    /// Mockingbird, Chameleon — arriving already copying something under its own
+    /// replacement effect. "Becomes" would be wrong for those: nothing changed, it came
+    /// that way.
+    /// <para>
+    /// A copy is dropped when the card database can name neither end of it. The line
+    /// exists to say which permanent turned into which card, and half of that is not
+    /// worth a line — the same bargain the grant lines strike.
+    /// </para>
+    /// </remarks>
+    private void EmitCopies(GameStateTracker tracker, long ts, Emit st)
+    {
+        foreach (var copy in tracker.NewCopies)
+        {
+            if (copy.OwnName is not { } own || CardNames.IsPlaceholder(own)) continue;
+            if (cards.CardForGrpId(copy.CopyFromGrpId)?.Name is not { } copied) continue;
+            if (CardNames.IsPlaceholder(copied)) continue;
+
+            st.SawCard(own);
+            st.SawCard(copied);
+
+            var causeName = copy.Affector is { } cid ? tracker.NameOf(cid) : null;
+            st.SawCard(causeName);
+            if (CardNames.IsPlaceholder(causeName)) causeName = null;
+
+            st.Add(Base(tracker, ts, EventKind.Copied) with
+            {
+                ActorSeat = tracker.Get(copy.Affected)?.ControllerSeat is > 0 and var c
+                    ? c : tracker.ActiveSeat,
+                SourceInstanceId = copy.Affected,
+                SourceName = own,
+                TargetName = copied,
+                CauseInstanceId = causeName is null ? null : copy.Affector,
+                CauseName = causeName,
+
+                // The narrator's whole grammar switch. Carried as the detail rather than
+                // as a bool because GameEvent is flat and a second flag for one event
+                // kind would be a column every other kind leaves null.
+                Detail = copy.Temporary ? TemporaryCopy : PermanentCopy
+            });
+        }
+    }
+
+    /// <summary>
+    /// What <see cref="EventKind.Copied"/> puts in <c>Detail</c> to say which of the two
+    /// copy sentences applies. Constants rather than loose strings so the extractor and
+    /// the narrator cannot drift apart on a spelling.
+    /// </summary>
+    public const string TemporaryCopy = "temporary";
+
+    /// <inheritdoc cref="TemporaryCopy"/>
+    public const string PermanentCopy = "permanent";
 
     /// <summary>
     /// Emits the abilities a permanent was granted, one line per granter per permanent.
@@ -1666,7 +1733,16 @@ public sealed class EventExtractor(ICardDb cards)
             var before = e.Kind is EventKind.CounterChanged or EventKind.StatsModified
                                 or EventKind.StatsExpired;
 
-            var source = Named(tracker, labels, e.SourceInstanceId, e.SourceName, e.Seq, before);
+            // A copy line names the card the permanent IS, never what it answers to.
+            // Its source name was read off the grpId for exactly that reason, and the
+            // as-of name at this sequence is the copied card — so labelling it turns
+            // the line into "Hare Apparent becomes a temporary copy of Hare Apparent".
+            // Only the three copies that wear off inside the log hit this: the guard in
+            // Named leaves a name alone when it disagrees with the tracker's, and a
+            // copy still standing at the end of the game disagrees.
+            var source = e.Kind == EventKind.Copied
+                ? e.SourceName
+                : Named(tracker, labels, e.SourceInstanceId, e.SourceName, e.Seq, before);
             var target = Named(tracker, labels, e.TargetInstanceId, e.TargetName, e.Seq, before);
             var cause = Named(tracker, labels, e.CauseInstanceId, e.CauseName, e.Seq, before);
 
