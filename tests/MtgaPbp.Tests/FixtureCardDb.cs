@@ -75,7 +75,7 @@ public sealed class FixtureCardDb : ICardDb
     public CardInfo? CardForGrpId(int grpId) =>
         _data.Cards.TryGetValue(grpId, out var c)
             ? new CardInfo(grpId, c.Name, c.Types, c.Power, c.Toughness, c.IsToken)
-              { ColorIdentity = c.ColorIdentity }
+            { ColorIdentity = c.ColorIdentity }
             : null;
 
     public string? EnumName(string type, int value) =>

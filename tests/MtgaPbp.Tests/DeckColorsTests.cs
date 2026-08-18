@@ -28,7 +28,7 @@ public class DeckColorsTests
         public CardInfo? CardForGrpId(int grpId) =>
             _cards.TryGetValue(grpId, out var c)
                 ? new CardInfo(grpId, $"Card {grpId}", c.Types, null, null, false)
-                  { ColorIdentity = c.Identity }
+                { ColorIdentity = c.Identity }
                 : null;
 
         public string? NameForLocId(int locId) => null;
@@ -136,7 +136,7 @@ public class DeckColorsTests
     }
 
     /// <summary>
-    /// 101 of the 467 matches archived so far predate the deck being captured. Those
+    /// 103 of the 476 matches archived so far predate the deck being captured. Those
     /// have to stay tellable apart from a colourless deck: one is a fact, the other is
     /// the absence of one.
     /// </summary>
