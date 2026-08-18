@@ -81,6 +81,30 @@ public readonly record struct StatSample(int Stamp, int Power, int Toughness, bo
 /// </remarks>
 public readonly record struct NameSample(int Stamp, int NameLocId);
 
+/// <summary>
+/// One permanent becoming a copy of a card.
+/// </summary>
+/// <param name="Affected">The permanent that changed.</param>
+/// <param name="OwnName">
+/// Which card the permanent actually is, which is not what it answers to: by the time
+/// this is read the object has already taken the copied card's name. Carried rather
+/// than looked up downstream because every later reader would find the copied name and
+/// produce "Iron Man becomes a copy of Iron Man". Null when the card is unknown.
+/// </param>
+/// <param name="CopyFromGrpId">The card it is now a copy of.</param>
+/// <param name="Affector">
+/// The permanent whose effect did it, or null. Null covers two cases that read the same
+/// way from here: Arena's own 0xFFFFFFFD "nobody" sentinel, which marks a clone arriving
+/// under its own replacement effect, and a self-copy where the affector is the affected.
+/// </param>
+/// <param name="Temporary">
+/// Whether the annotation carried a <c>Duration</c>. Only whether, never how long: the
+/// two duration codes in the archive (1227 and 3128) are in no table Arena ships, and
+/// their meaning is legible only by reading the source cards' rules text.
+/// </param>
+public readonly record struct CopiedObject(
+    int Affected, string? OwnName, int CopyFromGrpId, int? Affector, bool Temporary);
+
 public sealed class GameStateTracker(ICardDb cards)
 {
     private readonly Dictionary<int, TrackedObject> _objects = [];
@@ -120,6 +144,8 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly List<(int Affected, int AbilityGrpId, int? Affector)> _newAbilityGrants = [];
     private readonly HashSet<(int AnnotationId, int Affected, int AbilityGrpId)> _grantsSeen = [];
     private readonly List<(int Affected, int AbilityGrpId)> _newAbilityExpiries = [];
+    private readonly List<CopiedObject> _newCopies = [];
+    private readonly HashSet<(int AnnotationId, int Affected)> _copiesSeen = [];
     // canonical id -> grpid -> grants still outstanding. A count for the same reason
     // TrackedObject.AbilityGrpIds is one: two standing grants of trample are two facts.
     private readonly Dictionary<int, Dictionary<int, int>> _grantedAbilities = [];
@@ -187,6 +213,18 @@ public sealed class GameStateTracker(ICardDb cards)
         _newAbilityExpiries;
 
     /// <summary>
+    /// Permanents that became a copy of something in the message just applied.
+    /// </summary>
+    /// <remarks>
+    /// Unlike every other report on this class, this one is not a transition read off a
+    /// standing fact. All 13 <c>AnnotationType_CopiedObject</c> annotations in the
+    /// archive appear in exactly one message each and are never re-sent, so this is an
+    /// event Arena states once. <see cref="_copiesSeen"/> is a cheap guard against a
+    /// mid-game resync replaying it, not the mechanism.
+    /// </remarks>
+    public IReadOnlyList<CopiedObject> NewCopies => _newCopies;
+
+    /// <summary>
     /// Every statline change seen, under the instance id Arena used at the time. Ids
     /// change when a card moves zones, so a consumer that wants one timeline per card
     /// has to fold these onto <see cref="Resolve"/>d ids itself.
@@ -214,6 +252,7 @@ public sealed class GameStateTracker(ICardDb cards)
         _newLevels.Clear();
         _newAbilityGrants.Clear();
         _newAbilityExpiries.Clear();
+        _newCopies.Clear();
 
         if (Json.Obj(gsm, "gameInfo") is { } gi && Json.Int(gi, "gameNumber") is { } gnv)
         {
@@ -271,6 +310,7 @@ public sealed class GameStateTracker(ICardDb cards)
             if (HasType(pa, "AnnotationType_ClassLevel")) ReadClassLevel(pa);
             if (HasType(pa, "AnnotationType_TriggeringObject")) ReadTriggerCause(pa);
             if (HasType(pa, "AnnotationType_AddAbility")) ReadAddAbility(pa);
+            if (HasType(pa, "AnnotationType_CopiedObject")) ReadCopiedObject(pa);
 
             if (!HasType(pa, "AnnotationType_TargetSpec")) continue;
             if (Json.Int(pa, "affectorId") is not { } src) continue;
@@ -513,6 +553,73 @@ public sealed class GameStateTracker(ICardDb cards)
             }
         }
     }
+
+    /// <summary>
+    /// Notes a permanent becoming a copy of a card — the fact behind an activation whose
+    /// consequence otherwise arrives unexplained.
+    /// </summary>
+    /// <remarks>
+    /// The affected permanent has to be named by its grpId, and this is the one place in
+    /// the codebase where that is true. <see cref="NameOf"/> deliberately prefers the
+    /// object's <c>name</c> locId — issue #23 exists because it did not — but a copy is
+    /// exactly the case where the two disagree on purpose: the locId is what the
+    /// permanent answers to now, the grpId is which card it actually is. Asking for the
+    /// name here produces "Iron Man, Futurist Paragon becomes a copy of Iron Man,
+    /// Futurist Paragon", because <c>gameObjects</c> is applied above this loop and the
+    /// rename has already landed.
+    /// <para>
+    /// Measured rather than assumed: across all 13 copies in the archive the affected
+    /// object reports exactly one grpId for the whole match, and it is always its own
+    /// card. Nothing about a copy effect touches it.
+    /// </para>
+    /// <para>
+    /// This is also why the annotation cannot be replaced by watching for renames.
+    /// Taskmaster, Mercenary Mimic keeps its own name by the card's own text — "except
+    /// his name is Taskmaster, Mercenary Mimic" — so its two copies in the archive leave
+    /// no trace in any channel but this one.
+    /// </para>
+    /// </remarks>
+    private void ReadCopiedObject(JsonElement pa)
+    {
+        if (Json.Int(pa, "id") is not { } annId) return;
+        if (DetailInt(pa, "copyFromGrpid") is not { } from) return;
+
+        // Present means "this wears off", and that is the whole of what it means here.
+        // The codes seen are 1227 and 3128; Arena's card database has no Duration enum
+        // to resolve either against, and their lengths are legible only by reading the
+        // source cards, so a length is not something this can honestly report.
+        var temporary = DetailInt(pa, "Duration") is not null;
+
+        // Six of the archive's thirteen carry Arena's "nobody did this" affector —
+        // 4294967293, which is -3 read as unsigned — and every one of them is a clone
+        // arriving already copying something under its own replacement effect, with no
+        // permanent to name as the cause. It needs no filter of its own: the value does
+        // not fit in an int32, so Json.Int already answers null for it. Seats 1 and 2
+        // are players, who do not copy things either.
+        var affector = Json.Int(pa, "affectorId") is > 2 and var af ? Resolve(af) : (int?)null;
+
+        foreach (var x in Json.Array(pa, "affectedIds"))
+        {
+            if (Json.Int(x) is not { } affected || affected <= 2) continue;
+            var canonical = Resolve(affected);
+            if (!_copiesSeen.Add((annId, canonical))) continue;
+
+            // A permanent copying something under its own ability is one permanent, not
+            // two. Dropped for the same reason a self-grant is: naming it as its own
+            // cause reads as though something else were involved.
+            var cause = affector == canonical ? null : affector;
+            _newCopies.Add(new CopiedObject(canonical, OwnCardName(canonical), from, cause, temporary));
+        }
+    }
+
+    /// <summary>
+    /// Which card a permanent actually is, ignoring any name it has been given. See
+    /// <see cref="ReadCopiedObject"/> for why a copy is the one thing that needs this.
+    /// </summary>
+    private string? OwnCardName(int id) =>
+        _objects.TryGetValue(id, out var o) && o.GrpId > 0
+            ? cards.CardForGrpId(o.GrpId)?.Name
+            : null;
 
     /// <summary>
     /// Notes what set a triggered ability off. <c>affectorId</c> is the ability instance

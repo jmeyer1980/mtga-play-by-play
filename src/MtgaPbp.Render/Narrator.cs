@@ -543,6 +543,23 @@ public static class Narrator
         EventKind.AbilityExpired when e.TargetName is not null && e.Detail is not null =>
             $"{e.TargetName} loses {e.Detail}",
 
+        // "enters as" rather than "becomes" for the clones that arrived copying
+        // something: nothing changed about them, they came that way, and "becomes"
+        // would invite the reader to look back for the moment it happened.
+        EventKind.Copied when e.SourceName is not null && e.TargetName is not null
+                              && e.Detail == EventExtractor.PermanentCopy =>
+            $"{e.SourceName} enters as a copy of {e.TargetName}",
+
+        // "a temporary copy" says the one thing about the duration the log supports.
+        // The annotation's Duration is a bare code with no table to resolve it against,
+        // so "until end of turn" would be a length nobody measured — and the two codes
+        // in the archive do not even mean the same length.
+        EventKind.Copied when e.SourceName is not null && e.TargetName is not null
+                              && e.Detail == EventExtractor.TemporaryCopy =>
+            e.CauseName is not null
+                ? $"{e.CauseName} makes {e.SourceName} a temporary copy of {e.TargetName}"
+                : $"{e.SourceName} becomes a temporary copy of {e.TargetName}",
+
         EventKind.Attack when e.SourceName is not null && e.TargetName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "attack", "attacks", t)} " +
             $"{e.TargetName} with {e.SourceName}",
