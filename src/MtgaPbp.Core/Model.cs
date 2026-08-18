@@ -3,7 +3,23 @@ using System.Text.Json;
 namespace MtgaPbp.Core;
 
 public sealed record CardInfo(
-    int GrpId, string Name, string Types, string? Power, string? Toughness, bool IsToken);
+    int GrpId, string Name, string Types, string? Power, string? Toughness, bool IsToken)
+{
+    /// <summary>
+    /// The card's colour identity, exactly as the database stores it: a comma-separated
+    /// list of colour ordinals, and the empty string for a colourless card.
+    /// <see cref="DeckColors"/> is what reads it.
+    /// </summary>
+    /// <remarks>
+    /// Null means nobody said, which is a different fact from colourless and has to
+    /// stay tellable apart from it — a deck of unknown colours renders a blank cell,
+    /// a colourless one renders "C". An init property rather than a seventh positional
+    /// parameter because the test doubles that construct this record have nothing to
+    /// say about colour, and a positional one would have made every one of them
+    /// declare an answer.
+    /// </remarks>
+    public string? ColorIdentity { get; init; }
+}
 
 /// <summary>Names <see cref="GameStateTracker.NameOf"/> falls back to when it cannot resolve.</summary>
 public static class CardNames

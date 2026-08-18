@@ -15,7 +15,15 @@ public sealed record MatchSummary(
     /// because the table needs it twice, abbreviated for the column and spelled out for
     /// a synthesiser, and a single string could only ever be one of those.
     /// </summary>
-    TimeSpan? Length = null);
+    TimeSpan? Length = null,
+
+    /// <summary>
+    /// The deck's colour identity as WUBRG letters, or null when the log carried no
+    /// deck. Already derived — see <see cref="MtgaPbp.Core.DeckColors"/> — because by
+    /// the time a transcript reaches this record the card ids it was worked out from
+    /// are gone.
+    /// </summary>
+    string? Colors = null);
 
 public static class IndexRenderer
 {
@@ -30,7 +38,8 @@ public static class IndexRenderer
         t.Incomplete,
         t.CardsSeen.OrderBy(c => c, StringComparer.Ordinal).ToList(),
         HasGaps: t.Gaps.Count > 0,
-        Length: TurnClock.MatchLength(t));
+        Length: TurnClock.MatchLength(t),
+        Colors: t.DeckColors);
 
     /// <summary>
     /// Rows are rendered statically rather than built by script: the page then works
@@ -66,7 +75,8 @@ public static class IndexRenderer
                 <table id="rows">
                 <caption class="vh">Archived matches, most recent first</caption>
                 <thead><tr><th scope="col">Keep</th><th scope="col">Date</th>
-                <th scope="col">Event</th><th scope="col">Opponent</th>
+                <th scope="col">Event</th><th scope="col">Deck</th>
+                <th scope="col">Opponent</th>
                 <th scope="col">Result</th><th scope="col">Turns</th>
                 <th scope="col">Length</th></tr></thead><tbody id="data">
                 """);
@@ -74,8 +84,12 @@ public static class IndexRenderer
             {
                 var cls = r.Result.StartsWith("Won", StringComparison.Ordinal) ? "win"
                     : r.Result.StartsWith("Drew", StringComparison.Ordinal) ? "draw" : "loss";
+                // Both forms of the colours go in, so "wu" and "blue" each find the same
+                // rows. A row with no deck contributes neither, which is what stops a
+                // search for "white" from turning up matches whose colours nobody knows.
                 var haystack = string.Join(' ',
-                    r.Opponent, r.EventName, r.Result, r.Date, string.Join(' ', r.Cards))
+                    r.Opponent, r.EventName, r.Result, r.Date, string.Join(' ', r.Cards),
+                    r.Colors ?? "", r.Colors is null ? "" : DeckColors.Spoken(r.Colors))
                     .ToLowerInvariant();
 
                 // The star is a toggle button, so its state rides on aria-pressed and
@@ -91,7 +105,8 @@ public static class IndexRenderer
                         aria-label="Keep the {E(r.Date)} match against {E(r.Opponent)}"
                         ><span aria-hidden="true">{(r.Favorite ? "★" : "☆")}</span></button></td>
                     <th scope="row"><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></th>
-                    <td>{E(r.EventName)}</td><td>{E(r.Opponent)}</td>
+                    <td>{E(r.EventName)}</td><td class="deck">{Colors(r)}</td>
+                    <td>{E(r.Opponent)}</td>
                     <td class="{cls}">{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
                     <td>{r.Turns}</td><td>{Length(r)}</td></tr>
                     """);
@@ -178,6 +193,28 @@ public static class IndexRenderer
         : $"""<span aria-hidden="true">{E(TurnClock.Format(d))}</span>""" +
           $"""<span class="vh">{E(TurnClock.Spoken(d))}</span>""";
 
+    /// <summary>
+    /// Which deck was played, said in the only way Arena leaves open: its colours.
+    /// Letters for the column, spelled out for a synthesiser, which would otherwise read
+    /// "WU" as a word and "G" as the letter alone next to an opponent's name.
+    /// <para>
+    /// An empty cell when the log carried no decklist. 103 of the 476 matches archived
+    /// so far predate the deck being captured at all, and anything printed there —
+    /// "colourless", a dash, a question mark — would be a claim about a deck nobody has
+    /// a record of.
+    /// </para>
+    /// <para>
+    /// Letters rather than coloured pips. The information has to survive CSS being off
+    /// and has to reach a screen reader, which means text either way; and five mana
+    /// colours cannot all clear 4.5:1 against both a white and a near-black backdrop
+    /// without a per-scheme table that would be one more thing to get wrong.
+    /// </para>
+    /// </summary>
+    private static string Colors(MatchSummary r) => r.Colors is not { Length: > 0 } c
+        ? ""
+        : $"""<span aria-hidden="true">{E(c)}</span>""" +
+          $"""<span class="vh">{E(DeckColors.Spoken(c))}</span>""";
+
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 
     // Contrast is measured against the two backdrops `color-scheme: light dark` can
@@ -220,6 +257,8 @@ public static class IndexRenderer
         #live{display:none;font-size:.8rem;opacity:.6}
         body.live #live{display:inline}
         code{font-family:ui-monospace,Menlo,Consolas,monospace}
+        .deck{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.08em;
+              white-space:nowrap}
         .build{margin-top:2rem;padding-top:.8rem;font-size:.8rem;opacity:.55;
                border-top:1px solid rgba(128,128,128,.35)}
         @media (prefers-color-scheme:dark){

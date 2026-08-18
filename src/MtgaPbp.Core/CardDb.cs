@@ -80,7 +80,7 @@ public sealed class CardDb : ICardDb, IDisposable
         using var cmd = _con.CreateCommand();
         // Card titles live at Formatted = 1; ORDER BY keeps this deterministic.
         cmd.CommandText = """
-            SELECT c.GrpId, l.Loc, c.Types, c.Power, c.Toughness, c.IsToken
+            SELECT c.GrpId, l.Loc, c.Types, c.Power, c.Toughness, c.IsToken, c.ColorIdentity
             FROM Cards c
             LEFT JOIN Localizations_enUS l ON l.LocId = c.TitleId
             WHERE c.GrpId = $id
@@ -98,7 +98,13 @@ public sealed class CardDb : ICardDb, IDisposable
                 r.IsDBNull(2) ? "" : r.GetString(2),
                 r.IsDBNull(3) ? null : r.GetString(3),
                 r.IsDBNull(4) ? null : r.GetString(4),
-                !r.IsDBNull(5) && r.GetBoolean(5));
+                !r.IsDBNull(5) && r.GetBoolean(5))
+            {
+                // Null only when the column itself is null, which no row in the shipped
+                // database is: colourless cards store the empty string, and the two
+                // have to stay apart. See CardInfo.ColorIdentity.
+                ColorIdentity = r.IsDBNull(6) ? null : r.GetString(6)
+            };
         }
         _cardCache[grpId] = info;
         return info;
