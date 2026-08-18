@@ -63,7 +63,12 @@ public static class DeckColors
         IReadOnlyList<int> deckGrpIds, IReadOnlyList<int> commanderGrpIds, ICardDb cards)
     {
         var commanded = commanderGrpIds.Count > 0;
-        var source = commanded ? commanderGrpIds : deckGrpIds;
+
+        // Distinct, unlike DeckList.Build, which folds by name precisely so it can
+        // count copies. A colour is a property of the card and not of the deck's
+        // arrangement, so four Plains say exactly what one Plains says — and the
+        // fourth copy would otherwise re-split a string to reach the same answer.
+        var source = (commanded ? commanderGrpIds : deckGrpIds).Distinct();
 
         var found = new SortedSet<int>();
         var derivable = false;
