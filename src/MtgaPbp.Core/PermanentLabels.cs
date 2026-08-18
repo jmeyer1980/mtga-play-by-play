@@ -70,6 +70,9 @@ public sealed class PermanentLabels
     /// <summary>Statline timelines, folded onto one id per physical card.</summary>
     private readonly Dictionary<int, IReadOnlyList<StatSample>> _history = [];
 
+    /// <summary>Name timelines, folded onto one id per physical card.</summary>
+    private readonly Dictionary<int, IReadOnlyList<NameSample>> _names = [];
+
     /// <summary>The permanents that earned a distinguishing letter, and which one.</summary>
     private readonly Dictionary<int, string> _letters = [];
 
@@ -106,6 +109,18 @@ public sealed class PermanentLabels
         }
         foreach (var (id, list) in merged)
             labels._history[id] = list.OrderBy(s => s.Stamp).ToList();
+
+        // Names fold the same way and for the same reason: a rename and an id change can
+        // both happen to one card, and two half timelines would answer neither question.
+        var mergedNames = new Dictionary<int, List<NameSample>>();
+        foreach (var (id, samples) in tracker.NameHistory)
+        {
+            var canonical = tracker.Resolve(id);
+            if (!mergedNames.TryGetValue(canonical, out var list)) mergedNames[canonical] = list = [];
+            list.AddRange(samples);
+        }
+        foreach (var (id, list) in mergedNames)
+            labels._names[id] = list.OrderBy(s => s.Stamp).ToList();
 
         var byName = new Dictionary<string, List<int>>(StringComparer.Ordinal);
         foreach (var id in labels._history.Keys)
@@ -191,13 +206,39 @@ public sealed class PermanentLabels
     }
 
     /// <summary>
+    /// What this permanent was called at <paramref name="stamp"/>, rather than what it
+    /// ended the game called.
+    /// </summary>
+    /// <remarks>
+    /// Only a recorded transition that still resolves to a real name is trusted here.
+    /// Everything else defers to <see cref="GameStateTracker.NameOf(int)"/>, whose chain
+    /// of card, source and parent links is what names emblems, abilities and tokens that
+    /// localize to nothing — none of which this is trying to second-guess.
+    /// </remarks>
+    public string NameAt(int instanceId, int stamp)
+    {
+        var id = _tracker.Resolve(instanceId);
+        if (_names.TryGetValue(id, out var samples))
+        {
+            int? loc = null;
+            foreach (var sample in samples)
+            {
+                if (sample.Stamp > stamp) break;
+                loc = sample.NameLocId;
+            }
+            if (loc is { } at && _cards.NameForLocId(at) is { Length: > 0 } named) return named;
+        }
+        return _tracker.NameOf(instanceId);
+    }
+
+    /// <summary>
     /// What to call this permanent on a line emitted at <paramref name="stamp"/>:
     /// "Rabbit", "Rabbit 5/5" or "Rabbit A 6/6", whichever is the least the reader
     /// needs.
     /// </summary>
     public string Label(int instanceId, int stamp)
     {
-        var name = _tracker.NameOf(instanceId);
+        var name = NameAt(instanceId, stamp);
         if (CardNames.IsPlaceholder(name)) return name;
 
         var statline = Statline(instanceId, stamp);
@@ -262,7 +303,7 @@ public sealed class PermanentLabels
     /// </remarks>
     public string LabelBefore(int instanceId, int stamp)
     {
-        var name = _tracker.NameOf(instanceId);
+        var name = NameAt(instanceId, stamp);
         if (CardNames.IsPlaceholder(name)) return name;
 
         var id = _tracker.Resolve(instanceId);
