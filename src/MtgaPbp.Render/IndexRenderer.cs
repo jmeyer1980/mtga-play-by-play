@@ -145,11 +145,11 @@ public static class IndexRenderer
                     <td><button class="copyid" type="button" data-id="{E(r.MatchId)}"
                         aria-label="Copy the game ID of the {E(r.Date)} match against {E(r.Opponent)}"
                         ><span aria-hidden="true">⧉</span></button></td>
-                    <td{Key(r.EventName)}>{E(r.EventName)}</td><td class="deck"{Key(r.Colors)}>{Colors(r)}</td>
+                    <td{Key(r.EventName)}>{E(r.EventName)}</td>{Cell(Colors(r), $" class=\"deck\"{Key(r.Colors)}")}
                     <td{Key(r.Opponent)}>{E(r.Opponent)}</td>
                     <td class="{cls}"{Key(r.Result)}>{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
                     <td{Key(r.Turns)}>{r.Turns}</td>
-                    <td{Key(r.Length?.TotalSeconds)}>{Length(r)}</td></tr>
+                    {Cell(Length(r), Key(r.Length?.TotalSeconds))}</tr>
                     """);
             }
             body.Append("</tbody></table>");
@@ -229,10 +229,9 @@ public static class IndexRenderer
     /// column headed "Length" it would be read as one.
     /// </para>
     /// </summary>
-    private static string Length(MatchSummary r) => r.Length is not { } d
-        ? ""
-        : $"""<span aria-hidden="true">{E(TurnClock.Format(d))}</span>""" +
-          $"""<span class="vh">{E(TurnClock.Spoken(d))}</span>""";
+    private static Said Length(MatchSummary r) => r.Length is not { } d
+        ? Said.Nothing
+        : new Said(E(TurnClock.Format(d)), TurnClock.Spoken(d));
 
     /// <summary>
     /// Which deck was played, said in the only way Arena leaves open: its colours.
@@ -307,10 +306,9 @@ public static class IndexRenderer
         _ => $" data-key=\"{E(value.ToString() ?? "")}\""
     };
 
-    private static string Colors(MatchSummary r) => r.Colors is not { Length: > 0 } c
-        ? ""
-        : $"""<span aria-hidden="true">{E(c)}</span>""" +
-          $"""<span class="vh">{E(DeckColors.Spoken(c))}</span>""";
+    private static Said Colors(MatchSummary r) => r.Colors is not { Length: > 0 } c
+        ? Said.Nothing
+        : new Said(E(c), DeckColors.Spoken(c));
 
     /// <summary>
     /// The record, above the table it summarises.
@@ -343,8 +341,8 @@ public static class IndexRenderer
                 <table class="stats"><caption class="vh">Overall record</caption>
                 <thead><tr><th scope="col">Played</th><th scope="col">Record</th>
                 <th scope="col">Win rate</th><th scope="col">Best streak</th></tr></thead>
-                <tbody><tr><td>{s.Overall.Played}</td><td>{Record(s.Overall)}</td>
-                <td>{Rate(s.Overall)}</td><td>{s.LongestWinStreak}</td></tr></tbody></table>
+                <tbody><tr><td>{s.Overall.Played}</td>{Cell(Record(s.Overall))}
+                {Cell(Rate(s.Overall))}<td>{s.LongestWinStreak}</td></tr></tbody></table>
                 """);
         }
         else
@@ -472,14 +470,14 @@ public static class IndexRenderer
 
             sb.Append($"""
                 <tr><th scope="row"{Key(r.Name)}>{name}</th><td{Key(r.Played)}>{r.Played}</td>
-                <td{Key(RecordKey(r))}>{Record(r)}</td><td{Key(r.WinRate)}>{Rate(r)}</td>
+                {Cell(Record(r), Key(RecordKey(r)))}{Cell(Rate(r), Key(r.WinRate))}
                 """);
 
             if (decks)
                 sb.Append($"""
-                    <td{Key(r.TurnsInWins)}>{r.TurnsInWins?.ToString(CultureInfo.InvariantCulture) ?? Missing("no wins yet")}</td>
-                    <td{Key(r.TurnsInLosses)}>{r.TurnsInLosses?.ToString(CultureInfo.InvariantCulture) ?? Missing("no losses yet")}</td>
-                    <td{Key(r.WithOpening == 0 ? null : (double?)r.OnThePlay / r.WithOpening)}>{Play(r)}</td>
+                    {Cell(Turns(r.TurnsInWins, "no wins yet"), Key(r.TurnsInWins))}
+                    {Cell(Turns(r.TurnsInLosses, "no losses yet"), Key(r.TurnsInLosses))}
+                    {Cell(Play(r), Key(r.WithOpening == 0 ? null : (double?)r.OnThePlay / r.WithOpening))}
                     """);
 
             sb.Append("</tr>");
@@ -525,37 +523,33 @@ public static class IndexRenderer
     /// </remarks>
     private static int RecordKey(StatRow r) => r.Won - r.Lost;
 
-    private static string Record(StatRow r)
-    {
-        var seen = r.Drawn == 0 ? $"{r.Won}-{r.Lost}" : $"{r.Won}-{r.Lost}-{r.Drawn}";
-        var said = r.Drawn == 0
+    private static Said Record(StatRow r) => new(
+        r.Drawn == 0 ? $"{r.Won}-{r.Lost}" : $"{r.Won}-{r.Lost}-{r.Drawn}",
+        r.Drawn == 0
             ? $"{r.Won} won, {r.Lost} lost"
-            : $"{r.Won} won, {r.Lost} lost, {r.Drawn} drawn";
-
-        return $"""<span aria-hidden="true">{seen}</span><span class="vh">{said}</span>""";
-    }
+            : $"{r.Won} won, {r.Lost} lost, {r.Drawn} drawn");
 
     /// <summary>
     /// The win rate, rounded — but never rounded past a match that says otherwise. A
     /// 199–1 record reaches 99.5% and would print "100%" on the same row as the loss
     /// it does not include.
     /// </summary>
-    private static string Rate(StatRow r)
+    private static Said Rate(StatRow r)
     {
         if (r.WinRate is not { } rate) return Missing("no matches counted");
-        if (rate < 1 && rate * 100 >= 99.5) return Twin("&gt;99%", "over 99 percent");
-        if (rate > 0 && rate * 100 < 0.5) return Twin("&lt;1%", "under 1 percent");
-        return $"{(rate * 100).ToString("0", CultureInfo.InvariantCulture)}%";
+        if (rate < 1 && rate * 100 >= 99.5) return new Said("&gt;99%", "over 99 percent");
+        if (rate > 0 && rate * 100 < 0.5) return new Said("&lt;1%", "under 1 percent");
+        return Said.Plain($"{(rate * 100).ToString("0", CultureInfo.InvariantCulture)}%");
     }
 
     /// <summary>
     /// The on-the-play split over its own denominator, because the log did not record an
     /// opening for the older half of the archive and those are not losses of the die roll.
     /// </summary>
-    private static string Play(StatRow r) =>
+    private static Said Play(StatRow r) =>
         r.WithOpening == 0
             ? Missing("not recorded")
-            : $"{r.OnThePlay} of {r.WithOpening}";
+            : Said.Plain($"{r.OnThePlay} of {r.WithOpening}");
 
     /// <summary>
     /// A visible mark and what it actually means, because the mark alone means two
@@ -565,8 +559,65 @@ public static class IndexRenderer
     /// the deck-colour column refuses to print one precisely because it would be a
     /// claim about something nobody has a record of.
     /// </summary>
-    private static string Missing(string why) => Twin("—", why);
+    private static Said Missing(string why) => new("—", why);
 
+    /// <summary>
+    /// What a cell shows and what it is read as, when a notation and a sentence are
+    /// two forms of the same fact.
+    /// </summary>
+    /// <param name="Seen">Markup, already escaped by whoever built it.</param>
+    /// <param name="Spoken">Plain text, escaped here. Empty when the two agree.</param>
+    private readonly record struct Said(string Seen, string Spoken)
+    {
+        /// <summary>An empty cell — nothing to show and nothing to say about it.</summary>
+        public static readonly Said Nothing = new("", "");
+
+        /// <summary>A cell that reads exactly as it looks.</summary>
+        public static Said Plain(string seen) => new(seen, "");
+    }
+
+    /// <summary>
+    /// A table cell that shows one thing and is read as another.
+    /// </summary>
+    /// <remarks>
+    /// The spoken form is the cell's own accessible name rather than a clipped twin
+    /// beside it. Both forms reach a screen reader either way; the difference is what
+    /// else they reach. A twin is a real text node, so the browser's find-in-page
+    /// matched it and then had nothing on screen to highlight — searching this page for
+    /// "minutes" reported hundreds of hits against a column that says "11m 12s" (#34).
+    /// It also joined the visible text when the cell was copied or read
+    /// programmatically: a length cell's text content was literally "11m 12s11 minutes
+    /// 12 seconds".
+    /// <para>
+    /// A name and not an <c>aria-label</c> on the span inside, which is the trap the
+    /// issue warned about: a bare span has the generic role and naming a generic role
+    /// is not guaranteed to be honoured. A table cell is different — <c>cell</c> and
+    /// <c>rowheader</c> support naming from the author — so this is only done where the
+    /// twin is the whole of a cell. Where it is a fragment inside a sentence, as on
+    /// every game page and in the incomplete and gap marks below, the twin stays.
+    /// </para>
+    /// <para>
+    /// Verified against the browser's accessibility tree, per the issue's own trap:
+    /// each converted cell is exposed under its spoken name, the phrase that lived only
+    /// in the twin is no longer findable, and the visible text still is. That is a
+    /// browser's tree and not a screen-reader pass, which is issue #1.
+    /// </para>
+    /// </remarks>
+    private static string Cell(Said said, string attributes = "") =>
+        said.Spoken.Length == 0
+            ? $"<td{attributes}>{said.Seen}</td>"
+            : $"<td{attributes} aria-label=\"{E(said.Spoken)}\">{said.Seen}</td>";
+
+    /// <summary>A median turn count, or the mark that says there is none yet.</summary>
+    private static Said Turns(int? turns, string why) => turns is { } n
+        ? Said.Plain(n.ToString(CultureInfo.InvariantCulture))
+        : Missing(why);
+
+    /// <summary>
+    /// The suffix form, for a mark that sits inside a cell rather than being one. These
+    /// keep the clipped twin because there is no element here whose name could carry
+    /// them — the cell already says "Won 2-0".
+    /// </summary>
     private static string Twin(string seen, string said) =>
         $"""<span aria-hidden="true">{seen}</span><span class="vh">{said}</span>""";
 
