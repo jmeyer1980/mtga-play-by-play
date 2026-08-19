@@ -1,3 +1,4 @@
+using System.Globalization;
 using MtgaPbp.Core;
 using MtgaPbp.Render;
 using NUnit.Framework;
@@ -151,5 +152,67 @@ public class IndexStatsTests
     {
         Assert.That(IndexStats.From([Match("Unfinished", incomplete: true)]).Any, Is.False);
         Assert.That(IndexStats.From([]).Any, Is.False);
+    }
+
+    // ---------- Issue 40: what a record sorts by ----------
+
+    /// <summary>
+    /// Two records with the same wins and different losses do not sort equal.
+    /// </summary>
+    /// <remarks>
+    /// Caught by Copilot on PR #45. The column was keyed on wins alone, so 10-0 and
+    /// 10-10 compared the same and a column labelled "Record" sat unsorted against
+    /// itself. It reads as won-lost, so it sorts on the balance.
+    /// </remarks>
+    [Test]
+    public void A_record_sorts_on_its_balance_and_not_on_its_wins_alone()
+    {
+        var html = IndexRenderer.Render([
+            .. Enumerable.Range(0, 10).Select(_ => Match("Won 2-0", format: "Spotless")),
+            .. Enumerable.Range(0, 10).Select(_ => Match("Won 2-0", format: "Even")),
+            .. Enumerable.Range(0, 10).Select(_ => Match("Lost 0-2", format: "Even"))
+        ]);
+
+        var keys = Markup.Parse(html).Descendants("table")
+            .Single(t => t.Attribute("id")?.Value == "by-format")
+            .Descendants("tbody").Single().Descendants("tr")
+            .ToDictionary(tr => tr.Descendants("th").Single().Value.Trim(),
+                          tr => tr.Descendants("td").ToList()[1].Attribute("data-key")?.Value);
+
+        // Ten wins apiece; one has ten losses under it and the other none.
+        Assert.That(keys["Spotless"], Is.EqualTo("10"));
+        Assert.That(keys["Even"], Is.EqualTo("0"));
+        Assert.That(keys["Spotless"], Is.Not.EqualTo(keys["Even"]));
+    }
+
+    /// <summary>
+    /// And it is not a second copy of the win rate, which sits in the next column along.
+    /// A rate cannot tell 1-0 from 100-0; a balance cannot tell 6-4 from 60-40. Both
+    /// columns earn their place by disagreeing.
+    /// </summary>
+    [Test]
+    public void A_record_and_a_win_rate_do_not_order_decks_the_same_way()
+    {
+        var html = IndexRenderer.Render([
+            Match("Won 2-0", format: "Tiny"),
+            .. Enumerable.Range(0, 6).Select(_ => Match("Won 2-0", format: "Busy")),
+            .. Enumerable.Range(0, 4).Select(_ => Match("Lost 0-2", format: "Busy"))
+        ]);
+
+        var rows = Markup.Parse(html).Descendants("table")
+            .Single(t => t.Attribute("id")?.Value == "by-format")
+            .Descendants("tbody").Single().Descendants("tr")
+            .ToDictionary(tr => tr.Descendants("th").Single().Value.Trim(),
+                          tr => tr.Descendants("td").ToList());
+
+        double Key(string name, int column) =>
+            double.Parse(rows[name][column].Attribute("data-key")!.Value,
+                         CultureInfo.InvariantCulture);
+
+        // Tiny is 1-0: a perfect rate on one match. Busy is 6-4: a worse rate, a better
+        // balance. The two columns put them in opposite orders, which is the point.
+        // The name is a th, so the tds run Played, Record, Win rate.
+        Assert.That(Key("Tiny", 1), Is.LessThan(Key("Busy", 1)), "balance");
+        Assert.That(Key("Tiny", 2), Is.GreaterThan(Key("Busy", 2)), "win rate");
     }
 }
