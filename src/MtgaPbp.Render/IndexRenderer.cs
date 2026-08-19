@@ -472,7 +472,7 @@ public static class IndexRenderer
 
             sb.Append($"""
                 <tr><th scope="row"{Key(r.Name)}>{name}</th><td{Key(r.Played)}>{r.Played}</td>
-                <td{Key(r.Won)}>{Record(r)}</td><td{Key(r.WinRate)}>{Rate(r)}</td>
+                <td{Key(RecordKey(r))}>{Record(r)}</td><td{Key(r.WinRate)}>{Rate(r)}</td>
                 """);
 
             if (decks)
@@ -502,6 +502,29 @@ public static class IndexRenderer
     /// separator. Two whole strings side by side have neither problem, and it is the
     /// shape the rest of the page already uses.
     /// </remarks>
+    /// <summary>
+    /// What a record sorts by: the balance, wins less losses.
+    /// </summary>
+    /// <remarks>
+    /// Wins alone will not do, which is what this column was keyed on first. It reads
+    /// as won-lost, and 10-0 against 10-10 are not the same record at all — but they
+    /// carry the same wins, so they compared equal and a column labelled "Record" sat
+    /// unsorted against itself.
+    /// <para>
+    /// The balance and not the win rate, because the rate already has its own column
+    /// beside this one and a second copy of it would tell a reader nothing new. The
+    /// balance says a different thing: 1-0 and 100-0 share a rate and are a world
+    /// apart, and the reverse — 6-4 and 60-40 — is exactly the pair a rate flattens.
+    /// </para>
+    /// <para>
+    /// A draw moves it by nothing, because a draw is neither a win nor a loss. Two
+    /// records alike but for their draws do tie here, and the sort is stable, so they
+    /// keep the order they had; the column that tells them apart is Played, one to the
+    /// left.
+    /// </para>
+    /// </remarks>
+    private static int RecordKey(StatRow r) => r.Won - r.Lost;
+
     private static string Record(StatRow r)
     {
         var seen = r.Drawn == 0 ? $"{r.Won}-{r.Lost}" : $"{r.Won}-{r.Lost}-{r.Drawn}";
