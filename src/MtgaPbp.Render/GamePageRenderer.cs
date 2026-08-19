@@ -223,6 +223,16 @@ public static class GamePageRenderer
     /// destination is named in the accessible name, because "Older" alone tells a screen
     /// reader user nothing about where they would land.
     /// </para>
+    /// <para>
+    /// The direction is the visible word and the destination follows it in the hidden
+    /// half, so the two halves are one sentence read from the same starting word:
+    /// "Older" to the eye, "Older match, 2026-08-12 10:00" to a synthesiser. Naming the
+    /// neighbour's date alone, as this did until issue #27, left the reader who most
+    /// needs the word as the only one who never got it — an arrow cannot say which way
+    /// through an archive it points when the index is sorted newest first. It also means
+    /// that with styling off, where the hidden half stops hiding, the two run together
+    /// into that same sentence rather than into a stutter.
+    /// </para>
     /// </remarks>
     private static string Nav(Neighbours? n)
     {
@@ -231,20 +241,28 @@ public static class GamePageRenderer
         var links = new List<string>();
         if (n.NewerId is { } newer)
             links.Add($"""
-                <a href="{E(newer)}.html"><span aria-hidden="true">&#8592;</span><span
-                class="vh">Newer match, </span>{E(n.NewerWhen ?? "newer")}</a>
+                <a href="{E(newer)}.html"><span aria-hidden="true">&#8592;</span>Newer<span
+                class="vh"> match{When(n.NewerWhen)}</span></a>
                 """);
 
         links.Add("""<a href="#top" class="top">Top</a>""");
 
         if (n.OlderId is { } older)
             links.Add($"""
-                <a href="{E(older)}.html">{E(n.OlderWhen ?? "older")}<span
-                class="vh">, older match</span><span aria-hidden="true">&#8594;</span></a>
+                <a href="{E(older)}.html">Older<span
+                class="vh"> match{When(n.OlderWhen)}</span><span aria-hidden="true">&#8594;</span></a>
                 """);
 
         return $"""<nav class="pager" aria-label="Match navigation">{string.Join("", links)}</nav>""";
     }
+
+    /// <summary>
+    /// The neighbour's date, ready to follow "match" in the accessible name, or nothing
+    /// when that neighbour has no timestamp — "Newer match" is a whole phrase, and it is
+    /// what the fallback has to leave behind rather than a dangling comma.
+    /// </summary>
+    private static string When(string? when) =>
+        string.IsNullOrWhiteSpace(when) ? "" : $", {E(when)}";
 
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 
