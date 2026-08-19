@@ -75,6 +75,7 @@ public static class IndexRenderer
                 <table id="rows">
                 <caption class="vh">Archived matches, most recent first</caption>
                 <thead><tr><th scope="col">Keep</th><th scope="col">Date</th>
+                <th scope="col">ID</th>
                 <th scope="col">Event</th><th scope="col">Deck</th>
                 <th scope="col">Opponent</th>
                 <th scope="col">Result</th><th scope="col">Turns</th>
@@ -105,6 +106,9 @@ public static class IndexRenderer
                         aria-label="Keep the {E(r.Date)} match against {E(r.Opponent)}"
                         ><span aria-hidden="true">{(r.Favorite ? "★" : "☆")}</span></button></td>
                     <th scope="row"><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></th>
+                    <td><button class="copyid" type="button" data-id="{E(r.MatchId)}"
+                        aria-label="Copy the game ID of the {E(r.Date)} match against {E(r.Opponent)}"
+                        ><span aria-hidden="true">⧉</span></button></td>
                     <td>{E(r.EventName)}</td><td class="deck">{Colors(r)}</td>
                     <td>{E(r.Opponent)}</td>
                     <td class="{cls}">{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
@@ -257,6 +261,13 @@ public static class IndexRenderer
         .star.on{color:#8a6100}
         .star:enabled{cursor:pointer}
         .star:enabled:hover{background:rgba(128,128,128,.2)}
+        /* Sized like the star, and never disabled the way the star is: keeping a match
+           needs the local server, copying an id needs nothing. */
+        .copyid{background:none;border:0;cursor:pointer;font-size:1rem;padding:0;
+                color:inherit;opacity:.6;display:inline-flex;align-items:center;
+                justify-content:center;min-width:1.75rem;min-height:1.75rem;
+                border-radius:.3rem}
+        .copyid:hover{background:rgba(128,128,128,.2);opacity:1}
         :focus-visible{outline:2px solid currentColor;outline-offset:2px}
         #live{display:none;font-size:.8rem;opacity:.6}
         body.live #live{display:inline}
@@ -274,6 +285,7 @@ public static class IndexRenderer
           .sub,.loss,.draw,.empty,.note,th,#live,.build{opacity:1}
           .star{color:ButtonText}
           .star.on{color:Highlight}
+          .copyid{color:ButtonText;opacity:1}
         }
         """;
 
@@ -322,6 +334,40 @@ public static class IndexRenderer
           q.addEventListener('input', apply);
           apply();
 
+          // navigator.clipboard needs a secure context and file:// does not qualify in
+          // every browser, so fall back rather than fail silently. The twin of this
+          // lives in the game page's script.
+          function legacyCopy(text, button) {
+            var area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.style.position = 'fixed';
+            area.style.top = '-1000px';
+            document.body.appendChild(area);
+            area.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            document.body.removeChild(area);
+            button.focus();
+            announce(ok ? 'Game ID copied.' : 'Copy failed.');
+          }
+
+          // Delegated, because there is one of these per row and an archive runs to
+          // hundreds. Wired here rather than below the served-only line: copying needs
+          // no server, and the report is meant to work opened straight off disk.
+          tbody.addEventListener('click', function (e) {
+            var button = e.target.closest ? e.target.closest('.copyid') : null;
+            if (!button) return;
+            var id = button.dataset.id || '';
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(id).then(
+                function () { announce('Game ID copied.'); },
+                function () { legacyCopy(id, button); });
+            } else {
+              legacyCopy(id, button);
+            }
+          });
+
           // Everything below only works when the page is served by `mtga-pbp watch`.
           // Opened from disk it stays a plain static report, which is the point.
           if (location.protocol.indexOf('http') !== 0) return;
@@ -356,8 +402,11 @@ public static class IndexRenderer
           // and scroll position survive what would otherwise be a reload.
           function refresh() {
             var active = document.activeElement;
-            var focused = active && active.classList && active.classList.contains('star')
-              ? active.dataset.id : null;
+            var kind = active && active.classList
+              ? (active.classList.contains('star') ? 'star'
+                : active.classList.contains('copyid') ? 'copyid' : null)
+              : null;
+            var focused = kind ? active.dataset.id : null;
 
             fetch('/', { cache: 'no-store' })
               .then(function (r) { return r.text(); })
@@ -372,7 +421,8 @@ public static class IndexRenderer
                 // Replacing the rows destroys the node that had focus, which would
                 // drop a keyboard or screen-reader user back to the top of the page.
                 if (focused) {
-                  var again = tbody.querySelector('.star[data-id="' + focused + '"]');
+                  var again = tbody.querySelector(
+                    '.' + kind + '[data-id="' + focused + '"]');
                   if (again) again.focus();
                 }
                 announce('Match list updated.');

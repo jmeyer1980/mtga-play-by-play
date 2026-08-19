@@ -692,7 +692,7 @@ public class RendererTests
         var root = Markup.Parse(IndexHtml());
         var columns = root.Descendants("thead").Single().Descendants("th").ToList();
 
-        Assert.That(columns, Has.Count.EqualTo(8));
+        Assert.That(columns, Has.Count.EqualTo(9));
         foreach (var th in columns)
         {
             Assert.That(th.Attribute("scope")?.Value, Is.EqualTo("col"));
@@ -706,6 +706,116 @@ public class RendererTests
         var rowHeader = root.Descendants("tbody").Single().Descendants("th").Single();
         Assert.That(rowHeader.Attribute("scope")?.Value, Is.EqualTo("row"));
         Assert.That(rowHeader.Descendants("a").Single().Value, Does.StartWith("2026-"));
+    }
+
+    // ---------- Issue 21: copying the game id ----------
+
+    /// <summary>
+    /// The id is what <c>mtga-pbp why &lt;matchId&gt;</c> takes and what identifies a
+    /// match in a bug report, and it is written nowhere on the page — it is the file
+    /// name. Both views get a control that copies it.
+    /// </summary>
+    [Test]
+    public void Both_views_offer_the_game_id_and_carry_it_in_the_markup()
+    {
+        var button = Markup.Parse(GamePageRenderer.Render(Sample())).Descendants("button")
+            .Single(b => b.Attribute("id")?.Value == "copy-id");
+        Assert.That(button.Attribute("data-id")?.Value, Is.EqualTo("abc-123"));
+        Assert.That(button.Value.Trim(), Is.EqualTo("Copy game ID"));
+
+        var row = Markup.Parse(IndexHtml()).Descendants("tbody").Single()
+            .Descendants("button").Single(b => b.Attribute("class")?.Value == "copyid");
+        Assert.That(row.Attribute("data-id")?.Value, Is.EqualTo("abc-123"));
+
+        // Named for the row it belongs to: an archive of these is otherwise a list of
+        // controls all called the same thing.
+        Assert.That(row.Attribute("aria-label")?.Value, Does.Contain("2026-"));
+        Assert.That(row.Attribute("type")?.Value, Is.EqualTo("button"));
+
+        // The glyph is decoration; a synthesiser reading it would say nothing useful.
+        Assert.That(row.Elements("span").Single().Attribute("aria-hidden")?.Value,
+            Is.EqualTo("true"));
+    }
+
+    /// <summary>
+    /// The index's copy control sits beside the row header rather than inside it.
+    /// </summary>
+    /// <remarks>
+    /// A screen reader repeats the row header while moving across a row, so a button
+    /// placed inside that <c>th</c> would append its label to every cell announcement
+    /// in the row — the date cell is the row's name, and a name is not a place to keep
+    /// a control.
+    /// </remarks>
+    [Test]
+    public void The_index_copy_control_stays_out_of_the_row_header()
+    {
+        var row = Markup.Parse(IndexHtml()).Descendants("tbody").Single()
+            .Descendants("tr").Single();
+
+        var header = row.Elements("th").Single();
+        Assert.That(header.Descendants("button"), Is.Empty);
+        Assert.That(header.Value.Trim(), Does.StartWith("2026-"), "the row is named by its date");
+
+        var cell = row.Elements("td").Single(td => td.Descendants("button")
+            .Any(b => b.Attribute("class")?.Value == "copyid"));
+
+        // By element order, not PreviousNode: the markup is indented, so the two are
+        // separated by a whitespace text node the parser keeps on purpose.
+        var order = row.Elements().ToList();
+        Assert.That(order.IndexOf(cell), Is.EqualTo(order.IndexOf(header) + 1),
+            "it sits immediately after the name");
+    }
+
+    /// <summary>
+    /// Copying needs no server, so the index wires it above the line that abandons
+    /// everything needing one.
+    /// </summary>
+    /// <remarks>
+    /// The star is disabled without <c>mtga-pbp watch</c> because keeping a match is a
+    /// write. Copying is not, and a report opened straight off disk is the case this
+    /// project is built around — a copy button dead in that mode would be dead where
+    /// it is most wanted.
+    /// </remarks>
+    [Test]
+    public void Copying_an_id_works_on_a_page_opened_from_disk()
+    {
+        var html = IndexHtml();
+        var servedOnly = html.IndexOf("location.protocol.indexOf('http')", StringComparison.Ordinal);
+        var wiring = html.IndexOf(".copyid", StringComparison.Ordinal);
+
+        Assert.That(servedOnly, Is.GreaterThan(0), "the served-only guard is still there");
+        Assert.That(html.IndexOf("closest('.copyid')", StringComparison.Ordinal),
+            Is.InRange(1, servedOnly), "the copy handler is wired before the guard");
+        Assert.That(wiring, Is.GreaterThan(0));
+
+        // And the button never ships disabled the way the star does.
+        var button = Markup.Parse(html).Descendants("button")
+            .Single(b => b.Attribute("class")?.Value == "copyid");
+        Assert.That(button.Attribute("disabled"), Is.Null);
+    }
+
+    /// <summary>
+    /// Both pages keep their own copy of the clipboard fallback, so both are checked.
+    /// </summary>
+    /// <remarks>
+    /// <c>navigator.clipboard</c> needs a secure context and <c>file://</c> does not
+    /// qualify everywhere, so a page without the fallback is a page whose copy button
+    /// does nothing on disk in some browsers. Two renderers, two copies of the code,
+    /// and issue 30 is what happens when only one of a pair gets fixed.
+    /// </remarks>
+    [Test]
+    public void Neither_page_relies_on_a_clipboard_API_that_a_file_URL_may_not_have()
+    {
+        foreach (var (page, html) in new[]
+                 {
+                     ("game page", GamePageRenderer.Render(Sample())),
+                     ("index", IndexHtml())
+                 })
+        {
+            Assert.That(html, Does.Contain("navigator.clipboard.writeText"), page);
+            Assert.That(html, Does.Contain("document.execCommand('copy')"),
+                $"{page}: no fallback for a file:// page");
+        }
     }
 
     [Test]

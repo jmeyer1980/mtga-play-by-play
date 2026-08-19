@@ -25,6 +25,8 @@ public static class GamePageRenderer
                 <button id="density-toggle" type="button"
                         aria-controls="beats verbose">Show verbose detail</button>
                 <button id="copy-button" type="button">Copy transcript</button>
+                <button id="copy-id" type="button"
+                        data-id="{E(t.MatchId)}">Copy game ID</button>
                 <span id="status" class="status" role="status"></span>
               </div>
             </header>
@@ -370,7 +372,8 @@ public static class GamePageRenderer
           }
 
           var copy = document.getElementById('copy-button');
-          if (!copy) return;
+          var copyId = document.getElementById('copy-id');
+          if (!copy && !copyId) return;
 
           function visibleSection() {
             var sections = document.querySelectorAll('section[data-density]');
@@ -446,8 +449,9 @@ public static class GamePageRenderer
           }
 
           // navigator.clipboard needs a secure context, and file:// does not qualify
-          // in every browser, so fall back rather than fail silently.
-          function legacyCopy(text) {
+          // in every browser, so fall back rather than fail silently. Focus returns to
+          // the button that asked, which is not always the transcript one.
+          function legacyCopy(text, button, copied) {
             var area = document.createElement('textarea');
             area.value = text;
             area.setAttribute('readonly', '');
@@ -458,20 +462,34 @@ public static class GamePageRenderer
             var ok = false;
             try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
             document.body.removeChild(area);
-            copy.focus();
-            say(ok ? 'Transcript copied.' : 'Copy failed.');
+            button.focus();
+            say(ok ? copied : 'Copy failed.');
           }
 
-          copy.addEventListener('click', function () {
-            var text = asMarkdown();
+          function copyText(text, button, copied) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(text).then(
-                function () { say('Transcript copied.'); },
-                function () { legacyCopy(text); });
+                function () { say(copied); },
+                function () { legacyCopy(text, button, copied); });
             } else {
-              legacyCopy(text);
+              legacyCopy(text, button, copied);
             }
-          });
+          }
+
+          if (copy) {
+            copy.addEventListener('click', function () {
+              copyText(asMarkdown(), copy, 'Transcript copied.');
+            });
+          }
+
+          // The id is what `mtga-pbp why <matchId>` wants and what identifies a match
+          // in a bug report, and it appears nowhere on the page as text — it is the
+          // file name. Copying it beats reading a GUID out of the address bar.
+          if (copyId) {
+            copyId.addEventListener('click', function () {
+              copyText(copyId.dataset.id || '', copyId, 'Game ID copied.');
+            });
+          }
         })();
         """;
 }
