@@ -268,8 +268,13 @@ public static class GamePageRenderer
         .turn{list-style:none;margin:.15rem 0;padding:0 0 0 1.5rem}
         .beat{margin:.15rem 0}
         .board{margin:.15rem 0;opacity:.6;font-style:italic;font-size:.92em}
+        /* Clipping hides this from the eye but not from a mouse — selection is not a
+           paint-time effect — so without user-select a dragged selection pastes both
+           halves: "1×1 copy of Plains". It is a selection property and leaves the
+           accessibility tree alone, so a synthesiser still reads these. */
         .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
-            clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+            clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;
+            -webkit-user-select:none;user-select:none}
         .warn{border-left:3px solid #a35b00;padding-left:.8rem;opacity:.85}
         .deck{margin:.6rem 0}
         .deck summary{cursor:pointer}

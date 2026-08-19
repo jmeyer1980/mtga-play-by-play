@@ -229,8 +229,12 @@ public static class IndexRenderer
              max-width:64rem;margin:0 auto;padding:2rem 1rem}
         h1{font-size:1.5rem;margin:0 0 .2rem}
         .sub{opacity:.65;margin:.2rem 0 1rem}
+        /* The game page carries this rule too, and both need the user-select: clipped
+           text is still selectable, so without it a row pastes "11m 12s11 minutes 12
+           seconds". Fixing one page and not the other reads as fixed. */
         .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
-            clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+            clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;
+            -webkit-user-select:none;user-select:none}
         label{display:block;font-size:.85rem;margin-bottom:.25rem}
         #q{width:100%;font:inherit;padding:.55rem .7rem;margin-bottom:1rem;
            border:1px solid currentColor;border-radius:.4rem;background:transparent;color:inherit}
