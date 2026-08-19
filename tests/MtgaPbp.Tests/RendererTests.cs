@@ -1157,14 +1157,33 @@ public class RendererTests
 
             foreach (var rule in rules)
             {
-                Assert.That(rule, Does.Contain("user-select:none"), $"{page}: {rule}");
+                // Compared as whole declarations rather than as substrings of the rule:
+                // "-webkit-user-select:none" contains "user-select:none", so a substring
+                // check passes on a rule carrying only the prefixed form — which is the
+                // one every browser but Safari ignores, and exactly the half-fix this
+                // test exists to catch.
+                var declarations = Declarations(rule);
+
+                Assert.That(declarations, Does.Contain("user-select:none"), $"{page}: {rule}");
 
                 // iOS Safari needs the prefix, and iOS is in the archive's own player
                 // data, so it is not a browser this can be lax about.
-                Assert.That(rule, Does.Contain("-webkit-user-select:none"), $"{page}: {rule}");
+                Assert.That(declarations, Does.Contain("-webkit-user-select:none"),
+                    $"{page}: {rule}");
             }
         }
     }
+
+    /// <summary>
+    /// One CSS rule's declarations, as whole strings. The rule is wrapped across source
+    /// lines, so each is trimmed and the space around its colon normalised.
+    /// </summary>
+    private static List<string> Declarations(string rule) =>
+        rule[(rule.IndexOf('{', StringComparison.Ordinal) + 1)..]
+            .TrimEnd('}')
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(d => Regex.Replace(d, @"\s*:\s*", ":"))
+            .ToList();
 
     /// <summary>
     /// The markup fact that makes the doubling reachable: a row's visible half and its
