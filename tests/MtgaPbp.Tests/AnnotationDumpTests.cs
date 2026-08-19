@@ -71,4 +71,59 @@ public class AnnotationDumpTests
         IReadOnlyList<string> raw = ["not json at all", .. Bo3Raw()];
         Assert.That(AnnotationDump.ForTurn(raw, Cards(), turn: 1, game: 1), Is.Not.Empty);
     }
+
+    // ---------- Issue 32: one walk, several turns ----------
+
+    /// <summary>
+    /// The whole point of reading the match once is that it answers exactly what
+    /// reading it once per turn answered.
+    /// </summary>
+    /// <remarks>
+    /// Asserted against the Bo3 fixture and across both games, because the thing that
+    /// could break is the thing this fixture exists for: the tracker has to be in the
+    /// right state when each turn arrives, and instance ids are handed out again in
+    /// game two. A pass that collected turns without replaying between them would name
+    /// game two's permanents out of game one's state and still look plausible.
+    /// </remarks>
+    [Test]
+    public void One_walk_of_several_turns_says_what_one_walk_each_said()
+    {
+        (int Turn, int Game)[] wanted = [(1, 1), (2, 1), (1, 2)];
+
+        var together = AnnotationDump.ForTurns(Bo3Raw(), Cards(), wanted);
+
+        Assert.That(together.Keys, Is.EquivalentTo(wanted));
+        foreach (var (turn, game) in wanted)
+        {
+            var alone = AnnotationDump.ForTurn(Bo3Raw(), Cards(), turn, game).ToList();
+            Assert.That(together[(turn, game)], Is.EqualTo(alone), $"turn {turn} game {game}");
+        }
+
+        // And it is not vacuously equal on both sides.
+        Assert.That(together[(1, 1)], Is.Not.Empty);
+        Assert.That(together[(1, 2)], Is.Not.Empty);
+    }
+
+    [Test]
+    public void Only_the_turns_asked_for_come_back()
+    {
+        var one = AnnotationDump.ForTurns(Bo3Raw(), Cards(), [(1, 1)]);
+
+        Assert.That(one.Keys, Is.EquivalentTo(new[] { (1, 1) }));
+        Assert.That(AnnotationDump.ForTurns(Bo3Raw(), Cards(), []), Is.Empty);
+    }
+
+    /// <summary>
+    /// A turn the match never reached still gets a key, so the caller can print its
+    /// heading and an empty section rather than crash on a lookup.
+    /// </summary>
+    [Test]
+    public void A_turn_that_never_happened_comes_back_empty_rather_than_missing()
+    {
+        var dump = AnnotationDump.ForTurns(Bo3Raw(), Cards(), [(1, 1), (999, 1)]);
+
+        Assert.That(dump.ContainsKey((999, 1)), Is.True);
+        Assert.That(dump[(999, 1)], Is.Empty);
+        Assert.That(dump[(1, 1)], Is.Not.Empty);
+    }
 }
