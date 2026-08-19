@@ -77,11 +77,18 @@ public sealed record IndexStats(
             .ThenBy(r => r.Name, StringComparer.Ordinal)
             .ToList();
 
-        var clusters = DeckIdentity.Cluster(counted
+        // Clustered over every match carrying a decklist, not only the decided ones:
+        // the panel counts what has a result, but "show only this deck's matches" has
+        // to mean all of them or the control does not do what its label says.
+        var clusters = DeckIdentity.Cluster(rows
             .Where(r => r.Deck is { Count: > 0 })
             .Select(r => (r.MatchId, r.Deck!, r.Commander)));
 
-        var byId = counted.ToDictionary(r => r.MatchId, StringComparer.Ordinal);
+        // Grouped rather than keyed directly: a duplicate id cannot reach here through
+        // the archive, which is keyed by id itself, but the cost of being wrong about
+        // that is an unhandled exception that takes down the whole index build.
+        var byId = counted.GroupBy(r => r.MatchId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var byDeck = clusters
             .Select(c => Row(c.Label, c.Slug,
                 c.MatchIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList()))
@@ -152,7 +159,10 @@ public sealed record IndexStats(
     {
         var best = 0;
         var run = 0;
-        foreach (var r in counted.OrderBy(r => r.SortKey))
+        // Tie-broken by id: a match whose slice carried no parseable timestamp gets a
+        // SortKey of zero, and any two of those would otherwise be read in file order,
+        // which can change the answer by one.
+        foreach (var r in counted.OrderBy(r => r.SortKey).ThenBy(r => r.MatchId, StringComparer.Ordinal))
         {
             run = Outcome(r) == 'W' ? run + 1 : 0;
             if (run > best) best = run;

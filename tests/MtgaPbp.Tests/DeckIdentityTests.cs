@@ -147,4 +147,76 @@ public class DeckIdentityTests
         Assert.That(labels, Has.Count.EqualTo(2));
         Assert.That(labels.Distinct().Count(), Is.EqualTo(2), "a name is a name for one deck");
     }
+
+    /// <summary>
+    /// A nonbasic land never names a deck. The basics list alone was not enough: it
+    /// held only until a deck was small enough that its best spell also ran four
+    /// copies, and then the archive produced a deck called "Dimir Guildgate".
+    /// </summary>
+    [Test]
+    public void A_nonbasic_land_does_not_get_to_name_a_deck()
+    {
+        IReadOnlyList<DeckEntry> deck =
+        [
+            new("Dimir Guildgate", 4, true, IsLand: true),
+            new("Dreadwing Scavenger", 4, true),
+            new("Swamp", 20, true, IsLand: true)
+        ];
+
+        Assert.That(DeckIdentity.Cluster([M("a", deck)]).Single().Label,
+            Is.EqualTo("Dreadwing Scavenger"));
+    }
+
+    /// <summary>
+    /// In Brawl the commander is the deck, so two of them are two decks however much
+    /// of the library they have in common — which, in one colour built out of one
+    /// collection, is routinely most of it.
+    /// </summary>
+    [Test]
+    public void Two_commanders_are_two_decks_even_sharing_almost_every_card()
+    {
+        var shared = new[] { "Island", "A", "B", "C", "D", "E", "F", "G", "H" };
+        var one = Deck([.. shared, "Solo"]);
+        var two = Deck([.. shared, "Duet"]);
+
+        Assert.That(DeckIdentity.Similarity(
+                one.Select(c => c.Name).ToHashSet(), two.Select(c => c.Name).ToHashSet()),
+            Is.GreaterThan(DeckIdentity.SameDeck), "these would merge on cards alone");
+
+        var clusters = DeckIdentity.Cluster([M("a", one, "Sai, Master Thopterist"),
+                                             M("b", two, "Iron Man, Futurist Paragon")]);
+
+        Assert.That(clusters, Has.Count.EqualTo(2));
+        Assert.That(clusters.Select(c => c.Label),
+            Is.EquivalentTo(new[] { "Sai, Master Thopterist", "Iron Man, Futurist Paragon" }));
+    }
+
+    /// <summary>
+    /// A deck keeps the same name and the same filter token whatever order the archive
+    /// hands its matches over in. The renderer hands them over newest-first, so an
+    /// order-sensitive name changes the moment a new match lands.
+    /// </summary>
+    [Test]
+    public void A_shared_name_is_split_the_same_way_whichever_order_the_matches_arrive()
+    {
+        var white = Deck("Plains", "Hare Apparent", "Ajani", "Hop to It", "Split Up");
+        var blue = Deck("Island", "Hare Apparent", "Zahid", "Cancel", "Fog Bank");
+
+        var forward = DeckIdentity.Cluster([M("a", white), M("b", blue)]);
+        var backward = DeckIdentity.Cluster([M("b", blue), M("a", white)]);
+
+        // Same deck, same name, same slug, whichever way round.
+        foreach (var id in new[] { "a", "b" })
+        {
+            var one = forward.Single(c => c.MatchIds.Contains(id));
+            var other = backward.Single(c => c.MatchIds.Contains(id));
+            Assert.That(other.Label, Is.EqualTo(one.Label), id);
+            Assert.That(other.Slug, Is.EqualTo(one.Slug), id);
+        }
+
+        // And neither slug is a prefix of the other, because the table filters on them.
+        var slugs = forward.Select(c => c.Slug).ToList();
+        Assert.That(slugs[0], Does.Not.StartWith(slugs[1]));
+        Assert.That(slugs[1], Does.Not.StartWith(slugs[0]));
+    }
 }

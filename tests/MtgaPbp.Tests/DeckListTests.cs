@@ -17,14 +17,22 @@ public class DeckListTests
     {
         public string? NameForLocId(int locId) => null;
 
+        // Types are the database's own comma-separated ordinals, not words: it stores
+        // "5" where a person would write "Land". The fixture said "Land" until the
+        // decklist began reading the type, at which point nothing here was a land and
+        // no test could tell. Only the land ordinal matters below — see
+        // DeckColors.LandType — so the rest are simply some other number.
+        private const string Land = "5";
+        private const string Spell = "2";
+
         public CardInfo? CardForGrpId(int grpId) => grpId switch
         {
-            7 => new CardInfo(7, "Plains", "Land", null, null, false),
-            9 => new CardInfo(9, "Banishing Light", "Enchantment", null, null, false),
-            10 => new CardInfo(10, "Banishing Light", "Enchantment", null, null, false),
-            11 => new CardInfo(11, "Arcane Signet", "Artifact", null, null, false),
-            12 => new CardInfo(12, "Lumra, Bellow of the Woods", "Creature", null, null, false),
-            13 => new CardInfo(13, "Ardenn, Intrepid Archaeologist", "Creature", null, null, false),
+            7 => new CardInfo(7, "Plains", Land, null, null, false),
+            9 => new CardInfo(9, "Banishing Light", Spell, null, null, false),
+            10 => new CardInfo(10, "Banishing Light", Spell, null, null, false),
+            11 => new CardInfo(11, "Arcane Signet", Spell, null, null, false),
+            12 => new CardInfo(12, "Lumra, Bellow of the Woods", Spell, null, null, false),
+            13 => new CardInfo(13, "Ardenn, Intrepid Archaeologist", Spell, null, null, false),
             _ => null
         };
 
@@ -271,5 +279,22 @@ public class DeckListTests
         // Two printings of one card are one commander, same rule as the decklist.
         Assert.That(DeckList.CommanderNames([9, 10], new Cards()),
             Is.EqualTo(new[] { "Banishing Light" }));
+    }
+
+    /// <summary>
+    /// The decklist records what a land is, because here is the last place the grpId
+    /// exists to ask. Naming a deck after its most-copied card depends on it.
+    /// </summary>
+    [Test]
+    public void The_decklist_remembers_which_entries_were_lands()
+    {
+        var deck = Build([7, 7, 9, 11]);
+
+        Assert.That(deck.Single(e => e.Name == "Plains").IsLand, Is.True);
+        Assert.That(deck.Where(e => e.Name != "Plains").Select(e => e.IsLand),
+            Is.All.False);
+
+        // An id the database has no row for cannot be claimed to be a land.
+        Assert.That(Build([999]).Single().IsLand, Is.False);
     }
 }
