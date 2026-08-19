@@ -106,12 +106,12 @@ public static class IndexRenderer
                 <p id="count" class="sub" role="status">{ordered.Count} of {ordered.Count} shown</p>
                 <table id="rows">
                 <caption class="vh">Archived matches, most recent first</caption>
-                <thead><tr><th scope="col">Keep</th><th scope="col">Date</th>
-                <th scope="col">ID</th>
-                <th scope="col">Event</th><th scope="col">Deck</th>
-                <th scope="col">Opponent</th>
-                <th scope="col">Result</th><th scope="col">Turns</th>
-                <th scope="col">Length</th></tr></thead><tbody id="data">
+                <thead><tr>{Col("Keep", Num)}{Col("Date", Num)}
+                {Col("ID")}
+                {Col("Event", Text)}{Col("Deck", Text)}
+                {Col("Opponent", Text)}
+                {Col("Result", Text)}{Col("Turns", Num)}
+                {Col("Length", Num)}</tr></thead><tbody id="data">
                 """);
             foreach (var r in ordered)
             {
@@ -136,19 +136,20 @@ public static class IndexRenderer
                 // an unavailable control is better than one that silently does nothing.
                 body.Append($"""
                     <tr data-search="{E(haystack)}">
-                    <td><button class="star{(r.Favorite ? " on" : "")}" type="button" disabled="disabled"
+                    <td{Key(r.Favorite ? 1 : 0)}><button class="star{(r.Favorite ? " on" : "")}" type="button" disabled="disabled"
                         aria-pressed="{(r.Favorite ? "true" : "false")}"
                         aria-describedby="keep-note" data-id="{E(r.MatchId)}"
                         aria-label="Keep the {E(r.Date)} match against {E(r.Opponent)}"
                         ><span aria-hidden="true">{(r.Favorite ? "★" : "☆")}</span></button></td>
-                    <th scope="row"><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></th>
+                    <th scope="row"{Key(r.SortKey)}><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></th>
                     <td><button class="copyid" type="button" data-id="{E(r.MatchId)}"
                         aria-label="Copy the game ID of the {E(r.Date)} match against {E(r.Opponent)}"
                         ><span aria-hidden="true">⧉</span></button></td>
-                    <td>{E(r.EventName)}</td><td class="deck">{Colors(r)}</td>
-                    <td>{E(r.Opponent)}</td>
-                    <td class="{cls}">{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
-                    <td>{r.Turns}</td><td>{Length(r)}</td></tr>
+                    <td{Key(r.EventName)}>{E(r.EventName)}</td><td class="deck"{Key(r.Colors)}>{Colors(r)}</td>
+                    <td{Key(r.Opponent)}>{E(r.Opponent)}</td>
+                    <td class="{cls}"{Key(r.Result)}>{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
+                    <td{Key(r.Turns)}>{r.Turns}</td>
+                    <td{Key(r.Length?.TotalSeconds)}>{Length(r)}</td></tr>
                     """);
             }
             body.Append("</tbody></table>");
@@ -250,6 +251,62 @@ public static class IndexRenderer
     /// without a per-scheme table that would be one more thing to get wrong.
     /// </para>
     /// </summary>
+    /// <summary>How a column compares, or nothing when it does not sort at all.</summary>
+    private const string Num = "num";
+    private const string Text = "text";
+
+    /// <summary>
+    /// A column heading, which script may turn into a sort control if the column says
+    /// how it compares.
+    /// </summary>
+    /// <remarks>
+    /// The rule lives on the header rather than being guessed from the cells, because
+    /// guessing is how a column of "10, 9, 8" comes out "10, 8, 9". A column with no
+    /// rule never becomes a control: the ID column holds a copy button and has no order
+    /// worth putting rows in.
+    /// <para>
+    /// Rendered as plain text, not as a button. The button is added only once script
+    /// has run, the same rule the star, the pager and the deck filter follow — a
+    /// control that does nothing without script is worse than text that never claimed
+    /// to be one.
+    /// </para>
+    /// </remarks>
+    private static string Col(string label, string? sorts = null) =>
+        sorts is null
+            ? $"""<th scope="col">{E(label)}</th>"""
+            : $"""<th scope="col" data-sort="{sorts}">{E(label)}</th>""";
+
+    /// <summary>
+    /// What a cell sorts by, as an attribute to drop inside its opening tag.
+    /// </summary>
+    /// <remarks>
+    /// Sorting cannot read the rendered text, because most cells on this page carry two
+    /// versions of themselves: a visible one hidden from assistive technology and a
+    /// spoken twin hidden from sight. A length cell's text content is "4m4 minutes",
+    /// and a win rate's is "58%58 percent". So the key comes from the data the row was
+    /// built from, before either version existed.
+    /// <para>
+    /// That also fixes the orderings text could never get right on its own: a date
+    /// sorts by the timestamp the archive stores rather than by the words shown, and a
+    /// length sorts by seconds rather than by "9m" coming after "10m".
+    /// </para>
+    /// <para>
+    /// A null value renders an empty key rather than no key, and the comparator reads
+    /// an empty one as missing rather than as zero — an unfinished match has no length,
+    /// and calling that nought seconds would file it among the fastest games ever
+    /// played. Empty rather than absent so that every cell of a sortable column carries
+    /// one: the comparator falls back to rendered text when a key is missing, and
+    /// rendered text here is "4m4 minutes".
+    /// </para>
+    /// </remarks>
+    private static string Key(object? value) => value switch
+    {
+        null => " data-key=\"\"",
+        string s => $" data-key=\"{E(s.ToLowerInvariant())}\"",
+        IFormattable n => $" data-key=\"{n.ToString(null, CultureInfo.InvariantCulture)}\"",
+        _ => $" data-key=\"{E(value.ToString() ?? "")}\""
+    };
+
     private static string Colors(MatchSummary r) => r.Colors is not { Length: > 0 } c
         ? ""
         : $"""<span aria-hidden="true">{E(c)}</span>""" +
@@ -392,17 +449,17 @@ public static class IndexRenderer
 
         var sb = new StringBuilder();
         sb.Append($"""
-            <div class="scroller"><table class="stats"><caption>{E(title)}</caption>
-            <thead><tr><th scope="col">{E(what)}</th><th scope="col">Played</th>
-            <th scope="col">Record</th><th scope="col">Win rate</th>
+            <div class="scroller"><table class="stats" id="{(decks ? "by-deck" : "by-format")}"><caption>{E(title)}</caption>
+            <thead><tr>{Col(what, Text)}{Col("Played", Num)}
+            {Col("Record", Num)}{Col("Win rate", Num)}
             """);
 
         // Only decks carry these: a format's median turn count mixes archetypes together
         // and says nothing about any of them.
         if (decks)
-            sb.Append("""
-                <th scope="col">Turns won</th><th scope="col">Turns lost</th>
-                <th scope="col">On the play</th>
+            sb.Append($"""
+                {Col("Turns won", Num)}{Col("Turns lost", Num)}
+                {Col("On the play", Num)}
                 """);
 
         sb.Append("</tr></thead><tbody>");
@@ -414,15 +471,15 @@ public static class IndexRenderer
                 : E(r.Name);
 
             sb.Append($"""
-                <tr><th scope="row">{name}</th><td>{r.Played}</td>
-                <td>{Record(r)}</td><td>{Rate(r)}</td>
+                <tr><th scope="row"{Key(r.Name)}>{name}</th><td{Key(r.Played)}>{r.Played}</td>
+                <td{Key(r.Won)}>{Record(r)}</td><td{Key(r.WinRate)}>{Rate(r)}</td>
                 """);
 
             if (decks)
                 sb.Append($"""
-                    <td>{r.TurnsInWins?.ToString(CultureInfo.InvariantCulture) ?? Missing("no wins yet")}</td>
-                    <td>{r.TurnsInLosses?.ToString(CultureInfo.InvariantCulture) ?? Missing("no losses yet")}</td>
-                    <td>{Play(r)}</td>
+                    <td{Key(r.TurnsInWins)}>{r.TurnsInWins?.ToString(CultureInfo.InvariantCulture) ?? Missing("no wins yet")}</td>
+                    <td{Key(r.TurnsInLosses)}>{r.TurnsInLosses?.ToString(CultureInfo.InvariantCulture) ?? Missing("no losses yet")}</td>
+                    <td{Key(r.WithOpening == 0 ? null : (double?)r.OnThePlay / r.WithOpening)}>{Play(r)}</td>
                     """);
 
             sb.Append("</tr>");
@@ -554,6 +611,17 @@ public static class IndexRenderer
            give, for the same reason. */
         button.deck-name:hover{background:rgba(128,128,128,.2)}
         button.deck-name.on{background:rgba(128,128,128,.25);text-decoration:none}
+        /* A column heading is plain text until script makes it a sort control, so the
+           button has to inherit the heading's own type rather than a browser default. */
+        button.sort{background:none;border:0;font:inherit;color:inherit;cursor:pointer;
+                    text-transform:inherit;letter-spacing:inherit;text-align:left;
+                    padding:.15rem .3rem;margin:-.15rem -.3rem;min-height:1.75rem;
+                    border-radius:.3rem}
+        button.sort:hover{background:rgba(128,128,128,.2)}
+        /* Weight and not colour alone, so the sorted column is still tellable apart
+           without colour vision and with a forced palette. */
+        th[aria-sort=ascending] button.sort,th[aria-sort=descending] button.sort{
+            font-weight:700;opacity:1}
         /* Wide tables scroll inside themselves instead of pushing the whole page
            sideways at a phone width or at 200% zoom. */
         .scroller{overflow-x:auto}
@@ -685,6 +753,115 @@ public static class IndexRenderer
           }
           wireDeckNames();
 
+          // Sorting. One implementation for every table on the page rather than one per
+          // table: the match list and the two breakdowns differ only in which columns
+          // say how they compare, and that is said in the markup.
+          var sorted = {};
+
+          // What a cell sorts by. Never its rendered text if the renderer said
+          // otherwise, because most cells here carry two versions of themselves — a
+          // visible one hidden from assistive technology and a spoken twin hidden from
+          // sight — so a length cell reads "4m4 minutes" and a rate reads "58%58
+          // percent". Every sortable column supplies a key; the text is a fallback that
+          // should never be reached.
+          function keyOf(row, index, rule) {
+            var cell = row.cells[index];
+            if (!cell) return null;
+            var raw = cell.hasAttribute('data-key')
+              ? cell.getAttribute('data-key')
+              : cell.textContent.trim().toLowerCase();
+            // Empty is nothing, for words as much as for numbers: a match whose log
+            // carried no decklist has no deck, and sorting it under the blank name it
+            // does not have would put it above every deck that has one.
+            if (raw === '') return null;
+            if (rule !== 'num') return raw;
+            var n = parseFloat(raw);
+            return isNaN(n) ? null : n;
+          }
+
+          function sortRows(table, index, rule, asc) {
+            var body = table.tBodies[0];
+            if (!body) return;
+            var order = Array.prototype.slice.call(body.rows);
+            order.sort(function (a, b) {
+              var x = keyOf(a, index, rule), y = keyOf(b, index, rule);
+              // Nothing sorts last whichever way the column points. An unfinished match
+              // has no length, and reading that as zero would file it among the fastest
+              // games ever played.
+              if (x === null || y === null) return x === y ? 0 : (x === null ? 1 : -1);
+              if (x < y) return asc ? -1 : 1;
+              if (x > y) return asc ? 1 : -1;
+              return 0;
+            });
+            // Appending a row already in the table moves it whole, so every cell travels
+            // with the row it belongs to and nothing is rebuilt — the stars and copy
+            // buttons keep their state and their listeners.
+            order.forEach(function (row) { body.appendChild(row); });
+          }
+
+          function applySort(table, state, quiet) {
+            sortRows(table, state.index, state.rule, state.asc);
+            Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th, i) {
+              if (!th.getAttribute('data-sort')) return;
+              var on = i === state.index;
+              // aria-sort is what says it out loud; the arrow is decoration for the eye.
+              th.setAttribute('aria-sort',
+                on ? (state.asc ? 'ascending' : 'descending') : 'none');
+              var mark = th.querySelector('.mark');
+              if (mark) mark.textContent = on ? (state.asc ? ' ↑' : ' ↓') : '';
+            });
+            if (table.id) sorted[table.id] = state;
+            if (!quiet) {
+              announce('Sorted by ' + state.label + ', ' +
+                       (state.asc ? 'ascending' : 'descending') + '.');
+            }
+          }
+
+          function wireSort(table) {
+            var head = table.tHead && table.tHead.rows[0];
+            var body = table.tBodies[0];
+            // One row has no order to put it in, which is the overall record's whole
+            // shape. Offering a control that cannot change anything is worse than none.
+            if (!head || !body || body.rows.length < 2) return;
+
+            Array.prototype.forEach.call(head.cells, function (th, index) {
+              var rule = th.getAttribute('data-sort');
+              if (!rule || th.querySelector('button.sort')) return;
+
+              // Text until here, the same rule the star, the pager and the deck filter
+              // follow: a control that does nothing without script is worse than text
+              // that never claimed to be one.
+              var label = th.textContent.trim();
+              var button = document.createElement('button');
+              button.type = 'button';
+              button.className = 'sort';
+              button.appendChild(document.createTextNode(label));
+              var mark = document.createElement('span');
+              mark.className = 'mark';
+              mark.setAttribute('aria-hidden', 'true');
+              button.appendChild(mark);
+              th.textContent = '';
+              th.appendChild(button);
+              th.setAttribute('aria-sort', 'none');
+
+              button.addEventListener('click', function () {
+                applySort(table, {
+                  index: index, rule: rule, label: label,
+                  asc: th.getAttribute('aria-sort') !== 'ascending'
+                });
+              });
+            });
+          }
+
+          function wireTables(quiet) {
+            document.querySelectorAll('table').forEach(function (table) {
+              wireSort(table);
+              var state = table.id ? sorted[table.id] : null;
+              if (state) applySort(table, state, quiet);
+            });
+          }
+          wireTables(true);
+
           // navigator.clipboard needs a secure context and file:// does not qualify in
           // every browser, so fall back rather than fail silently. The twin of this
           // lives in the game page's script.
@@ -788,6 +965,10 @@ public static class IndexRenderer
                 rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
                 wireStars();
                 apply();
+                // The rows arrive in the order the build wrote them, and the panel's
+                // tables are new nodes entirely, so both need putting back the way the
+                // reader had them. Quietly: they did not just ask for this.
+                wireTables(true);
                 // Replacing the rows destroys the node that had focus, which would
                 // drop a keyboard or screen-reader user back to the top of the page.
                 if (focused) {

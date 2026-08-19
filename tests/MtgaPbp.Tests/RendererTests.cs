@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using System.Globalization;
 using MtgaPbp.Core;
 using MtgaPbp.Render;
 using NUnit.Framework;
@@ -298,7 +299,9 @@ public class RendererTests
     {
         var drawn = Sample() with { WinningTeamId = null, GamesWon = 0, GamesLost = 0, Drawn = true };
         var html = IndexRenderer.Render([IndexRenderer.Summarize(drawn)]);
-        Assert.That(html, Does.Contain("class=\"draw\">Drew 0-0"));
+        var cell = MatchTable(Markup.Parse(html)).Descendants("td")
+            .Single(td => td.Attribute("class")?.Value == "draw");
+        Assert.That(cell.Value, Does.StartWith("Drew 0-0"));
         Assert.That(html, Does.Not.Contain("Lost 0-0"));
     }
 
@@ -453,7 +456,8 @@ public class RendererTests
         var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample())]);
         // Content must be in the markup, not assembled by JS, so find-in-page works.
         Assert.That(html, Does.Contain("<tr data-search="));
-        Assert.That(html, Does.Contain("<td>Ladder</td>"));
+        Assert.That(MatchTable(Markup.Parse(html)).Descendants("td").Select(td => td.Value),
+            Has.One.EqualTo("Ladder"));
         Assert.That(html, Does.Contain("lightning bolt"), "cards belong in the search haystack");
     }
 
@@ -500,7 +504,7 @@ public class RendererTests
     {
         var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample(colors: "WU"))]);
 
-        Assert.That(html, Does.Contain("<th scope=\"col\">Deck</th>"));
+        Assert.That(ColumnNames(html), Does.Contain("Deck"));
         Assert.That(html, Does.Contain("<span aria-hidden=\"true\">WU</span>"));
         Assert.That(html, Does.Contain("<span class=\"vh\">white and blue</span>"));
     }
@@ -515,9 +519,15 @@ public class RendererTests
     {
         var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample())]);
 
-        Assert.That(html, Does.Contain("<th scope=\"col\">Deck</th>"));
-        Assert.That(html, Does.Contain("<td class=\"deck\"></td>"));
+        Assert.That(ColumnNames(html), Does.Contain("Deck"));
         Assert.That(html, Does.Not.Contain("colourless"));
+
+        // Empty of content. It carries an empty sort key, which is how the comparator
+        // is told there is nothing here rather than a blank name that sorts first.
+        var cell = MatchTable(Markup.Parse(html)).Descendants("td")
+            .Single(td => td.Attribute("class")?.Value == "deck");
+        Assert.That(cell.Value, Is.Empty);
+        Assert.That(cell.Attribute("data-key")?.Value, Is.Empty);
     }
 
     [Test]
@@ -695,6 +705,15 @@ public class RendererTests
     /// </summary>
     private static XElement MatchTable(XElement root) =>
         root.Descendants("table").Single(t => t.Attribute("id")?.Value == "rows");
+
+    /// <summary>
+    /// The match table's column headings by name. Read through the parser rather than
+    /// matched as literal markup, because a heading grows attributes — a sort rule, for
+    /// one — and a test that pins the whole tag fails on changes it was never about.
+    /// </summary>
+    private static IReadOnlyList<string> ColumnNames(string html) =>
+        MatchTable(Markup.Parse(html)).Descendants("thead").Single()
+            .Descendants("th").Select(th => th.Value.Trim()).ToList();
 
     // ---------- Issue 13: the record above the table ----------
 
@@ -953,6 +972,175 @@ public class RendererTests
 
         Assert.That(html, Does.Contain("var open = was ? was.open : false;"));
         Assert.That(html, Does.Contain("if (now) now.open = open;"));
+    }
+
+    // ---------- Issue 40: sortable columns ----------
+
+    /// <summary>
+    /// Every column that says it sorts supplies a key on every one of its cells.
+    /// </summary>
+    /// <remarks>
+    /// This is the invariant the whole feature rests on. Cells here carry two versions
+    /// of themselves - a visible one hidden from assistive technology and a spoken twin
+    /// hidden from sight - so a length cell's text content is "4m4 minutes" and a rate's
+    /// is "58%58 percent". Sorting on rendered text would order the table by those
+    /// strings and look almost right, which is the worst way for it to be wrong. The
+    /// comparator falls back to text so nothing breaks if a key is ever missed; this is
+    /// what makes sure it never is.
+    /// </remarks>
+    [Test]
+    public void Every_sortable_column_carries_a_key_on_every_cell()
+    {
+        var root = Markup.Parse(IndexHtml(deck: true));
+
+        foreach (var table in root.Descendants("table"))
+        {
+            var head = table.Descendants("thead").SingleOrDefault();
+            if (head is null) continue;
+
+            var headers = head.Descendants("th").ToList();
+            var sortable = headers
+                .Select((th, i) => (Index: i, Sorts: th.Attribute("data-sort")?.Value))
+                .Where(c => c.Sorts is not null)
+                .ToList();
+
+            foreach (var row in table.Descendants("tbody").SelectMany(b => b.Descendants("tr")))
+            {
+                var cells = row.Elements().ToList();
+                foreach (var (index, _) in sortable)
+                {
+                    Assert.That(cells, Has.Count.GreaterThan(index));
+                    Assert.That(cells[index].Attribute("data-key"), Is.Not.Null,
+                        $"column {headers[index].Value.Trim()} left a cell with no sort key");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// A heading is plain text until script makes it a control, and a column with no
+    /// order worth putting rows in never claims one.
+    /// </summary>
+    [Test]
+    public void A_column_heading_is_not_a_control_until_script_makes_it_one()
+    {
+        var html = IndexHtml(deck: true);
+        var headers = MatchTable(Markup.Parse(html)).Descendants("thead")
+            .Single().Descendants("th").ToList();
+
+        Assert.That(headers.SelectMany(th => th.Descendants("button")), Is.Empty,
+            "the button is added by script, not shipped inert");
+
+        var sorts = headers.ToDictionary(th => th.Value.Trim(),
+                                         th => th.Attribute("data-sort")?.Value);
+        Assert.That(sorts["Date"], Is.EqualTo("num"));
+        Assert.That(sorts["Turns"], Is.EqualTo("num"));
+        Assert.That(sorts["Length"], Is.EqualTo("num"));
+        Assert.That(sorts["Opponent"], Is.EqualTo("text"));
+
+        // The ID column holds a copy button and has no order worth putting rows in.
+        Assert.That(sorts["ID"], Is.Null);
+    }
+
+    /// <summary>
+    /// The keys are the values, not the words. A date sorts by the timestamp the archive
+    /// stores rather than by the text shown, and a length by seconds rather than by "9m"
+    /// coming after "10m".
+    /// </summary>
+    [Test]
+    public void A_date_sorts_by_its_timestamp_and_a_length_by_its_seconds()
+    {
+        var sample = Sample();
+        var row = MatchTable(Markup.Parse(
+            IndexRenderer.Render([IndexRenderer.Summarize(sample)]))).Descendants("tr")
+            .Single(tr => tr.Attribute("data-search") is not null);
+
+        var cells = row.Elements().ToList();
+        Assert.That(cells[1].Attribute("data-key")?.Value,
+            Is.EqualTo(sample.StartedAtMs.ToString(CultureInfo.InvariantCulture)));
+
+        var length = cells[8].Attribute("data-key")?.Value;
+        Assert.That(length, Is.Not.Null);
+        Assert.That(double.Parse(length!, CultureInfo.InvariantCulture), Is.GreaterThan(0));
+    }
+
+    /// <summary>
+    /// A cell with nothing in it carries an empty key, which the comparator reads as
+    /// missing rather than as zero. An unfinished match has no length, and reading that
+    /// as nought seconds would file it among the fastest games ever played.
+    /// </summary>
+    /// <remarks>
+    /// Empty rather than absent, so every cell of a sortable column has one. The
+    /// comparator falls back to rendered text when a key is missing, and rendered text
+    /// here is "4m4 minutes".
+    /// </remarks>
+    [Test]
+    public void A_cell_with_nothing_in_it_carries_an_empty_key_rather_than_a_zero()
+    {
+        var row = MatchTable(Markup.Parse(IndexHtml(incomplete: true))).Descendants("tr")
+            .Single(tr => tr.Attribute("data-search") is not null);
+
+        var length = row.Elements().ToList()[8];
+        Assert.That(length.Value, Is.Empty, "an incomplete match has no length");
+        Assert.That(length.Attribute("data-key")?.Value, Is.Empty);
+    }
+
+    /// <summary>
+    /// Sorting moves rows, never cells. Appending a row that is already in the table
+    /// moves it whole, which is what keeps a result in the same row as the opponent it
+    /// was against - and it rebuilds nothing, so the stars and copy buttons keep their
+    /// state and their listeners.
+    /// </summary>
+    [Test]
+    public void Sorting_moves_whole_rows_and_says_which_way_it_pointed()
+    {
+        var html = IndexHtml(deck: true);
+
+        Assert.That(html, Does.Contain("order.forEach(function (row) { body.appendChild(row); });"));
+        Assert.That(html, Does.Contain("aria-sort"), "the direction is said, not only drawn");
+        Assert.That(html, Does.Contain("Sorted by "), "and announced when it changes");
+
+        // One implementation, applied to whichever tables declare sortable columns.
+        Assert.That(html, Does.Contain("document.querySelectorAll('table').forEach"));
+    }
+
+    /// <summary>
+    /// A table with one row has no order to put it in, so it never grows a control that
+    /// could not change anything. That is the overall record's whole shape.
+    /// </summary>
+    [Test]
+    public void A_one_row_table_grows_no_sort_controls()
+    {
+        var root = Markup.Parse(IndexHtml(deck: true));
+        Assert.That(IndexHtml(deck: true), Does.Contain("body.rows.length < 2"));
+
+        var overall = root.Descendants("table")
+            .Single(t => t.Descendants("caption").Any(c => c.Value == "Overall record"));
+
+        Assert.That(overall.Descendants("tbody").Single().Descendants("tr").Count(),
+            Is.EqualTo(1));
+        Assert.That(overall.Descendants("thead").Single().Descendants("th")
+            .Any(th => th.Attribute("data-sort") is not null), Is.False);
+    }
+
+    /// <summary>
+    /// A live refresh writes the rows back in the build's order and replaces the panel's
+    /// tables outright, so a sort the reader chose has to be put back - quietly, because
+    /// they did not just ask for it.
+    /// </summary>
+    [Test]
+    public void A_live_refresh_puts_a_chosen_sort_back()
+    {
+        var html = IndexHtml(deck: true);
+
+        Assert.That(html, Does.Contain("wireTables(true);"));
+        Assert.That(html, Does.Contain("if (table.id) sorted[table.id] = state;"));
+
+        // The breakdowns are replaced wholesale, so they need ids to be remembered by.
+        var ids = Markup.Parse(html).Descendants("table")
+            .Select(t => t.Attribute("id")?.Value).ToList();
+        Assert.That(ids, Does.Contain("by-deck"));
+        Assert.That(ids, Does.Contain("by-format"));
     }
 
     [Test]
