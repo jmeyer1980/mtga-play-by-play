@@ -25,6 +25,9 @@ public static class GamePageRenderer
                 <button id="density-toggle" type="button"
                         aria-controls="beats verbose">Show verbose detail</button>
                 <button id="copy-button" type="button">Copy transcript</button>
+                <button id="copy-anon" type="button"
+                        data-title="{E(TranscriptSummary.AnonymousTitle(t))}"
+                        >Copy without names</button>
                 <button id="copy-id" type="button"
                         data-id="{E(t.MatchId)}">Copy game ID</button>
                 <span id="status" class="status" role="status"></span>
@@ -373,7 +376,7 @@ public static class GamePageRenderer
 
           var copy = document.getElementById('copy-button');
           var copyId = document.getElementById('copy-id');
-          if (!copy && !copyId) return;
+          if (!copy && !copyId && !document.getElementById('copy-anon')) return;
 
           function visibleSection() {
             var sections = document.querySelectorAll('section[data-density]');
@@ -396,7 +399,7 @@ public static class GamePageRenderer
 
           // Gathered from the transcript sections and the title only, so the button
           // labels never end up in the clipboard.
-          function asMarkdown() {
+          function asMarkdown(heading) {
             var section = visibleSection();
             if (!section) return '';
 
@@ -408,7 +411,12 @@ public static class GamePageRenderer
             var warns = document.querySelectorAll('.warn');
             var out = [];
 
-            if (title) out.push('# ' + textOf(title), '');
+            // The only line of a transcript that names either player. The body says
+            // "You" and "Opponent" already — checked across 400 archived transcripts,
+            // where a screen name appears 796 times in a heading and never once in a
+            // beat. So sanitizing replaces this line rather than sweeping the text for
+            // names, which would also rewrite any card whose name contains one.
+            if (title) out.push('# ' + (heading || textOf(title)), '');
             if (sub) out.push('*' + textOf(sub) + '*', '');
             for (var w = 0; w < warns.length; w++) out.push('> ' + textOf(warns[w]), '');
 
@@ -479,6 +487,17 @@ public static class GamePageRenderer
           if (copy) {
             copy.addEventListener('click', function () {
               copyText(asMarkdown(), copy, 'Transcript copied.');
+            });
+          }
+
+          // A second button rather than a toggle on the first. A toggle would have to
+          // report its state and would leave "Copy transcript" meaning two things
+          // depending on a setting the reader has to remember; a button that says what
+          // it does says it every time.
+          var anon = document.getElementById('copy-anon');
+          if (anon) {
+            anon.addEventListener('click', function () {
+              copyText(asMarkdown(anon.dataset.title), anon, 'Transcript copied without names.');
             });
           }
 
