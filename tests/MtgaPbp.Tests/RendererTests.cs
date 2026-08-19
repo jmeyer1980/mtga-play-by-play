@@ -367,9 +367,16 @@ public class RendererTests
 
         // The arrows stay decorative. A synthesiser reads U+2190 as "leftwards arrow",
         // which would land immediately before the word that now follows it.
-        foreach (var arrow in links.SelectMany(a => a.Elements("span"))
-                     .Where(s => s.Attribute("aria-hidden") is not null))
-            Assert.That(arrow.Value.Trim(), Is.AnyOf("←", "→"));
+        //
+        // Found by what they are rather than by the attribute under test: selecting them
+        // on aria-hidden would make this pass by iterating nothing on the day the
+        // attribute goes missing, which is the one day it needs to fail.
+        var arrows = links.SelectMany(a => a.Elements("span"))
+            .Where(s => s.Value.Trim() is "←" or "→").ToList();
+
+        Assert.That(arrows, Has.Count.EqualTo(2), "one arrow per direction");
+        foreach (var arrow in arrows)
+            Assert.That(arrow.Attribute("aria-hidden")?.Value, Is.EqualTo("true"), arrow.Value);
 
         // With styling off the hidden half stops hiding and both halves land in one
         // line, so they have to read as one sentence rather than repeat the word.
