@@ -69,7 +69,7 @@ cd C:\path\to\mtga-pbp
 | `.\mtga-pbp.exe build` | re-derive the whole site from the archive |
 | `.\mtga-pbp.exe stats` | unhandled annotation types and unresolved cards |
 | `.\mtga-pbp.exe collection <file>` | import a collection exported from elsewhere |
-| `.\mtga-pbp.exe why <matchId> [turns]` | show turns beside the log behind them — one (`13`), several (`13 14`) or a range (`13-15`) |
+| `.\mtga-pbp.exe why <matchId> [turns]` | show turns beside the log behind them — one (`13`), several (`13 14`, or `13,14` as PowerShell leaves it) or a range (`13-15`) |
 | `.\mtga-pbp.exe keep <matchId>` | never prune this match |
 | `.\mtga-pbp.exe unkeep <matchId>` | allow it to be pruned again |
 

@@ -106,7 +106,8 @@ public static class Program
             mtga-pbp watch [port]     serve the report and keep it live (default 8787)
             mtga-pbp collection <file> import a collection exported from elsewhere
             mtga-pbp why <matchId> [turns] show turns beside the log behind them,
-                                           one (13), several (13 14) or 13-15
+                                           one (13), several (13 14, or 13,14)
+                                           or a range (13-15)
             mtga-pbp keep <matchId>   never prune this match
             mtga-pbp unkeep <matchId> allow it to be pruned again
 

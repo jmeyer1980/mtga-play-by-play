@@ -116,7 +116,8 @@ public static class Why
             foreach (var header in headers)
                 Console.WriteLine($"  {header.Text}");
             Console.WriteLine();
-            Console.WriteLine($"mtga-pbp why {matchId} <turn> [<turn> ...], or a range, 13-15");
+            Console.WriteLine($"mtga-pbp why {matchId} <turns>");
+            Console.WriteLine("  one (13), several (13 14, or 13,14) or a range (13-15)");
             return plan.ExitCode;
         }
 
@@ -160,6 +161,12 @@ public static class Why
     /// A reversed range is read ascending. Somebody who types <c>15-13</c> has said what
     /// they want unambiguously, and the output is ordered by turn either way.
     /// </para>
+    /// <para>
+    /// Zero and below are unreadable rather than absent. Turn numbering starts at 1, so
+    /// <c>0</c> is not a turn this match happened to stop short of — it is not a turn,
+    /// and saying "this match has no turn 0, its turns run 1 to 22" would answer a
+    /// question nobody asked.
+    /// </para>
     /// </remarks>
     public static (IReadOnlyList<int> Turns, IReadOnlyList<string> Unreadable) ParseTurns(
         IEnumerable<string> operands)
@@ -173,7 +180,7 @@ public static class Why
             {
                 var ends = piece.Split('-');
 
-                if (ends.Length == 1 && int.TryParse(ends[0], out var one))
+                if (ends.Length == 1 && int.TryParse(ends[0], out var one) && one > 0)
                 {
                     turns.Add(one);
                     continue;
@@ -183,7 +190,7 @@ public static class Why
                     int.TryParse(ends[0], out var from) && int.TryParse(ends[1], out var to))
                 {
                     if (from > to) (from, to) = (to, from);
-                    if (to - from < WidestRange)
+                    if (from > 0 && to - from < WidestRange)
                     {
                         for (var turn = from; turn <= to; turn++) turns.Add(turn);
                         continue;

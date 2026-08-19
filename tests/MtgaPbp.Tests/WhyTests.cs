@@ -108,6 +108,29 @@ public class WhyTests
     }
 
     /// <summary>
+    /// Turn numbering starts at 1, so zero is an operand that could not be read rather
+    /// than a turn the match stopped short of. The distinction is the whole difference
+    /// between "cannot read 0 as a turn" and the nonsense "this match has no turn 0,
+    /// its turns run 1 to 22".
+    /// </summary>
+    [Test]
+    public void Zero_is_not_a_turn_the_match_missed_it_is_not_a_turn()
+    {
+        foreach (var operand in new[] { "0", "0-5", "-3-5" })
+        {
+            var (turns, unreadable) = Why.ParseTurns([operand]);
+
+            Assert.That(turns, Is.Empty, $"{operand} yielded turns");
+            Assert.That(unreadable, Is.EqualTo(new[] { operand }));
+        }
+
+        // And it travels: alone it lists the turns, beside a real one it refuses.
+        Assert.That(Why.Plan(["0"], Turns(14)).Outcome, Is.EqualTo(WhyOutcome.ListTurns));
+        Assert.That(Why.Plan(["13", "0"], Turns(14)).Outcome, Is.EqualTo(WhyOutcome.Refuse));
+        Assert.That(Why.Plan(["13", "0"], Turns(14)).ExitCode, Is.EqualTo(2));
+    }
+
+    /// <summary>
     /// A range is expanded to reach the turns inside it, so an absurd one has to be
     /// refused while it is still two integers rather than after it is two billion.
     /// </summary>
