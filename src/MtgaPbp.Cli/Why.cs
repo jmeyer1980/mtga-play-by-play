@@ -124,25 +124,32 @@ public static class Why
         var games = transcript.Games.Select(g => g.Number).DefaultIfEmpty(1).ToList();
         var reached = headers.Select(l => (l.Turn, l.Game)).ToHashSet();
 
-        foreach (var turn in plan.Turns)
-            foreach (var game in games)
-            {
-                // Turn numbers are per game, so a turn the match reached is not a turn every
-                // game reached. Printing the heading anyway is how a range over a Bo3 fills
-                // with empty sections.
-                if (games.Count > 1 && !reached.Contains((turn, game))) continue;
+        // Turn numbers are per game, so a turn the match reached is not a turn every
+        // game reached. Printing the heading anyway is how a range over a Bo3 fills
+        // with empty sections.
+        var showing = (from turn in plan.Turns
+                       from game in games
+                       where games.Count == 1 || reached.Contains((turn, game))
+                       select (Turn: turn, Game: game)).ToList();
 
-                var of = games.Count > 1 ? $" of game {game}" : "";
-                Console.WriteLine($"=== turn {turn}{of}: what the transcript says ===");
-                foreach (var l in lines.Where(l => l.Turn == turn && l.Game == game))
-                    Console.WriteLine($"  {(l.IsTurnHeader ? "" : "- ")}{l.Text}");
+        // Every section asked for, from one walk of the archived match. Asking a turn
+        // at a time re-parsed the whole log once per turn, which a whole-match dump
+        // paid for in full.
+        var dump = AnnotationDump.ForTurns(raw, cards, showing);
 
-                Console.WriteLine();
-                Console.WriteLine($"=== turn {turn}{of}: what the log says ===");
-                foreach (var l in AnnotationDump.ForTurn(raw, cards, turn, game))
-                    Console.WriteLine($"  {l}");
-                Console.WriteLine();
-            }
+        foreach (var (turn, game) in showing)
+        {
+            var of = games.Count > 1 ? $" of game {game}" : "";
+            Console.WriteLine($"=== turn {turn}{of}: what the transcript says ===");
+            foreach (var l in lines.Where(l => l.Turn == turn && l.Game == game))
+                Console.WriteLine($"  {(l.IsTurnHeader ? "" : "- ")}{l.Text}");
+
+            Console.WriteLine();
+            Console.WriteLine($"=== turn {turn}{of}: what the log says ===");
+            foreach (var l in dump[(turn, game)])
+                Console.WriteLine($"  {l}");
+            Console.WriteLine();
+        }
 
         return 0;
     }
