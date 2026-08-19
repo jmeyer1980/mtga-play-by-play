@@ -33,7 +33,8 @@ public readonly record struct TurnPlan(
     WhyOutcome Outcome, IReadOnlyList<int> Turns, string? Complaint, int ExitCode);
 
 /// <summary>
-/// Shows turns' rendered lines beside the raw annotations that produced them.
+/// Shows turns' rendered lines beside the raw annotations that produced them, and the
+/// prompts the game put to the player while they were happening.
 /// </summary>
 /// <remarks>
 /// Every output bug found so far came from reading a transcript, thinking "that line
@@ -45,6 +46,11 @@ public readonly record struct TurnPlan(
 /// the whole question is usually "which permanent is 405". Ids are shown as well as
 /// names: a name that looks wrong is the bug, and the id is what you search the archive
 /// for next.
+/// </para>
+/// <para>
+/// A refused action leaves no annotations at all — nothing happened — so the middle
+/// section reads the requests instead, which is where a cost that could not be paid is
+/// recorded. See <see cref="Negotiations"/>.
 /// </para>
 /// <para>
 /// Reading the operands is kept apart from reading the archive, in
@@ -81,8 +87,9 @@ public static class Why
                 usage: mtga-pbp why <matchId> [turns]
 
                 With no turns, lists the turns of the match. With one or more - 13, or
-                13 14, or 13-15, or 13,14 - shows each turn's transcript lines above the
-                raw annotations behind them, ids resolved, in ascending order.
+                13 14, or 13-15, or 13,14 - shows each turn's transcript lines, then what
+                the game asked you and what it would cost, then the raw annotations
+                behind them, ids resolved, in ascending order.
                 """);
             return 2;
         }
@@ -136,7 +143,7 @@ public static class Why
         // Every section asked for, from one walk of the archived match. Asking a turn
         // at a time re-parsed the whole log once per turn, which a whole-match dump
         // paid for in full.
-        var dump = AnnotationDump.ForTurns(raw, cards, showing);
+        var dump = LogDump.ForTurns(raw, cards, showing);
 
         foreach (var (turn, game) in showing)
         {
@@ -145,9 +152,22 @@ public static class Why
             foreach (var l in lines.Where(l => l.Turn == turn && l.Game == game))
                 Console.WriteLine($"  {(l.IsTurnHeader ? "" : "- ")}{l.Text}");
 
+            // Between the two, and only when there is something to say. It answers a
+            // different question from either neighbour — not what happened but what the
+            // player was asked — and it is short, while the annotation dump below it ran
+            // to 250 lines on the turn that prompted this. Below that wall it would
+            // scroll away from exactly the reader who came looking for it.
+            var asked = dump[(turn, game)].Negotiations;
+            if (asked.Count > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"=== turn {turn}{of}: what the game asked you ===");
+                foreach (var l in asked) Console.WriteLine($"  {l}");
+            }
+
             Console.WriteLine();
             Console.WriteLine($"=== turn {turn}{of}: what the log says ===");
-            foreach (var l in dump[(turn, game)])
+            foreach (var l in dump[(turn, game)].Annotations)
                 Console.WriteLine($"  {l}");
             Console.WriteLine();
         }
