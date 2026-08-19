@@ -295,11 +295,11 @@ public static class IndexRenderer
             sb.Append("""<p class="note">No match has a result yet.</p>""");
         }
 
-        sb.Append(Breakdown("By format", "Format", s.ByFormat, decks: false));
-        sb.Append(Breakdown("By deck", "Deck", s.ByDeck, decks: true));
-
         // Said out loud rather than folded into the totals. A panel that quietly leaves
         // out a quarter of the archive is a correctness bug wearing a feature's clothes.
+        // Above the disclosure, not inside it: these caveat the record that stays on
+        // screen, and a caveat that folds away while the number it qualifies does not
+        // is the same bug in a new place.
         var notes = new List<string>();
         if (s.Unattributed > 0)
             notes.Add(s.Unattributed == 1
@@ -312,17 +312,79 @@ public static class IndexRenderer
         foreach (var note in notes)
             sb.Append($"""<p class="note">{E(note)}</p>""");
 
-        // Described-by rather than labelled-by: a description does not become part of
-        // the button's name, so each deck's row header stays the deck's name.
+        sb.Append(Breakdowns(s));
+        sb.Append("</section>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The two breakdowns, behind a disclosure, or nothing when there are none.
+    /// </summary>
+    /// <remarks>
+    /// The whole panel used to sit open above the match list: 37 table rows over 529
+    /// matches, and the deck table grows with every new deck played, so the block a
+    /// reader scrolls past to reach the list they opened the page for keeps getting
+    /// taller (#40).
+    /// <para>
+    /// A disclosure and not tabs, a modal or two columns. Two columns would halve the
+    /// width of a nine-column match table that already scrolls sideways on a phone.
+    /// The other two need script, and this page is meant to work from a file:// URL
+    /// with none — so with script off they would have to fall back to showing
+    /// everything, which is the layout being fixed. <c>details</c> is native: it
+    /// collapses without script, and its keyboard and focus behaviour is the browser's
+    /// rather than something to get right by hand. The deck list on a game page is the
+    /// same control for the same reason.
+    /// </para>
+    /// <para>
+    /// Only the breakdowns fold. The overall record is one row and it is the number
+    /// people come for; hiding it would answer the complaint by making the page worse.
+    /// The heading above stays a real <c>h2</c> rather than moving into the summary,
+    /// because the page has two headings and heading navigation is how a screen-reader
+    /// user skips to either of them.
+    /// </para>
+    /// </remarks>
+    private static string Breakdowns(IndexStats s)
+    {
+        var format = Breakdown("By format", "Format", s.ByFormat, decks: false);
+        var deck = Breakdown("By deck", "Deck", s.ByDeck, decks: true);
+        if (format.Length == 0 && deck.Length == 0) return "";
+
+        var sb = new StringBuilder();
+        sb.Append($"""
+            <details id="breakdowns"><summary>{E(BreakdownSummary(s))}</summary>
+            """);
+        sb.Append(format).Append(deck);
+
+        // Inside, with the buttons it describes. Described-by rather than labelled-by:
+        // a description does not become part of the button's name, so each deck's row
+        // header stays the deck's name.
         if (s.ByDeck.Count > 0)
             sb.Append("""
                 <p class="note" id="deck-filter-note">Selecting a deck filters the match
                 list below to it. Selecting it again clears the filter.</p>
                 """);
 
-        sb.Append("</section>");
+        sb.Append("</details>");
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The disclosure's one visible line, which says what opening it gets you.
+    /// </summary>
+    /// <remarks>
+    /// It counts, because a collapsed control that says only "More" gives a reader
+    /// nothing to decide with — the same reason a game page's deck heading says how
+    /// many cards rather than just "Your deck".
+    /// </remarks>
+    private static string BreakdownSummary(IndexStats s)
+    {
+        var parts = new List<string>();
+        if (s.ByFormat.Count > 0) parts.Add(Count(s.ByFormat.Count, "format"));
+        if (s.ByDeck.Count > 0) parts.Add(Count(s.ByDeck.Count, "deck"));
+        return $"Break it down — {string.Join(" and ", parts)}";
+    }
+
+    private static string Count(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
 
     private static string Breakdown(string title, string what, IReadOnlyList<StatRow> rows, bool decks)
     {
@@ -472,6 +534,11 @@ public static class IndexRenderer
         .star:enabled:hover{background:rgba(128,128,128,.2)}
         #stats{margin:0 0 1.5rem}
         #stats h2{font-size:1.1rem;margin:0 0 .6rem}
+        /* Sized and hit-targeted like the other controls on this page rather than left
+           at the browser's bare marker, which is a few pixels tall on a touch screen. */
+        #breakdowns>summary{cursor:pointer;padding:.4rem 0;min-height:1.75rem;
+                            border-radius:.3rem;font-size:.95rem}
+        #breakdowns[open]>summary{margin-bottom:.4rem}
         table.stats{width:auto;margin:0 0 1rem;font-size:.95rem}
         table.stats caption{font-weight:600;padding:.3rem 0;opacity:.8}
         table.stats th,table.stats td{padding:.3rem .8rem .3rem 0}
@@ -707,7 +774,15 @@ public static class IndexRenderer
                 var panel = document.getElementById('stats');
                 var freshPanel = fresh.querySelector('#stats');
                 if (panel && freshPanel) {
+                  // The disclosure lives inside the panel, so its open state is part of
+                  // what gets replaced. Without carrying it over, the breakdowns a
+                  // reader had opened would fold up under them every time a match
+                  // finished — which is exactly when they are watching this page.
+                  var was = document.getElementById('breakdowns');
+                  var open = was ? was.open : false;
                   panel.innerHTML = freshPanel.innerHTML;
+                  var now = document.getElementById('breakdowns');
+                  if (now) now.open = open;
                   wireDeckNames();
                 }
                 rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));

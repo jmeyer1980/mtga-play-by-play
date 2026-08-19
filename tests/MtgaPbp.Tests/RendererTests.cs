@@ -829,6 +829,132 @@ public class RendererTests
         Assert.That(header.Value, Does.Not.Contain("Show only"));
     }
 
+    // ---------- Issue 40: the breakdowns fold away ----------
+
+    /// <summary>
+    /// The two breakdowns sit behind a disclosure and the overall record does not.
+    /// </summary>
+    /// <remarks>
+    /// The panel used to put 37 table rows above 529 matches, and the deck table grows
+    /// with every new deck played, so the block a reader scrolls past to reach the list
+    /// they opened the page for kept getting taller. Hiding the overall record too
+    /// would have answered that by making the page worse: it is one row, and it is the
+    /// number people come for.
+    /// </remarks>
+    [Test]
+    public void The_breakdowns_fold_away_and_the_overall_record_does_not()
+    {
+        var stats = Markup.Parse(IndexHtml(deck: true)).Descendants()
+            .Single(e => e.Attribute("id")?.Value == "stats");
+
+        var disclosure = stats.Descendants("details")
+            .Single(d => d.Attribute("id")?.Value == "breakdowns");
+
+        // Closed until asked for. An open one would leave the layout as it was.
+        Assert.That(disclosure.Attribute("open"), Is.Null);
+
+        var folded = disclosure.Descendants("table").ToList();
+        Assert.That(folded.Select(t => t.Descendants("caption").First().Value),
+            Is.EquivalentTo(new[] { "By format", "By deck" }));
+
+        // The record is still on the page without opening anything.
+        var loose = stats.Descendants("table")
+            .Where(t => !t.Ancestors("details").Any()).ToList();
+        Assert.That(loose, Has.Count.EqualTo(1));
+        Assert.That(loose[0].Descendants("td").Any(td => td.Value.Contains('%')), Is.True);
+    }
+
+    /// <summary>
+    /// A caveat about the record stays with the record. A panel that quietly leaves out
+    /// part of the archive is a correctness bug wearing a feature's clothes, and one
+    /// that folds the warning away while the number it qualifies stays on screen is the
+    /// same bug in a new place.
+    /// </summary>
+    [Test]
+    public void The_caveats_on_the_record_do_not_fold_away_with_the_breakdowns()
+    {
+        // One match with a deck and one without: the second is counted in the overall
+        // record but under no deck, which is the note this is about.
+        var html = IndexRenderer.Render([
+            IndexRenderer.Summarize(Sample(deck: SampleDeck())),
+            IndexRenderer.Summarize(Sample())
+        ]);
+
+        var note = Markup.Parse(html).Descendants("p")
+            .Single(p => p.Value.Contains("under no deck"));
+
+        Assert.That(note.Ancestors("details"), Is.Empty);
+    }
+
+    /// <summary>
+    /// The heading stays a real heading rather than moving into the summary. The page
+    /// has two of them, and heading navigation is how a screen-reader user skips to
+    /// either one.
+    /// </summary>
+    [Test]
+    public void The_stats_heading_survives_the_disclosure()
+    {
+        var stats = Markup.Parse(IndexHtml(deck: true)).Descendants()
+            .Single(e => e.Attribute("id")?.Value == "stats");
+
+        var heading = stats.Descendants("h2")
+            .Single(h => h.Attribute("id")?.Value == "stats-heading");
+
+        Assert.That(stats.Attribute("aria-labelledby")?.Value, Is.EqualTo("stats-heading"));
+        Assert.That(heading.Ancestors("details"), Is.Empty, "and is not folded away");
+    }
+
+    /// <summary>
+    /// The one visible line says what opening it gets you, counting rather than saying
+    /// "More" — the same reason a game page's deck heading says how many cards.
+    /// </summary>
+    [Test]
+    public void The_summary_says_what_is_behind_it()
+    {
+        var summary = Markup.Parse(IndexHtml(deck: true)).Descendants("summary").Single();
+
+        Assert.That(summary.Value, Does.Contain("1 format"));
+        Assert.That(summary.Value, Does.Contain("1 deck"));
+        Assert.That(summary.Value, Does.Not.Contain("1 formats"));
+    }
+
+    /// <summary>
+    /// The affordance note travels with the buttons it describes, into the disclosure.
+    /// </summary>
+    /// <remarks>
+    /// Its id is the target of every deck button's <c>aria-describedby</c>, so it has
+    /// to exist wherever it sits; a description may be resolved from content a closed
+    /// disclosure is not rendering, and the buttons are inside it anyway.
+    /// </remarks>
+    [Test]
+    public void The_deck_filter_note_sits_with_the_buttons_it_describes()
+    {
+        var root = Markup.Parse(IndexHtml(deck: true));
+
+        var note = root.Descendants().Single(e => e.Attribute("id")?.Value == "deck-filter-note");
+        Assert.That(note.Ancestors("details").Any(d => d.Attribute("id")?.Value == "breakdowns"),
+            Is.True);
+
+        var name = root.Descendants().First(e => e.Attribute("class")?.Value == "deck-name");
+        Assert.That(name.Ancestors("details").Any(d => d.Attribute("id")?.Value == "breakdowns"),
+            Is.True, "and so do they");
+    }
+
+    /// <summary>
+    /// A live refresh replaces the panel's contents, and the disclosure is one of them,
+    /// so its open state has to be carried across by hand — otherwise the breakdowns a
+    /// reader had opened would fold up under them every time a match finished, which is
+    /// exactly when they are watching this page.
+    /// </summary>
+    [Test]
+    public void A_live_refresh_leaves_the_disclosure_as_the_reader_left_it()
+    {
+        var html = IndexHtml(deck: true);
+
+        Assert.That(html, Does.Contain("var open = was ? was.open : false;"));
+        Assert.That(html, Does.Contain("if (now) now.open = open;"));
+    }
+
     [Test]
     public void An_empty_archive_grows_no_stats_panel()
     {
