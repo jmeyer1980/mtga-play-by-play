@@ -56,9 +56,20 @@ public class NegotiationTests
         _ => $"Unknown card #{id}"
     };
 
-    private static List<Negotiation> Read(string message) =>
-        Negotiations.Describe(
-            JsonDocument.Parse(message).RootElement, new Cards(), Name).ToList();
+    /// <summary>
+    /// The document is disposed once the words are out of it, the same way
+    /// <see cref="LogDump"/> disposes each line it parses.
+    /// </summary>
+    /// <remarks>
+    /// <c>Describe</c> is lazy, so the enumeration has to finish before the document
+    /// goes — which <c>ToList</c> inside the <c>using</c> guarantees. Only strings come
+    /// back, so nothing outlives the buffers they were read from.
+    /// </remarks>
+    private static List<Negotiation> Read(string message)
+    {
+        using var doc = JsonDocument.Parse(message);
+        return Negotiations.Describe(doc.RootElement, new Cards(), Name).ToList();
+    }
 
     private static IReadOnlyList<string> Detail(string message) => Read(message).Single().Detail;
 
