@@ -564,9 +564,11 @@ public class RendererTests
     // garnish. What they cannot cover is how a given synthesiser sounds; see the
     // per-test notes where the browser or the AT gets the final say.
 
-    private static string IndexHtml(bool incomplete = false, bool gaps = false) =>
-        IndexRenderer.Render(
-            [IndexRenderer.Summarize(Sample(incomplete, gaps ? [SummarizedGap()] : null))]);
+    private static string IndexHtml(bool incomplete = false, bool gaps = false, bool deck = false) =>
+        IndexRenderer.Render([
+            IndexRenderer.Summarize(Sample(incomplete, gaps ? [SummarizedGap()] : null,
+                deck: deck ? SampleDeck() : null))
+        ]);
 
     private static string GameHtml() => GamePageRenderer.Render(Sample());
 
@@ -605,7 +607,8 @@ public class RendererTests
         // nodes to point at.
         foreach (var html in new[]
                  {
-                     IndexHtml(), GameHtml(), IndexRenderer.Render([]),
+                     IndexHtml(), IndexHtml(deck: true), IndexHtml(incomplete: true, gaps: true),
+                     GameHtml(), IndexRenderer.Render([]),
                      // The warning banners and their footnotes carry ids of their own,
                      // and only appear on the variants that need them.
                      IndexHtml(incomplete: true, gaps: true),
@@ -630,7 +633,7 @@ public class RendererTests
     {
         // Heading level is how a screen reader user builds a mental outline and jumps
         // around the page; a skipped level reads as a missing section.
-        foreach (var html in new[] { IndexHtml(), GameHtml() })
+        foreach (var html in new[] { IndexHtml(), IndexHtml(deck: true), GameHtml() })
         {
             var levels = Markup.Headings(Markup.Parse(html)).ToList();
             Assert.That(levels, Is.Not.Empty);
@@ -646,7 +649,7 @@ public class RendererTests
     [Test]
     public void Every_control_has_an_accessible_name()
     {
-        foreach (var html in new[] { IndexHtml(), GameHtml() })
+        foreach (var html in new[] { IndexHtml(), IndexHtml(deck: true), GameHtml() })
         {
             var root = Markup.Parse(html);
             foreach (var control in root.Descendants()
@@ -686,11 +689,157 @@ public class RendererTests
         Assert.That(IndexHtml(), Does.Contain("if (count.textContent !== text)"));
     }
 
+    /// <summary>
+    /// The matches table specifically. The index also carries the stats panel's tables
+    /// above it, so "the only tbody on the page" stopped naming this one.
+    /// </summary>
+    private static XElement MatchTable(XElement root) =>
+        root.Descendants("table").Single(t => t.Attribute("id")?.Value == "rows");
+
+    // ---------- Issue 13: the record above the table ----------
+
+    /// <summary>
+    /// The panel is a real table with scoped headers, rendered by the build. The index
+    /// works with JavaScript off and is read with a screen reader, and a record is
+    /// tabular data in the plainest sense.
+    /// </summary>
+    [Test]
+    public void The_stats_panel_is_a_real_table_rendered_by_the_build()
+    {
+        var stats = Markup.Parse(IndexHtml()).Descendants()
+            .Single(e => e.Attribute("id")?.Value == "stats");
+
+        Assert.That(stats.Name.LocalName, Is.EqualTo("section"));
+        Assert.That(stats.Attribute("aria-labelledby")?.Value, Is.EqualTo("stats-heading"));
+
+        var tables = stats.Descendants("table").ToList();
+        Assert.That(tables, Is.Not.Empty);
+        foreach (var th in tables.SelectMany(t => t.Descendants("th")))
+        {
+            Assert.That(th.Attribute("scope")?.Value, Is.AnyOf("col", "row"));
+            Assert.That(th.Value.Trim(), Is.Not.Empty);
+        }
+
+        // Server-rendered, so the numbers are there with no script at all.
+        Assert.That(stats.Descendants("td").Any(td => td.Value.Contains('%')), Is.True);
+    }
+
+    /// <summary>
+    /// A deck name is plain text in the markup and becomes a filter only once script
+    /// upgrades it, because a button that does nothing without script is worse than a
+    /// name that never claimed to be one.
+    /// </summary>
+    [Test]
+    public void A_deck_name_is_not_a_control_until_script_makes_it_one()
+    {
+        var html = IndexHtml(deck: true);
+        var stats = Markup.Parse(html).Descendants()
+            .Single(e => e.Attribute("id")?.Value == "stats");
+
+        var name = stats.Descendants("span")
+            .Single(s => s.Attribute("class")?.Value == "deck-name");
+        Assert.That(name.Attribute("data-deck")?.Value, Is.Not.Empty);
+        Assert.That(stats.Descendants("button"), Is.Empty, "no inert control ships");
+
+        // And the row it filters to carries the matching token.
+        var row = MatchTable(Markup.Parse(html)).Descendants("tr")
+            .Single(tr => tr.Attribute("data-search") is not null);
+        Assert.That(row.Attribute("data-search")!.Value,
+            Does.Contain($"deck:{name.Attribute("data-deck")!.Value}"));
+
+        // The upgrade is in the script, and it is what creates the button. Re-runnable,
+        // because a live refresh replaces the panel and the names have to be wired again.
+        Assert.That(html, Does.Contain("#stats span.deck-name"));
+        Assert.That(html, Does.Contain("wireDeckNames()"));
+    }
+
+    /// <summary>
+    /// A record is two numbers, and both of them need saying. The first attempt threaded
+    /// a spoken " and " between the digits, which named neither number and lost its own
+    /// padding spaces to `.vh`'s position:absolute.
+    /// </summary>
+    [Test]
+    public void A_record_says_which_number_is_wins()
+    {
+        var stats = Markup.Parse(IndexHtml(deck: true)).Descendants()
+            .Single(e => e.Attribute("id")?.Value == "stats");
+        var cell = stats.Descendants("td")
+            .First(td => td.Elements("span").Any(s => s.Attribute("class")?.Value == "vh"));
+
+        // One match, won. The panel counts matches, not the games inside them — the
+        // sample's own result line reads "Won 2-1" and this cell must not.
+        Assert.That(Markup.Clipboard(cell), Is.EqualTo("1-0"), "the eye gets the notation");
+        Assert.That(Markup.Spoken(cell), Is.EqualTo("1 won, 0 lost"), "the ear gets the meaning");
+
+        // Neither half is threaded through the other, so no digit abuts a word.
+        Assert.That(cell.Elements("span").Count(), Is.EqualTo(2));
+    }
+
+    /// <summary>
+    /// The dash means two different things one column apart — no wins yet, and a log
+    /// that never recorded an opening — so it cannot be the only thing rendered.
+    /// </summary>
+    [Test]
+    public void A_missing_number_says_what_is_missing_rather_than_printing_a_dash()
+    {
+        var stats = Markup.Parse(IndexHtml(deck: true)).Descendants()
+            .Single(e => e.Attribute("id")?.Value == "stats");
+
+        var dashes = stats.Descendants("span")
+            .Where(s => s.Attribute("aria-hidden")?.Value == "true" && s.Value.Trim() == "—")
+            .ToList();
+        Assert.That(dashes, Is.Not.Empty, "the sample has a deck with no losses");
+
+        foreach (var dash in dashes)
+        {
+            var twin = dash.NodesAfterSelf().OfType<XElement>().First();
+            Assert.That(twin.Attribute("class")?.Value, Is.EqualTo("vh"));
+            Assert.That(twin.Value.Trim(), Is.Not.Empty);
+            Assert.That(twin.Value, Does.Not.Contain("—"));
+        }
+
+        // And the two meanings are told apart rather than sharing one phrase.
+        var said = dashes.Select(d => d.NodesAfterSelf().OfType<XElement>().First().Value.Trim())
+            .Distinct().ToList();
+        Assert.That(said, Does.Contain("no losses yet").Or.Contain("no wins yet"));
+    }
+
+    /// <summary>
+    /// The deck filter is a toggle inside a row header, which constrains it twice: its
+    /// state has to ride on aria-pressed, and its name has to stay the deck's name or
+    /// every cell in that row is announced under an instruction.
+    /// </summary>
+    [Test]
+    public void The_deck_filter_is_a_toggle_that_does_not_rename_its_own_row()
+    {
+        var html = IndexHtml(deck: true);
+        var root = Markup.Parse(html);
+
+        // The affordance is a description, which does not become part of the name.
+        var note = root.Descendants().Single(e => e.Attribute("id")?.Value == "deck-filter-note");
+        Assert.That(note.Value, Does.Contain("filters the match"));
+        Assert.That(html, Does.Contain("aria-describedby"), "the button points at it");
+        Assert.That(html, Does.Contain("aria-pressed"), "and carries its state");
+
+        // The row header is the deck's name and nothing else.
+        var header = root.Descendants("th")
+            .Single(th => th.Descendants().Any(d => d.Attribute("class")?.Value == "deck-name"));
+        Assert.That(header.Attribute("scope")?.Value, Is.EqualTo("row"));
+        Assert.That(header.Value.Trim(), Is.Not.Empty);
+        Assert.That(header.Value, Does.Not.Contain("Show only"));
+    }
+
+    [Test]
+    public void An_empty_archive_grows_no_stats_panel()
+    {
+        Assert.That(IndexRenderer.Render([]), Does.Not.Contain("id=\"stats\""));
+    }
+
     [Test]
     public void Index_table_header_cells_are_scoped_and_none_are_blank()
     {
         var root = Markup.Parse(IndexHtml());
-        var columns = root.Descendants("thead").Single().Descendants("th").ToList();
+        var columns = MatchTable(root).Descendants("thead").Single().Descendants("th").ToList();
 
         Assert.That(columns, Has.Count.EqualTo(9));
         foreach (var th in columns)
@@ -703,7 +852,7 @@ public class RendererTests
 
         // The date identifies the row, so moving across a row announces which match
         // you are in rather than five values with no subject.
-        var rowHeader = root.Descendants("tbody").Single().Descendants("th").Single();
+        var rowHeader = MatchTable(root).Descendants("tbody").Single().Descendants("th").Single();
         Assert.That(rowHeader.Attribute("scope")?.Value, Is.EqualTo("row"));
         Assert.That(rowHeader.Descendants("a").Single().Value, Does.StartWith("2026-"));
     }
@@ -723,7 +872,7 @@ public class RendererTests
         Assert.That(button.Attribute("data-id")?.Value, Is.EqualTo("abc-123"));
         Assert.That(button.Value.Trim(), Is.EqualTo("Copy game ID"));
 
-        var row = Markup.Parse(IndexHtml()).Descendants("tbody").Single()
+        var row = MatchTable(Markup.Parse(IndexHtml())).Descendants("tbody").Single()
             .Descendants("button").Single(b => b.Attribute("class")?.Value == "copyid");
         Assert.That(row.Attribute("data-id")?.Value, Is.EqualTo("abc-123"));
 
@@ -749,7 +898,7 @@ public class RendererTests
     [Test]
     public void The_index_copy_control_stays_out_of_the_row_header()
     {
-        var row = Markup.Parse(IndexHtml()).Descendants("tbody").Single()
+        var row = MatchTable(Markup.Parse(IndexHtml())).Descendants("tbody").Single()
             .Descendants("tr").Single();
 
         var header = row.Elements("th").Single();
@@ -823,7 +972,7 @@ public class RendererTests
     {
         // Screen readers list and jump between tables by name, and "most recent first"
         // is otherwise information carried only by the visual order.
-        var caption = Markup.Parse(IndexHtml()).Descendants("caption").Single();
+        var caption = MatchTable(Markup.Parse(IndexHtml())).Elements("caption").Single();
         Assert.That(caption.Value, Does.Contain("most recent first"));
     }
 
@@ -1524,7 +1673,7 @@ public class RendererTests
     [Test]
     public void Both_pages_offer_a_main_landmark_and_a_visible_focus_ring()
     {
-        foreach (var html in new[] { IndexHtml(), GameHtml() })
+        foreach (var html in new[] { IndexHtml(), IndexHtml(deck: true), GameHtml() })
         {
             var main = Markup.Parse(html).Descendants("main").Single();
 
@@ -1593,7 +1742,7 @@ public class RendererTests
     [Test]
     public void The_colours_and_dimming_that_failed_are_gone()
     {
-        foreach (var html in new[] { IndexHtml(), GameHtml() })
+        foreach (var html in new[] { IndexHtml(), IndexHtml(deck: true), GameHtml() })
         {
             Assert.That(html, Does.Not.Contain("#2a2"), "3.07:1 on white");
             Assert.That(html, Does.Not.Contain("#e8b923"), "1.84:1 on white");

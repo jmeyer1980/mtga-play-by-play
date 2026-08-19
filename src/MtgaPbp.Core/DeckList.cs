@@ -12,7 +12,7 @@ namespace MtgaPbp.Core;
 /// grpIds each — printed by id that deck reads "3× Banishing Light" and "1× Banishing
 /// Light" on two lines, which is not what the player built.
 /// </remarks>
-public sealed record DeckEntry(string Name, int Count, bool Seen);
+public sealed record DeckEntry(string Name, int Count, bool Seen, bool IsLand = false);
 
 /// <summary>
 /// The local player's registered deck, which Arena sends once per match in
@@ -108,22 +108,29 @@ public static class DeckList
     public static IReadOnlyList<DeckEntry> Build(
         IReadOnlyList<int> grpIds, ICardDb cards, IReadOnlySet<int> seenGrpIds)
     {
-        var byName = new Dictionary<string, (int Count, bool Seen)>(StringComparer.Ordinal);
+        var byName = new Dictionary<string, (int Count, bool Seen, bool Land)>(StringComparer.Ordinal);
 
         foreach (var grpId in grpIds)
         {
             // The same fallback the tracker uses, so an id missing from the card
             // database reads the same wherever it surfaces.
-            var name = cards.CardForGrpId(grpId)?.Name ?? $"Card #{grpId}";
+            var card = cards.CardForGrpId(grpId);
+            var name = card?.Name ?? $"Card #{grpId}";
             var seen = seenGrpIds.Contains(grpId);
+
+            // Recorded here because here is the last place the grpId exists, the same
+            // reason DeckColors is worked out at extraction time. Whether a card is a
+            // land cannot be told from a name and a count afterwards.
+            var land = card is not null && DeckColors.IsLand(card);
+
             byName[name] = byName.TryGetValue(name, out var e)
-                ? (e.Count + 1, e.Seen || seen)
-                : (1, seen);
+                ? (e.Count + 1, e.Seen || seen, e.Land || land)
+                : (1, seen, land);
         }
 
         return byName
             .OrderBy(p => p.Key, StringComparer.Ordinal)
-            .Select(p => new DeckEntry(p.Key, p.Value.Count, p.Value.Seen))
+            .Select(p => new DeckEntry(p.Key, p.Value.Count, p.Value.Seen, p.Value.Land))
             .ToList();
     }
 
