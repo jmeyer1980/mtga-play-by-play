@@ -329,15 +329,66 @@ public class RendererTests
 
         // The destination is in the accessible name: "Older" alone tells a screen reader
         // user nothing about where they would land.
-        Assert.That(Markup.Spoken(links[0]), Does.Contain("Newer match"));
-        Assert.That(Markup.Spoken(links[0]), Does.Contain("2026-08-12 10:00"));
-        Assert.That(Markup.Spoken(links[2]), Does.Contain("older match"));
+        Assert.That(Markup.Spoken(links[0]), Is.EqualTo("Newer match, 2026-08-12 10:00"));
+        Assert.That(Markup.Spoken(links[2]), Is.EqualTo("Older match, 2026-08-11 09:00"));
 
         // Something to land on, and focusable so focus follows the view rather than
         // staying four hundred lines down.
         var h1 = Markup.Parse(html).Descendants("h1").Single();
         Assert.That(h1.Attribute("id")?.Value, Is.EqualTo("top"));
         Assert.That(h1.Attribute("tabindex")?.Value, Is.EqualTo("-1"));
+    }
+
+    /// <summary>
+    /// Issue 27: the pager showed the neighbour's timestamp and no word, so the arrow
+    /// was the only cue to which way through the archive it went — and the index is
+    /// sorted newest first, which makes "left" genuinely ambiguous.
+    /// </summary>
+    /// <remarks>
+    /// The word is the visible half and the destination follows it in the hidden half,
+    /// which keeps the accessible name the renderer already produced. Both are asserted
+    /// here because satisfying one by breaking the other is the obvious wrong turn: a
+    /// screen reader was never the reader who was confused.
+    /// </remarks>
+    [Test]
+    public void The_pager_says_which_way_it_goes_where_the_eye_can_see_it()
+    {
+        var nav = Markup.Parse(GamePageRenderer.Render(Sample(),
+                new Neighbours("newer-id", "2026-08-12 10:00", "older-id", "2026-08-11 09:00")))
+            .Descendants("nav").Single();
+        var links = nav.Descendants("a").ToList();
+
+        // What the eye gets: the direction, and not a date it would have to compare
+        // against this page's own to work out which way it is going.
+        Assert.That(Markup.Clipboard(links[0]), Does.Contain("Newer"));
+        Assert.That(Markup.Clipboard(links[0]), Does.Not.Contain("2026-08-12"));
+        Assert.That(Markup.Clipboard(links[2]), Does.Contain("Older"));
+        Assert.That(Markup.Clipboard(links[2]), Does.Not.Contain("2026-08-11"));
+
+        // The arrows stay decorative. A synthesiser reads U+2190 as "leftwards arrow",
+        // which would land immediately before the word that now follows it.
+        foreach (var arrow in links.SelectMany(a => a.Elements("span"))
+                     .Where(s => s.Attribute("aria-hidden") is not null))
+            Assert.That(arrow.Value.Trim(), Is.AnyOf("←", "→"));
+
+        // With styling off the hidden half stops hiding and both halves land in one
+        // line, so they have to read as one sentence rather than repeat the word.
+        Assert.That(links[0].Value, Is.EqualTo("←Newer match, 2026-08-12 10:00"));
+        Assert.That(links[2].Value, Is.EqualTo("Older match, 2026-08-11 09:00→"));
+    }
+
+    /// <summary>
+    /// A neighbour with no timestamp leaves a whole phrase behind, not a dangling comma.
+    /// </summary>
+    [Test]
+    public void The_pager_still_reads_as_a_phrase_when_a_neighbour_has_no_date()
+    {
+        var links = Markup.Parse(GamePageRenderer.Render(Sample(),
+                new Neighbours("newer-id", null, "older-id", null)))
+            .Descendants("nav").Single().Descendants("a").ToList();
+
+        Assert.That(Markup.Spoken(links[0]), Is.EqualTo("Newer match"));
+        Assert.That(Markup.Spoken(links[2]), Is.EqualTo("Older match"));
     }
 
     [Test]
