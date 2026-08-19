@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using MtgaPbp.Core;
@@ -23,7 +24,24 @@ public sealed record MatchSummary(
     /// the time a transcript reaches this record the card ids it was worked out from
     /// are gone.
     /// </summary>
-    string? Colors = null);
+    string? Colors = null,
+
+    /// <summary>
+    /// The registered decklist, or empty when the log carried none. Carried rather than
+    /// pre-grouped because which deck this is cannot be known from one match: it is
+    /// decided by comparing every list in the archive against every other.
+    /// </summary>
+    IReadOnlyList<DeckEntry>? Deck = null,
+
+    /// <summary>The first registered commander, when the format has one.</summary>
+    string? Commander = null,
+
+    /// <summary>
+    /// Whether you were on the play in the first game, or null when the log never said —
+    /// which is every match archived before the slicer kept <c>ConnectResp</c>. Null is
+    /// not "on the draw", so anything counting this needs its own denominator.
+    /// </summary>
+    bool? OnThePlay = null);
 
 public static class IndexRenderer
 {
@@ -39,7 +57,15 @@ public static class IndexRenderer
         t.CardsSeen.OrderBy(c => c, StringComparer.Ordinal).ToList(),
         HasGaps: t.Gaps.Count > 0,
         Length: TurnClock.MatchLength(t),
-        Colors: t.DeckColors);
+        Colors: t.DeckColors,
+        Deck: t.Deck,
+        Commander: t.Commanders.FirstOrDefault(),
+        // The seat active on turn one is the seat on the play, so this is "that seat was
+        // mine". Null when the log never announced a turn, which is not the same as
+        // having been on the draw.
+        OnThePlay: t.Opening?.FirstPlayerSeat is { } first && t.You?.Seat is { } mine
+            ? first == mine
+            : null);
 
     /// <summary>
     /// Rows are rendered statically rather than built by script: the page then works
@@ -63,6 +89,11 @@ public static class IndexRenderer
         }
         else
         {
+            // Worked out once: the panel reports the records, and every row carries the
+            // deck it was played with so one click in the panel can filter to it.
+            var stats = IndexStats.From(ordered);
+            body.Append(Panel(stats));
+
             // The counter is server-rendered rather than filled in by script: it is a
             // live region, and a region that gains its first text after load announces
             // that text. Starting it correct means the first announcement is a real
@@ -90,7 +121,11 @@ public static class IndexRenderer
                 // search for "white" from turning up matches whose colours nobody knows.
                 var haystack = string.Join(' ',
                     r.Opponent, r.EventName, r.Result, r.Date, string.Join(' ', r.Cards),
-                    r.Colors ?? "", r.Colors is null ? "" : DeckColors.Spoken(r.Colors))
+                    r.Colors ?? "", r.Colors is null ? "" : DeckColors.Spoken(r.Colors),
+                    // The deck token the panel filters by. Only matches whose log
+                    // carried a decklist have one, which is what keeps a search for a
+                    // deck from turning up matches nobody knows the deck of.
+                    stats.DeckOf.TryGetValue(r.MatchId, out var deck) ? $"deck:{deck}" : "")
                     .ToLowerInvariant();
 
                 // The star is a toggle button, so its state rides on aria-pressed and
@@ -219,6 +254,121 @@ public static class IndexRenderer
         : $"""<span aria-hidden="true">{E(c)}</span>""" +
           $"""<span class="vh">{E(DeckColors.Spoken(c))}</span>""";
 
+    /// <summary>
+    /// The record, above the table it summarises.
+    /// </summary>
+    /// <remarks>
+    /// Real tables with scoped headers rather than a chart or a grid of divs: the index
+    /// works with JavaScript off and is read with a screen reader, and a record is
+    /// tabular data in the plainest sense. Rendered by the build for the same reason the
+    /// rows are.
+    /// <para>
+    /// A deck name is plain text here and becomes a filter button only if script runs.
+    /// Rendering it as a button that does nothing without script would be the thing this
+    /// file already refuses to do for the pager and the star.
+    /// </para>
+    /// </remarks>
+    private static string Panel(IndexStats s)
+    {
+        if (!s.Any) return "";
+
+        var sb = new StringBuilder();
+        sb.Append($"""
+            <section id="stats" aria-labelledby="stats-heading">
+            <h2 id="stats-heading">Record</h2>
+            <table class="stats"><caption class="vh">Overall record</caption>
+            <thead><tr><th scope="col">Played</th><th scope="col">Record</th>
+            <th scope="col">Win rate</th><th scope="col">Best streak</th></tr></thead>
+            <tbody><tr><td>{s.Overall.Played}</td><td>{Record(s.Overall)}</td>
+            <td>{Rate(s.Overall)}</td><td>{s.LongestWinStreak}</td></tr></tbody></table>
+            """);
+
+        sb.Append(Breakdown("By format", "Format", s.ByFormat, decks: false));
+        sb.Append(Breakdown("By deck", "Deck", s.ByDeck, decks: true));
+
+        // Said out loud rather than folded into the totals. A panel that quietly leaves
+        // out a quarter of the archive is a correctness bug wearing a feature's clothes.
+        var notes = new List<string>();
+        if (s.Unattributed > 0)
+            notes.Add($"{s.Unattributed} match{(s.Unattributed == 1 ? "" : "es")} " +
+                      "counted above but not under any deck — their logs carried no decklist.");
+        if (s.Excluded > 0)
+            notes.Add($"{s.Excluded} unfinished match{(s.Excluded == 1 ? " is" : "es are")} " +
+                      "left out of every record — an unfinished match has no result.");
+        foreach (var note in notes)
+            sb.Append($"""<p class="note">{E(note)}</p>""");
+
+        sb.Append("</section>");
+        return sb.ToString();
+    }
+
+    private static string Breakdown(string title, string what, IReadOnlyList<StatRow> rows, bool decks)
+    {
+        if (rows.Count == 0) return "";
+
+        var sb = new StringBuilder();
+        sb.Append($"""
+            <table class="stats"><caption>{E(title)}</caption>
+            <thead><tr><th scope="col">{E(what)}</th><th scope="col">Played</th>
+            <th scope="col">Record</th><th scope="col">Win rate</th>
+            """);
+
+        // Only decks carry these: a format's median turn count mixes archetypes together
+        // and says nothing about any of them.
+        if (decks)
+            sb.Append("""
+                <th scope="col">Turns won</th><th scope="col">Turns lost</th>
+                <th scope="col">On the play</th>
+                """);
+
+        sb.Append("</tr></thead><tbody>");
+
+        foreach (var r in rows)
+        {
+            var name = decks && r.Slug is { } slug
+                ? $"""<span class="deck-name" data-deck="{E(slug)}">{E(r.Name)}</span>"""
+                : E(r.Name);
+
+            sb.Append($"""
+                <tr><th scope="row">{name}</th><td>{r.Played}</td>
+                <td>{Record(r)}</td><td>{Rate(r)}</td>
+                """);
+
+            if (decks)
+                sb.Append($"""
+                    <td>{r.TurnsInWins?.ToString(CultureInfo.InvariantCulture) ?? "—"}</td>
+                    <td>{r.TurnsInLosses?.ToString(CultureInfo.InvariantCulture) ?? "—"}</td>
+                    <td>{Play(r)}</td>
+                    """);
+
+            sb.Append("</tr>");
+        }
+
+        sb.Append("</tbody></table>");
+        return sb.ToString();
+    }
+
+    /// <summary>Won-lost, with draws only when there were any.</summary>
+    private static string Record(StatRow r) =>
+        r.Drawn == 0
+            ? $"{r.Won}<span aria-hidden=\"true\">–</span><span class=\"vh\"> and </span>{r.Lost}"
+            : $"{r.Won}<span aria-hidden=\"true\">–</span><span class=\"vh\"> and </span>{r.Lost}" +
+              $"<span aria-hidden=\"true\">–</span><span class=\"vh\"> and </span>{r.Drawn} drawn";
+
+    private static string Rate(StatRow r) =>
+        r.WinRate is { } rate
+            ? $"{(rate * 100).ToString("0", CultureInfo.InvariantCulture)}%"
+            : "—";
+
+    /// <summary>
+    /// The on-the-play split over its own denominator, because the log did not record an
+    /// opening for the older half of the archive and those are not losses of the die roll.
+    /// </summary>
+    private static string Play(StatRow r) =>
+        r.WithOpening == 0
+            ? "—"
+            : $"{r.OnThePlay} of {r.WithOpening}";
+
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 
     // Contrast is measured against the two backdrops `color-scheme: light dark` can
@@ -261,6 +411,17 @@ public static class IndexRenderer
         .star.on{color:#8a6100}
         .star:enabled{cursor:pointer}
         .star:enabled:hover{background:rgba(128,128,128,.2)}
+        #stats{margin:0 0 1.5rem}
+        #stats h2{font-size:1.1rem;margin:0 0 .6rem}
+        table.stats{width:auto;margin:0 0 1rem;font-size:.95rem}
+        table.stats caption{font-weight:600;padding:.3rem 0;opacity:.8}
+        table.stats th,table.stats td{padding:.3rem .8rem .3rem 0}
+        /* A deck name is a span until script makes it a button, so it has to look like
+           plain text until then rather than like a control that does nothing. */
+        button.deck-name{background:none;border:0;padding:0;font:inherit;color:inherit;
+                         cursor:pointer;text-decoration:underline;
+                         text-underline-offset:.2em}
+        button.deck-name:hover{opacity:.75}
         /* Sized like the star, and never disabled the way the star is: keeping a match
            needs the local server, copying an id needs nothing. */
         .copyid{background:none;border:0;cursor:pointer;font-size:1rem;padding:0;
@@ -333,6 +494,29 @@ public static class IndexRenderer
 
           q.addEventListener('input', apply);
           apply();
+
+          // The deck names in the stats panel become filters, but only now that there is
+          // script to make them work. Rendered as a span and upgraded here, because a
+          // button that does nothing without script is worse than a name that never
+          // claimed to be one.
+          document.querySelectorAll('#stats .deck-name').forEach(function (name) {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'deck-name';
+            button.dataset.deck = name.dataset.deck;
+            button.textContent = name.textContent;
+            button.setAttribute('aria-label', 'Show only ' + name.textContent + ' matches');
+            button.addEventListener('click', function () {
+              var token = 'deck:' + button.dataset.deck;
+              // Toggling: a second click on the deck you are already filtered to clears
+              // it, which is the only way back without reaching for the field.
+              q.value = q.value.trim() === token ? '' : token;
+              apply();
+              q.focus();
+              announce(q.value ? 'Filtered to ' + button.textContent + '.' : 'Filter cleared.');
+            });
+            name.replaceWith(button);
+          });
 
           // navigator.clipboard needs a secure context and file:// does not qualify in
           // every browser, so fall back rather than fail silently. The twin of this

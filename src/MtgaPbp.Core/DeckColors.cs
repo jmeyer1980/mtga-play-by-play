@@ -128,7 +128,7 @@ public static class DeckColors
     /// line includes <see cref="LandType"/>, so an artifact land and a creature land
     /// both count.
     /// </summary>
-    private static bool IsLand(CardInfo card) =>
+    public static bool IsLand(CardInfo card) =>
         card.Types.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Any(t => int.TryParse(t, out var type) && type == LandType);
 }

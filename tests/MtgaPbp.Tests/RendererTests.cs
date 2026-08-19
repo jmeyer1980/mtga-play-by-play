@@ -564,9 +564,11 @@ public class RendererTests
     // garnish. What they cannot cover is how a given synthesiser sounds; see the
     // per-test notes where the browser or the AT gets the final say.
 
-    private static string IndexHtml(bool incomplete = false, bool gaps = false) =>
-        IndexRenderer.Render(
-            [IndexRenderer.Summarize(Sample(incomplete, gaps ? [SummarizedGap()] : null))]);
+    private static string IndexHtml(bool incomplete = false, bool gaps = false, bool deck = false) =>
+        IndexRenderer.Render([
+            IndexRenderer.Summarize(Sample(incomplete, gaps ? [SummarizedGap()] : null,
+                deck: deck ? SampleDeck() : null))
+        ]);
 
     private static string GameHtml() => GamePageRenderer.Render(Sample());
 
@@ -686,11 +688,79 @@ public class RendererTests
         Assert.That(IndexHtml(), Does.Contain("if (count.textContent !== text)"));
     }
 
+    /// <summary>
+    /// The matches table specifically. The index also carries the stats panel's tables
+    /// above it, so "the only tbody on the page" stopped naming this one.
+    /// </summary>
+    private static XElement MatchTable(XElement root) =>
+        root.Descendants("table").Single(t => t.Attribute("id")?.Value == "rows");
+
+    // ---------- Issue 13: the record above the table ----------
+
+    /// <summary>
+    /// The panel is a real table with scoped headers, rendered by the build. The index
+    /// works with JavaScript off and is read with a screen reader, and a record is
+    /// tabular data in the plainest sense.
+    /// </summary>
+    [Test]
+    public void The_stats_panel_is_a_real_table_rendered_by_the_build()
+    {
+        var stats = Markup.Parse(IndexHtml()).Descendants()
+            .Single(e => e.Attribute("id")?.Value == "stats");
+
+        Assert.That(stats.Name.LocalName, Is.EqualTo("section"));
+        Assert.That(stats.Attribute("aria-labelledby")?.Value, Is.EqualTo("stats-heading"));
+
+        var tables = stats.Descendants("table").ToList();
+        Assert.That(tables, Is.Not.Empty);
+        foreach (var th in tables.SelectMany(t => t.Descendants("th")))
+        {
+            Assert.That(th.Attribute("scope")?.Value, Is.AnyOf("col", "row"));
+            Assert.That(th.Value.Trim(), Is.Not.Empty);
+        }
+
+        // Server-rendered, so the numbers are there with no script at all.
+        Assert.That(stats.Descendants("td").Any(td => td.Value.Contains('%')), Is.True);
+    }
+
+    /// <summary>
+    /// A deck name is plain text in the markup and becomes a filter only once script
+    /// upgrades it, because a button that does nothing without script is worse than a
+    /// name that never claimed to be one.
+    /// </summary>
+    [Test]
+    public void A_deck_name_is_not_a_control_until_script_makes_it_one()
+    {
+        var html = IndexHtml(deck: true);
+        var stats = Markup.Parse(html).Descendants()
+            .Single(e => e.Attribute("id")?.Value == "stats");
+
+        var name = stats.Descendants("span")
+            .Single(s => s.Attribute("class")?.Value == "deck-name");
+        Assert.That(name.Attribute("data-deck")?.Value, Is.Not.Empty);
+        Assert.That(stats.Descendants("button"), Is.Empty, "no inert control ships");
+
+        // And the row it filters to carries the matching token.
+        var row = MatchTable(Markup.Parse(html)).Descendants("tr")
+            .Single(tr => tr.Attribute("data-search") is not null);
+        Assert.That(row.Attribute("data-search")!.Value,
+            Does.Contain($"deck:{name.Attribute("data-deck")!.Value}"));
+
+        // The upgrade is in the script, and it is what creates the button.
+        Assert.That(html, Does.Contain("#stats .deck-name"));
+    }
+
+    [Test]
+    public void An_empty_archive_grows_no_stats_panel()
+    {
+        Assert.That(IndexRenderer.Render([]), Does.Not.Contain("id=\"stats\""));
+    }
+
     [Test]
     public void Index_table_header_cells_are_scoped_and_none_are_blank()
     {
         var root = Markup.Parse(IndexHtml());
-        var columns = root.Descendants("thead").Single().Descendants("th").ToList();
+        var columns = MatchTable(root).Descendants("thead").Single().Descendants("th").ToList();
 
         Assert.That(columns, Has.Count.EqualTo(9));
         foreach (var th in columns)
@@ -703,7 +773,7 @@ public class RendererTests
 
         // The date identifies the row, so moving across a row announces which match
         // you are in rather than five values with no subject.
-        var rowHeader = root.Descendants("tbody").Single().Descendants("th").Single();
+        var rowHeader = MatchTable(root).Descendants("tbody").Single().Descendants("th").Single();
         Assert.That(rowHeader.Attribute("scope")?.Value, Is.EqualTo("row"));
         Assert.That(rowHeader.Descendants("a").Single().Value, Does.StartWith("2026-"));
     }
@@ -723,7 +793,7 @@ public class RendererTests
         Assert.That(button.Attribute("data-id")?.Value, Is.EqualTo("abc-123"));
         Assert.That(button.Value.Trim(), Is.EqualTo("Copy game ID"));
 
-        var row = Markup.Parse(IndexHtml()).Descendants("tbody").Single()
+        var row = MatchTable(Markup.Parse(IndexHtml())).Descendants("tbody").Single()
             .Descendants("button").Single(b => b.Attribute("class")?.Value == "copyid");
         Assert.That(row.Attribute("data-id")?.Value, Is.EqualTo("abc-123"));
 
@@ -749,7 +819,7 @@ public class RendererTests
     [Test]
     public void The_index_copy_control_stays_out_of_the_row_header()
     {
-        var row = Markup.Parse(IndexHtml()).Descendants("tbody").Single()
+        var row = MatchTable(Markup.Parse(IndexHtml())).Descendants("tbody").Single()
             .Descendants("tr").Single();
 
         var header = row.Elements("th").Single();
@@ -823,7 +893,7 @@ public class RendererTests
     {
         // Screen readers list and jump between tables by name, and "most recent first"
         // is otherwise information carried only by the visual order.
-        var caption = Markup.Parse(IndexHtml()).Descendants("caption").Single();
+        var caption = MatchTable(Markup.Parse(IndexHtml())).Elements("caption").Single();
         Assert.That(caption.Value, Does.Contain("most recent first"));
     }
 

@@ -302,8 +302,13 @@ public class TurnClockTests
 
     // ---------- match length on the index ----------
 
+    /// <summary>
+    /// The one row of the matches table. Named by the table's id rather than by being
+    /// the only one on the page: the stats panel puts its own tables above it.
+    /// </summary>
     private static XElement IndexRow(Transcript t) =>
         Markup.Parse(IndexRenderer.Render([IndexRenderer.Summarize(t)]))
+            .Descendants("table").Single(x => x.Attribute("id")?.Value == "rows")
             .Descendants("tbody").Single().Descendants("tr").Single();
 
     [Test]
