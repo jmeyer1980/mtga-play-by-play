@@ -1159,6 +1159,26 @@ public class RendererTests
         Assert.That(ids, Does.Contain("by-format"));
     }
 
+    /// <summary>
+    /// And leaves the reader on the sort control they were using. The breakdown tables
+    /// are replaced outright by a refresh, so their controls are new nodes; without
+    /// this, a keyboard user resting on one is dropped back to the top of the page every
+    /// time a match finishes.
+    /// </summary>
+    /// <remarks>
+    /// The same failure Copilot found for the disclosure's summary, one control along.
+    /// A sort button has no id, but the table and the column do — and they are the same
+    /// pair the sort itself is remembered by.
+    /// </remarks>
+    [Test]
+    public void A_live_refresh_leaves_the_reader_on_the_sort_control_they_were_using()
+    {
+        var html = IndexHtml(deck: true);
+
+        Assert.That(html, Does.Contain("active.closest('thead th')"));
+        Assert.That(html, Does.Contain("if (control) control.focus();"));
+    }
+
     [Test]
     public void An_empty_archive_grows_no_stats_panel()
     {

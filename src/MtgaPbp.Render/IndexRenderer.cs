@@ -942,6 +942,15 @@ public static class IndexRenderer
             var onSummary = !!(active && active.tagName === 'SUMMARY' &&
                                active.parentElement && active.parentElement.id === 'breakdowns');
 
+            // A sort control in the panel is destroyed by that swap too. It has no id of
+            // its own either, but which table and which column is enough to find it
+            // again — and that is the same pair the sort itself is remembered by.
+            var head = active && active.closest ? active.closest('thead th') : null;
+            var onSort = head && active.classList && active.classList.contains('sort')
+              ? { table: (head.closest('table') || {}).id,
+                  index: Array.prototype.indexOf.call(head.parentElement.cells, head) }
+              : null;
+
             fetch('/', { cache: 'no-store' })
               .then(function (r) { return r.text(); })
               .then(function (html) {
@@ -984,6 +993,13 @@ public static class IndexRenderer
                 // tables are new nodes entirely, so both need putting back the way the
                 // reader had them. Quietly: they did not just ask for this.
                 wireTables(true);
+                if (onSort && onSort.table) {
+                  var sortedTable = document.getElementById(onSort.table);
+                  var cell = sortedTable && sortedTable.tHead
+                    ? sortedTable.tHead.rows[0].cells[onSort.index] : null;
+                  var control = cell ? cell.querySelector('button.sort') : null;
+                  if (control) control.focus();
+                }
                 // Replacing the rows destroys the node that had focus, which would
                 // drop a keyboard or screen-reader user back to the top of the page.
                 if (focused) {
