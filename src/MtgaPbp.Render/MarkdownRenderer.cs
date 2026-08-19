@@ -56,6 +56,19 @@ public static class TranscriptSummary
         $"{t.You?.ScreenName ?? "You"} vs {t.Opponent?.ScreenName ?? "Opponent"}";
 
     /// <summary>
+    /// The same title with neither player named — the transcript rendered as though the
+    /// log had never learned who was playing.
+    /// </summary>
+    /// <remarks>
+    /// Built by taking the names away and letting <see cref="Title"/> fall back, rather
+    /// than by writing "You vs Opponent" out again here. Sanitizing is not a second
+    /// format: it is this one, missing the two facts, and an unfinished match already
+    /// renders exactly this way. Two literals would be two things to keep in step.
+    /// </remarks>
+    public static string AnonymousTitle(Transcript t) =>
+        Title(t with { You = null, Opponent = null });
+
+    /// <summary>
     /// The decklist's heading. It counts cards rather than naming the deck, because
     /// the log carries a list of ids and nothing else — any name would be a guess.
     /// </summary>
