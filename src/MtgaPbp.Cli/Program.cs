@@ -40,7 +40,7 @@ public static class Program
                 "stats" => Stats(cfg),
                 "watch" => Watch(cfg, operands),
                 "collection" => ImportCollection(cfg, operands.FirstOrDefault()),
-                "why" => Why.Run(cfg, operands.FirstOrDefault(), operands.Skip(1).FirstOrDefault()),
+                "why" => Why.Run(cfg, operands.FirstOrDefault(), operands.Skip(1).ToArray()),
                 "keep" => Favorite(cfg, operands.FirstOrDefault(), on: true),
                 "unkeep" => Favorite(cfg, operands.FirstOrDefault(), on: false),
                 "all" => Capture(cfg) is var c && c != 0 ? c : Build(cfg, open),
@@ -105,7 +105,8 @@ public static class Program
             mtga-pbp stats            unhandled annotations and unresolved cards
             mtga-pbp watch [port]     serve the report and keep it live (default 8787)
             mtga-pbp collection <file> import a collection exported from elsewhere
-            mtga-pbp why <matchId> [turn]  show a turn beside the log behind it
+            mtga-pbp why <matchId> [turns] show turns beside the log behind them,
+                                           one (13), several (13 14) or 13-15
             mtga-pbp keep <matchId>   never prune this match
             mtga-pbp unkeep <matchId> allow it to be pruned again
 
