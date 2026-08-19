@@ -125,8 +125,9 @@ public static class Why
         var reached = headers.Select(l => (l.Turn, l.Game)).ToHashSet();
 
         // Turn numbers are per game, so a turn the match reached is not a turn every
-        // game reached. Printing the heading anyway is how a range over a Bo3 fills
-        // with empty sections.
+        // game reached. Only the pairs a game actually played are kept: keeping the
+        // rest is what would fill a range over a Bo3 with empty sections. A single-game
+        // match skips the check, so its output is whatever it always was.
         var showing = (from turn in plan.Turns
                        from game in games
                        where games.Count == 1 || reached.Contains((turn, game))
