@@ -812,4 +812,125 @@ public class NarratorTests
         Assert.That(Moved(null, "ZoneType_Sideboard", "Put"),
             Is.EqualTo("Plains moves (Put)"), "and the same for a zone with no phrasing");
     }
+
+    // ---------- Issue 41: hidden for a name the line never prints ----------
+
+    /// <summary>
+    /// A shockland's payment reaches the log as a life change attributed to the ability
+    /// object rather than to the land, so its source is a placeholder. The readable view
+    /// dropped it, while the turn headers — read from board state — went on reporting
+    /// the true total. 37 of 529 rendered pages carried a life total that moved with
+    /// nothing beneath it to say why.
+    /// </summary>
+    /// <remarks>
+    /// The decisive fact is that <c>LifeChanged</c>'s wording is seat, verb and amount:
+    /// the source it was being hidden for is one the line was never going to print.
+    /// </remarks>
+    [Test]
+    public void A_life_change_from_an_unnamed_source_is_still_a_beat()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.LifeChanged, 0) with
+            {
+                SourceName = CardNames.Unknown,
+                TargetSeat = 2,
+                Amount = -2
+            }
+        ), Density.Beats);
+
+        Assert.That(lines.Select(l => l.Text), Has.One.EqualTo("Opponent loses 2 life"));
+        Assert.That(lines, Has.None.Matches<Line>(l => l.Text.Contains(CardNames.Unknown)),
+            "and it says nothing about the source it could not name");
+    }
+
+    /// <summary>
+    /// The audit the issue asked for found a second kind with the same defect: a counter
+    /// line names the permanent and the counter, never the source. 16 lines across the
+    /// archive.
+    /// </summary>
+    [Test]
+    public void A_counter_change_from_an_unnamed_source_is_still_a_beat()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.CounterChanged, 0) with
+            {
+                SourceName = CardNames.Unknown,
+                TargetName = "Unstoppable Slasher",
+                Amount = -1,
+                Detail = "Stun"
+            }
+        ), Density.Beats);
+
+        Assert.That(lines, Has.One.Matches<Line>(l => l.Text.Contains("Unstoppable Slasher")));
+        Assert.That(lines, Has.None.Matches<Line>(l => l.Text.Contains(CardNames.Unknown)));
+    }
+
+    /// <summary>
+    /// The rule itself is not repealed. A line that really would say "Unknown card"
+    /// still stays out of the readable view, which is the whole reason the rule exists.
+    /// </summary>
+    /// <remarks>
+    /// <c>Damage</c> is the case that proves it is the LINE being tested and not a list
+    /// of exempt kinds: it substitutes "Something" only for a <em>null</em> name, so a
+    /// placeholder reaches its text and is found there.
+    /// </remarks>
+    [Test]
+    public void A_line_that_would_name_an_unknown_card_is_still_kept_out_of_beats()
+    {
+        GameEvent[] events =
+        [
+            E(EventKind.Damage, 0) with
+            {
+                SourceName = CardNames.Unknown, TargetSeat = 2, Amount = 3
+            }
+        ];
+
+        Assert.That(Narrator.Narrate(T(events), Density.Beats),
+            Has.None.Matches<Line>(l => l.Text.Contains("damage")));
+
+        // And verbose still keeps it, so the gap stays visible when debugging.
+        Assert.That(Narrator.Narrate(T(events), Density.Verbose),
+            Has.One.Matches<Line>(l => l.Text.Contains(CardNames.Unknown) &&
+                                       l.Text.Contains("3 damage")));
+    }
+
+    /// <summary>
+    /// Verbose said the life line before this change and must not say it twice after.
+    /// </summary>
+    [Test]
+    public void The_verbose_view_still_says_it_exactly_once()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.LifeChanged, 0) with
+            {
+                SourceName = CardNames.Unknown,
+                TargetSeat = 2,
+                Amount = -2
+            }
+        ), Density.Verbose);
+
+        Assert.That(lines.Count(l => l.Text == "Opponent loses 2 life"), Is.EqualTo(1));
+    }
+
+    /// <summary>
+    /// A draw of a card nobody can name stays out of beats. It used to fall out of the
+    /// unnamed-subject rule by accident; reading the finished line instead would have
+    /// let it back in, because "Opponent draws a card" names nobody.
+    /// </summary>
+    /// <remarks>
+    /// 3755 lines across the archive, one per opponent turn in 515 of 529 transcripts,
+    /// each saying only that the draw step happened. A draw that names its card is a
+    /// different thing and stays.
+    /// </remarks>
+    [Test]
+    public void A_draw_nobody_can_name_stays_out_of_beats_but_a_named_one_stays_in()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.Drew, 0) with { SourceName = CardNames.Unknown, ActorSeat = 2 },
+            E(EventKind.Drew, 1) with { SourceName = "Hop to It", ActorSeat = 1 }
+        ), Density.Beats);
+
+        Assert.That(lines, Has.None.Matches<Line>(l => l.Text.Contains("draws a card")));
+        Assert.That(lines, Has.One.Matches<Line>(l => l.Text.Contains("Hop to It")));
+    }
 }

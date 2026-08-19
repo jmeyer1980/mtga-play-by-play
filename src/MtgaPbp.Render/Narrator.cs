@@ -118,9 +118,13 @@ public static class Narrator
             }
 
             if (density == Density.Beats && VerboseOnly.Contains(e.Kind)) continue;
-            if (density == Density.Beats && IsUnnamed(e)) continue;
+            if (density == Density.Beats && IsRoutineDraw(e)) continue;
             var text = Phrase(e, t);
             if (string.IsNullOrWhiteSpace(text)) continue;
+
+            // After the phrasing, not before it: what beats refuse to show is a line
+            // that says "Unknown card", and only the line knows whether it says one.
+            if (density == Density.Beats && ShowsAPlaceholder(e, text)) continue;
 
             // Appended here rather than inside Phrase, which is a switch over how each
             // kind of event reads and has no business knowing the clock.
@@ -189,14 +193,54 @@ public static class Narrator
     }
 
     /// <summary>
-    /// True when the event's subject resolved only to a bare instance id — a token
-    /// that left play before the client ever described it, typically. "#332 is put
-    /// into the graveyard" is noise, so beats drop it; verbose keeps it so the gap
-    /// stays visible when debugging.
+    /// True when the line the reader would see actually says "Unknown card" — a subject
+    /// that resolved only to a bare instance id, typically a token that left play before
+    /// the client ever described it. "#332 is put into the graveyard" is noise, so beats
+    /// drop it; verbose keeps it so the gap stays visible when debugging.
     /// </summary>
-    private static bool IsUnnamed(GameEvent e) =>
-        (e.SourceName is not null && CardNames.IsPlaceholder(e.SourceName))
-        || (e.TargetName is not null && CardNames.IsPlaceholder(e.TargetName));
+    /// <remarks>
+    /// Asks the finished line rather than the event's fields, because the two disagree.
+    /// A shockland's payment arrives as <c>ModifiedLife</c> attributed to the ability
+    /// object rather than the land, so its <c>SourceName</c> is a placeholder — but
+    /// <c>LifeChanged</c>'s phrasing is seat, verb and amount, and never prints a source
+    /// at all. The old rule read the field and dropped the line, so 37 of 529 rendered
+    /// pages carried a life total that moved with nothing beneath it to say why, while
+    /// the headers went on reporting the true total from board state. The page
+    /// contradicted itself over a name it was never going to show (#41).
+    /// <para>
+    /// The kinds that really do print an unnamed source are unaffected, and they are
+    /// unaffected without being listed: <c>Damage</c> and <c>TokenCreated</c> fall back
+    /// to "Something" and "An effect" only when the name is <em>null</em>, so a
+    /// placeholder reaches their text and is found there. A list of exempt kinds would
+    /// have to be kept in step with the phrasing by hand, which is the failure this is.
+    /// </para>
+    /// </remarks>
+    private static bool ShowsAPlaceholder(GameEvent e, string text) =>
+        (Placeholder(e.SourceName) is { } source && text.Contains(source, StringComparison.Ordinal))
+        || (Placeholder(e.TargetName) is { } target && text.Contains(target, StringComparison.Ordinal));
+
+    private static string? Placeholder(string? name) =>
+        name is not null && CardNames.IsPlaceholder(name) ? name : null;
+
+    /// <summary>
+    /// A draw of a card the log never named, which beats leave out.
+    /// </summary>
+    /// <remarks>
+    /// This was already the behaviour and is only written down here. It used to fall
+    /// out of the unnamed-subject rule by accident, and rewriting that rule to read the
+    /// finished line would have let it back in: <c>Drew</c>'s wording for a card it
+    /// cannot name is "Opponent draws a card", which names nobody and so passes. Across
+    /// the archive that is 3755 lines, one per opponent turn in 515 of 529 transcripts,
+    /// saying only that the draw step happened.
+    /// <para>
+    /// So it stays out, but as a decision rather than a side effect: a draw nobody can
+    /// name is the draw step, and beats already leave routine structure to verbose.
+    /// "You draw Hop to It" is unaffected — it names the card, which is the whole of
+    /// what makes it worth a line.
+    /// </para>
+    /// </remarks>
+    private static bool IsRoutineDraw(GameEvent e) =>
+        e.Kind == EventKind.Drew && Placeholder(e.SourceName) is not null;
 
     /// <summary>
     /// What happened before turn one, in the order it happened: the die roll, then who
