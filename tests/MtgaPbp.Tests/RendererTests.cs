@@ -1128,6 +1128,75 @@ public class RendererTests
         Assert.That(copied, Has.Count.EqualTo(3));
     }
 
+    // ---------- Issue 30: selecting by hand ----------
+
+    /// <summary>
+    /// The clip-rect pattern hides text from the eye but not from a mouse, because
+    /// clipping happens at paint time and selection does not. Without
+    /// <c>user-select</c> a dragged selection copies both halves of every split
+    /// notation, so a decklist pastes as "1×1 copy of Plains".
+    /// </summary>
+    /// <remarks>
+    /// Asserted on both pages because each renderer carries its own copy of the rule,
+    /// and a fix applied to one of them leaves the other doubling — which reads as
+    /// fixed while half the site is not.
+    /// </remarks>
+    [Test]
+    public void Neither_page_ships_hidden_text_that_a_mouse_can_still_select()
+    {
+        (string Page, string Html)[] pages =
+        [
+            ("game page", GameDeckHtml()),
+            ("index", IndexRenderer.Render([IndexRenderer.Summarize(Sample())]))
+        ];
+
+        foreach (var (page, html) in pages)
+        {
+            var rules = Regex.Matches(html, @"\.vh\{[^}]*\}").Select(m => m.Value).ToList();
+            Assert.That(rules, Is.Not.Empty, $"the {page} has no .vh rule at all");
+
+            foreach (var rule in rules)
+            {
+                Assert.That(rule, Does.Contain("user-select:none"), $"{page}: {rule}");
+
+                // iOS Safari needs the prefix, and iOS is in the archive's own player
+                // data, so it is not a browser this can be lax about.
+                Assert.That(rule, Does.Contain("-webkit-user-select:none"), $"{page}: {rule}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// The markup fact that makes the doubling reachable: a row's visible half and its
+    /// spoken half are separate elements sitting flush against each other.
+    /// </summary>
+    /// <remarks>
+    /// This stays true after the fix, and is meant to — the halves have to be separate
+    /// elements for a synthesiser to get one and the eye the other. What changed is
+    /// that the spoken half is no longer selectable, which is why the fix belongs in
+    /// the stylesheet rather than in a separator between the two.
+    /// </remarks>
+    [Test]
+    public void A_decklist_row_keeps_its_visible_and_spoken_halves_in_separate_elements()
+    {
+        var row = Markup.Parse(GameDeckHtml()).Descendants("li").First();
+
+        var glyph = row.Elements("span").First(s => s.Attribute("aria-hidden")?.Value == "true");
+        var spoken = row.Elements("span").First(s => s.Attribute("class")?.Value == "vh");
+
+        Assert.That(glyph.Value, Is.EqualTo("4×"));
+        Assert.That(spoken.Value, Is.EqualTo("4 copies of"));
+
+        // Nothing between them, not even a space. A browser handed this run of text
+        // with no styling to stop it concatenates the two, which is the reported bug.
+        Assert.That(glyph.NextNode, Is.SameAs(spoken));
+        Assert.That(row.Value, Does.StartWith("4×4 copies of"));
+
+        // Each half on its own is what the two audiences actually get.
+        Assert.That(Markup.Spoken(row), Is.EqualTo("4 copies of Hare Apparent"));
+        Assert.That(Markup.Clipboard(row), Is.EqualTo("4× Hare Apparent"));
+    }
+
     // ---------- the commander ----------
 
     /// <summary>The same sample deck, registered with a commander beside it.</summary>
