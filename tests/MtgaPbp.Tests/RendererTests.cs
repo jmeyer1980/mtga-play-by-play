@@ -952,7 +952,23 @@ public class RendererTests
         var html = IndexHtml(deck: true);
 
         Assert.That(html, Does.Contain("var open = was ? was.open : false;"));
-        Assert.That(html, Does.Contain("if (now) now.open = open;"));
+        Assert.That(html, Does.Contain("now.open = open;"));
+    }
+
+    /// <summary>
+    /// And leaves the reader on the control they were on. The summary is focusable and
+    /// is destroyed by the same swap, so without this a keyboard or screen-reader user
+    /// resting on it would be dropped back to the top of the page every time a match
+    /// finished — which is the failure the row restoration below it already exists to
+    /// prevent.
+    /// </summary>
+    [Test]
+    public void A_live_refresh_leaves_the_reader_on_the_disclosure_they_were_using()
+    {
+        var html = IndexHtml(deck: true);
+
+        Assert.That(html, Does.Contain("active.tagName === 'SUMMARY'"));
+        Assert.That(html, Does.Contain("if (summary) summary.focus();"));
     }
 
     [Test]

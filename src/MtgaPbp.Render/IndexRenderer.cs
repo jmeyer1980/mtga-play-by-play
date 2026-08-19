@@ -759,6 +759,12 @@ public static class IndexRenderer
               : null;
             var focused = kind ? active.dataset.id : null;
 
+            // The disclosure's summary is destroyed by the same swap, and it is the one
+            // control on this page that is not identified by a data-id. There is only
+            // ever one of it, so where it was is all that needs remembering.
+            var onSummary = !!(active && active.tagName === 'SUMMARY' &&
+                               active.parentElement && active.parentElement.id === 'breakdowns');
+
             fetch('/', { cache: 'no-store' })
               .then(function (r) { return r.text(); })
               .then(function (html) {
@@ -782,7 +788,16 @@ public static class IndexRenderer
                   var open = was ? was.open : false;
                   panel.innerHTML = freshPanel.innerHTML;
                   var now = document.getElementById('breakdowns');
-                  if (now) now.open = open;
+                  if (now) {
+                    now.open = open;
+                    // Put the reader back on the control they were on, for the same
+                    // reason the rows below do it: a match finishing is not a reason to
+                    // send somebody navigating by keyboard back to the top of the page.
+                    if (onSummary) {
+                      var summary = now.querySelector('summary');
+                      if (summary) summary.focus();
+                    }
+                  }
                   wireDeckNames();
                 }
                 rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
