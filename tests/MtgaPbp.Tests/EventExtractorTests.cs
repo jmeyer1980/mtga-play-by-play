@@ -1869,4 +1869,46 @@ public class EventExtractorTests
             "each game gets to play its own first land");
     }
 
+
+    // ---------- Issue 54: the line that ends the match ----------
+
+    /// <summary>
+    /// The match-end line is filed under the turn it happened on, so a reader can reach it.
+    /// </summary>
+    /// <remarks>
+    /// It is built by hand rather than through <c>Base</c>, so it used to keep Turn's
+    /// default of zero — and nothing is ever turn zero. `mtga-pbp why` selects lines by
+    /// turn, so the concede, the timeout and the win were unreachable at any turn number a
+    /// reader could type: 470 of 576 archived transcripts ended with a line the diagnostic
+    /// could not show.
+    /// </remarks>
+    [Test]
+    public void The_line_that_ends_the_match_knows_which_turn_it_ended_on()
+    {
+        string Turn(int n, int seat) => Gre($$"""
+            { "type": "GameStateType_Diff",
+              "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "turnInfo": { "turnNumber": {{n}}, "activePlayer": {{seat}} },
+              "annotations": [ { "id": {{n * 10}}, "affectorId": {{seat}},
+                "affectedIds": [ {{seat}} ],
+                "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+            """);
+
+        const string final = """
+            { "timestamp": "2000", "matchGameRoomStateChangedEvent": { "gameRoomInfo": {
+                "gameRoomConfig": { "matchId": "m1" },
+                "finalMatchResult": { "matchId": "m1",
+                  "matchCompletedReason": "MatchCompletedReasonType_Success",
+                  "resultList": [
+                    { "scope": "MatchScope_Match", "result": "ResultType_Loss",
+                      "reason": "ResultReason_Concede", "winningTeamId": 2 } ] } } } }
+            """;
+
+        var t = Run(RoomLine, MulliganLine, Turn(1, 1), Turn(2, 2), Turn(3, 1), final);
+
+        var end = t.Events.Single(e => e.Kind == EventKind.GameEnd);
+        Assert.That(end.Turn, Is.EqualTo(3), "the turn the match was on when it ended");
+        Assert.That(end.Turn, Is.Not.Zero, "nothing is ever turn zero");
+    }
+
 }
