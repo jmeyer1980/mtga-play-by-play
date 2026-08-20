@@ -1364,19 +1364,30 @@ public class RendererTests
     [Test]
     public void A_row_control_is_named_for_what_it_does_not_for_the_row_it_sits_in()
     {
-        var row = MatchTable(Markup.Parse(IndexHtml())).Descendants("tbody").Single()
-            .Descendants("tr").Single();
+        var root = Markup.Parse(IndexHtml());
+        var row = MatchTable(root).Descendants("tbody").Single().Descendants("tr").Single();
 
-        var date = row.Elements("th").Single().Value.Trim();
-        var opponent = "PlayerTwo";
-        Assert.That(date, Is.Not.Empty, "the row header is the date");
+        // Every cell of this row, header included — whatever a reader is told before
+        // they reach a control is what that control's name must not repeat. Read from
+        // the row rather than named here, so a new column joins the rule for free.
+        var announced = row.Elements()
+            .Select(cell => cell.Value.Trim())
+            .Where(text => text.Length >= 3)
+            .ToList();
+        Assert.That(announced, Is.Not.Empty, "the row says something before the controls");
 
         foreach (var control in row.Descendants("button"))
         {
-            var name = control.Attribute("aria-label")?.Value ?? control.Value.Trim();
+            // Through the accessible-name algorithm, not the raw attribute: the glyph
+            // inside these buttons is aria-hidden, so a control that lost its label
+            // has no name at all — and reading element text directly would see "☆" and
+            // call that a name, which is how this test first shipped unable to fail.
+            var name = Markup.AccessibleName(root, control);
             Assert.That(name, Is.Not.Empty, "a glyph-only control still needs a name");
-            Assert.That(name, Does.Not.Contain(date), $"{name} repeats the row header");
-            Assert.That(name, Does.Not.Contain(opponent), $"{name} repeats a cell of its own row");
+
+            foreach (var text in announced)
+                Assert.That(name, Does.Not.Contain(text),
+                    $"the name \"{name}\" repeats \"{text}\" from its own row");
         }
     }
 

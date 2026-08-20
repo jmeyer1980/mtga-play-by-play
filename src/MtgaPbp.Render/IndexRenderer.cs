@@ -132,17 +132,17 @@ public static class IndexRenderer
                 // The star is a toggle button, so its state rides on aria-pressed and
                 // its name stays constant; the glyph is decoration and is hidden from
                 // assistive technology, which would otherwise read it as "white star".
-                // It ships disabled because keeping a match needs the local server -
+                // It ships disabled because keeping a match needs the local server —
                 // an unavailable control is better than one that silently does nothing.
                 //
                 // Both row controls are named for what they DO and nothing else. They
-                // used to name the match as well - "Keep the 2026-08-19 23:46 match
-                // against X" - so that an archive of them was not a list of identical
+                // used to name the match as well — "Keep the 2026-08-19 23:46 match
+                // against X" — so that an archive of them was not a list of identical
                 // entries. That had the trade backwards. The date is this row's header
                 // and the opponent is a column of the same row, so a screen reader
                 // announces both before it reaches the cell: every identity the name
-                // could carry is one the reader has just been given, and the verb - the
-                // only part they did not have - arrived last, after a timestamp read
+                // could carry is one the reader has just been given, and the verb — the
+                // only part they did not have — arrived last, after a timestamp read
                 // digit by digit (#48).
                 //
                 // There is no wording that is both self-identifying and non-repetitive,
