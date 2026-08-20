@@ -1570,9 +1570,19 @@ public sealed class EventExtractor(ICardDb cards)
     /// torn line is damage and the neighbouring capture may still hold the rest.
     /// </para>
     /// </remarks>
-    private static string GapLine(LogGap gap) => gap.Kind == LogGapKind.Summarized
-        ? "— part of this turn is missing: Arena summarised an update instead of writing it —"
-        : "— part of this turn is missing: a log line ended mid-message —";
+    private static string GapLine(LogGap gap)
+    {
+        // "this turn" would be a small lie before turn one, where the only thing that has
+        // happened is the die roll and the mulligans. No gap in the archive falls there —
+        // the earliest sits on turn 1 — so this is a guard rather than an observed case,
+        // and it is here because the alternative is a sentence that names a turn the
+        // match had not reached.
+        var where = gap.Turn > 0 ? "this turn" : "this game";
+
+        return gap.Kind == LogGapKind.Summarized
+            ? $"— part of {where} is missing: Arena summarised an update instead of writing it —"
+            : $"— part of {where} is missing: a log line ended mid-message —";
+    }
 
     private static GameEvent Base(GameStateTracker t, long ts, EventKind kind) => new()
     {

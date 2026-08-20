@@ -745,6 +745,32 @@ public class EventExtractorTests
 
         Assert.That(t.Gaps.Single().Turn, Is.EqualTo(2), "it fell during turn 2");
         Assert.That(t.Events.Single(e => e.Kind == EventKind.LogGap).Turn, Is.EqualTo(2));
+        Assert.That(t.Events.Single(e => e.Kind == EventKind.LogGap).Detail,
+            Does.Contain("this turn"));
+    }
+
+    /// <summary>
+    /// Before turn one there is no turn to name, so the line says so rather than naming a
+    /// turn the match had not reached.
+    /// </summary>
+    /// <remarks>
+    /// A guard, not an observed case: no gap in the archive falls here — the earliest sits
+    /// on turn 1. It exists because <see cref="LogGap.Turn"/> is documented as zero in
+    /// this situation, and a documented state that renders a small lie is worse than one
+    /// line of code.
+    /// </remarks>
+    [Test]
+    public void A_gap_before_the_first_turn_does_not_claim_a_turn()
+    {
+        var gap = LogGaps.ToEnvelope(
+            new LogGap(LogGapKind.Summarized, 12, 60, 0, ["GameStateMessage"])).GetRawText();
+
+        var t = Run(RoomLine, MulliganLine, gap);
+
+        var line = t.Events.Single(e => e.Kind == EventKind.LogGap);
+        Assert.That(line.Turn, Is.Zero);
+        Assert.That(line.Detail, Does.Contain("this game"));
+        Assert.That(line.Detail, Does.Not.Contain("this turn"));
     }
 
     /// <summary>
