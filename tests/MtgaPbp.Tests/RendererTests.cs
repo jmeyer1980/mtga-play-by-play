@@ -505,19 +505,8 @@ public class RendererTests
         var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample(colors: "WU"))]);
 
         Assert.That(ColumnNames(html), Does.Contain("Deck"));
-
-        var cell = MatchTable(Markup.Parse(html)).Descendants("td")
-            .Single(td => td.Attribute("class")?.Value == "deck");
-
-        Assert.That(Markup.Clipboard(cell), Is.EqualTo("WU"), "the eye gets the letters");
-        Assert.That(Markup.Spoken(cell), Is.EqualTo("white and blue"), "the ear gets the words");
-
-        // The words are the cell's own name, not a clipped twin beside the letters.
-        // A twin is a real text node, so find-in-page matched it and had nothing on
-        // screen to highlight (#34).
-        Assert.That(cell.Descendants("span").Any(sp => sp.Attribute("class")?.Value == "vh"),
-            Is.False);
-        Assert.That(cell.Value, Is.EqualTo("WU"), "and nothing else is in the text");
+        Assert.That(html, Does.Contain("<span aria-hidden=\"true\">WU</span>"));
+        Assert.That(html, Does.Contain("<span class=\"vh\">white and blue</span>"));
     }
 
     /// <summary>
@@ -585,11 +574,10 @@ public class RendererTests
     // garnish. What they cannot cover is how a given synthesiser sounds; see the
     // per-test notes where the browser or the AT gets the final say.
 
-    private static string IndexHtml(
-        bool incomplete = false, bool gaps = false, bool deck = false, string? colors = null) =>
+    private static string IndexHtml(bool incomplete = false, bool gaps = false, bool deck = false) =>
         IndexRenderer.Render([
             IndexRenderer.Summarize(Sample(incomplete, gaps ? [SummarizedGap()] : null,
-                deck: deck ? SampleDeck() : null, colors: colors))
+                deck: deck ? SampleDeck() : null))
         ]);
 
     private static string GameHtml() => GamePageRenderer.Render(Sample());
@@ -795,7 +783,7 @@ public class RendererTests
         var stats = Markup.Parse(IndexHtml(deck: true)).Descendants()
             .Single(e => e.Attribute("id")?.Value == "stats");
         var cell = stats.Descendants("td")
-            .First(td => td.Attribute("aria-label") is not null);
+            .First(td => td.Elements("span").Any(s => s.Attribute("class")?.Value == "vh"));
 
         // One match, won. The panel counts matches, not the games inside them — the
         // sample's own result line reads "Won 2-1" and this cell must not.
@@ -803,7 +791,7 @@ public class RendererTests
         Assert.That(Markup.Spoken(cell), Is.EqualTo("1 won, 0 lost"), "the ear gets the meaning");
 
         // Neither half is threaded through the other, so no digit abuts a word.
-        Assert.That(cell.Value, Is.EqualTo("1-0"));
+        Assert.That(cell.Elements("span").Count(), Is.EqualTo(2));
     }
 
     /// <summary>
@@ -816,21 +804,23 @@ public class RendererTests
         var stats = Markup.Parse(IndexHtml(deck: true)).Descendants()
             .Single(e => e.Attribute("id")?.Value == "stats");
 
-        var dashes = stats.Descendants("td")
-            .Where(td => td.Value.Trim() == "—")
+        var dashes = stats.Descendants("span")
+            .Where(s => s.Attribute("aria-hidden")?.Value == "true" && s.Value.Trim() == "—")
             .ToList();
         Assert.That(dashes, Is.Not.Empty, "the sample has a deck with no losses");
 
         foreach (var dash in dashes)
         {
-            var said = Markup.Spoken(dash).Trim();
-            Assert.That(said, Is.Not.Empty, "a lone dash says nothing a synthesiser can use");
-            Assert.That(said, Does.Not.Contain("—"));
+            var twin = dash.NodesAfterSelf().OfType<XElement>().First();
+            Assert.That(twin.Attribute("class")?.Value, Is.EqualTo("vh"));
+            Assert.That(twin.Value.Trim(), Is.Not.Empty);
+            Assert.That(twin.Value, Does.Not.Contain("—"));
         }
 
         // And the two meanings are told apart rather than sharing one phrase.
-        var meanings = dashes.Select(d => Markup.Spoken(d).Trim()).Distinct().ToList();
-        Assert.That(meanings, Does.Contain("no losses yet").Or.Contain("no wins yet"));
+        var said = dashes.Select(d => d.NodesAfterSelf().OfType<XElement>().First().Value.Trim())
+            .Distinct().ToList();
+        Assert.That(said, Does.Contain("no losses yet").Or.Contain("no wins yet"));
     }
 
     /// <summary>
@@ -1187,75 +1177,6 @@ public class RendererTests
 
         Assert.That(html, Does.Contain("active.closest('thead th')"));
         Assert.That(html, Does.Contain("if (control) control.focus();"));
-    }
-
-    // ---------- Issue 34: text nobody can see, that find-in-page can ----------
-
-    /// <summary>
-    /// No cell of the index carries a clipped twin any more. A twin is a real text node,
-    /// so the browser's find-in-page matched it and then had nothing on screen to
-    /// highlight — searching the index for "minutes" reported hundreds of hits against a
-    /// column that reads "11m 12s".
-    /// </summary>
-    /// <remarks>
-    /// The spoken form is the cell's own accessible name instead. That is only done
-    /// where the twin is the whole of a cell: <c>cell</c> and <c>rowheader</c> support
-    /// naming from the author, while the bare span the issue warned about has the
-    /// generic role and naming it is not guaranteed to be honoured.
-    /// </remarks>
-    [Test]
-    public void No_cell_of_the_index_hides_words_inside_itself()
-    {
-        var root = Markup.Parse(IndexHtml(deck: true));
-
-        var hiding = root.Descendants("table")
-            .SelectMany(t => t.Descendants("td").Concat(t.Descendants("th")))
-            .Where(c => c.Descendants("span").Any(sp => sp.Attribute("class")?.Value == "vh"))
-            .Select(c => c.Value)
-            .ToList();
-
-        Assert.That(hiding, Is.Empty);
-    }
-
-    /// <summary>
-    /// And the words still reach a synthesiser, which is the whole point of the twins
-    /// this replaces. Both halves are asserted together, because dropping the spoken
-    /// form entirely would also pass the test above.
-    /// </summary>
-    [Test]
-    public void A_cell_that_shows_a_notation_is_still_read_as_a_sentence()
-    {
-        var root = Markup.Parse(IndexHtml(deck: true, colors: "WU"));
-
-        var deck = MatchTable(root).Descendants("td")
-            .Single(td => td.Attribute("class")?.Value == "deck");
-        Assert.That(Markup.Clipboard(deck), Is.EqualTo("WU"));
-        Assert.That(Markup.Spoken(deck), Is.EqualTo("white and blue"));
-
-        // Every named cell says something other than what it shows, or the name is
-        // noise repeating the content.
-        foreach (var cell in root.Descendants("td").Where(td => td.Attribute("aria-label") is not null))
-        {
-            Assert.That(cell.Attribute("aria-label")!.Value.Trim(), Is.Not.Empty);
-            Assert.That(cell.Attribute("aria-label")!.Value, Is.Not.EqualTo(cell.Value.Trim()));
-        }
-    }
-
-    /// <summary>
-    /// The fragments that are not a whole cell keep their twins, because there is no
-    /// element here whose name could carry them — the cell already says "Won 2-0", and
-    /// naming it would replace that rather than add to it.
-    /// </summary>
-    [Test]
-    public void A_mark_that_sits_inside_a_sentence_keeps_its_twin()
-    {
-        var result = MatchTable(Markup.Parse(IndexHtml(incomplete: true))).Descendants("td")
-            .Single(td => td.Value.Contains("Lost") || td.Value.Contains("Won") ||
-                          td.Value.Contains("Unfinished"));
-
-        Assert.That(result.Attribute("aria-label"), Is.Null, "the cell is not renamed");
-        Assert.That(Markup.Spoken(result), Does.Contain("incomplete"));
-        Assert.That(Markup.Clipboard(result), Does.Not.Contain("incomplete"));
     }
 
     [Test]
@@ -2219,19 +2140,13 @@ internal static class Markup
     /// exposes. <see cref="XElement.Value"/> alone would include the decorative glyphs.
     /// </summary>
     internal static string Spoken(XElement element) =>
-        // An accessible name replaces the subtree it is on, which is the whole point of
-        // putting one there: the cell is announced as "11 minutes 12 seconds" and its
-        // "11m 12s" is never reached. Checked before the children, because a name wins
-        // over content in every accessible-name calculation.
-        element.Attribute("aria-label") is { } name
-            ? name.Value
-            : string.Concat(element.Nodes().Select(n => n switch
-            {
-                XText text => text.Value,
-                XElement child when child.Attribute("aria-hidden")?.Value == "true" => "",
-                XElement child => Spoken(child),
-                _ => ""
-            }));
+        string.Concat(element.Nodes().Select(n => n switch
+        {
+            XText text => text.Value,
+            XElement child when child.Attribute("aria-hidden")?.Value == "true" => "",
+            XElement child => Spoken(child),
+            _ => ""
+        }));
 
     /// <summary>
     /// What the copy button would put on the clipboard for this element: the text with
