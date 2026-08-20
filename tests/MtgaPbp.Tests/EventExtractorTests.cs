@@ -537,6 +537,9 @@ public class EventExtractorTests
               "controllerSeatId": 2, "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
               "power": 2, "toughness": 2 } ],
             """;
+        // Annotation ids climb through a game and are never reused, so each turn
+        // carries its own. Repeating one would be a log Arena never sends, and reads
+        // as a resync replaying itself (#52).
         string NewTurn(int n, int seat) => Gre($$"""
             { "type": "GameStateType_Full",
               {{zones}}
@@ -544,10 +547,10 @@ public class EventExtractorTests
                            { "systemSeatNumber": 2, "lifeTotal": 17 } ],
               "turnInfo": { "turnNumber": {{n}}, "activePlayer": {{seat}} },
               "annotations": [
-                { "id": 0, "type": [ "AnnotationType_PhaseOrStepModified" ], "details": [
+                { "id": {{n * 10}}, "type": [ "AnnotationType_PhaseOrStepModified" ], "details": [
                     { "key": "phase", "valueInt32": [ 3 ] },
                     { "key": "step",  "valueInt32": [ 5 ] } ] },
-                { "id": 1, "affectorId": {{seat}}, "affectedIds": [ {{seat}} ],
+                { "id": {{n * 10 + 1}}, "affectorId": {{seat}}, "affectedIds": [ {{seat}} ],
                   "type": [ "AnnotationType_NewTurnStarted" ] } ] }
             """);
 
@@ -563,6 +566,9 @@ public class EventExtractorTests
     [Test]
     public void Board_snapshots_are_skipped_while_the_board_is_unchanged()
     {
+        // The id climbs with the turn, as Arena's do. Turns 1 and 3 share a seat, so a
+        // fixed id would make them byte-identical and the second would read as a resync
+        // replaying the first (#52).
         string Turn(int n, int seat, string toughness) => Gre($$"""
             { "type": "GameStateType_Full",
               "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
@@ -570,7 +576,7 @@ public class EventExtractorTests
                 "controllerSeatId": 2, "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
                 "power": 2, "toughness": {{toughness}} } ],
               "turnInfo": { "turnNumber": {{n}}, "activePlayer": {{seat}} },
-              "annotations": [ { "id": 1, "affectorId": {{seat}}, "affectedIds": [ {{seat}} ],
+              "annotations": [ { "id": {{n}}, "affectorId": {{seat}}, "affectedIds": [ {{seat}} ],
                 "type": [ "AnnotationType_NewTurnStarted" ] } ] }
             """);
 
@@ -1759,4 +1765,108 @@ public class EventExtractorTests
         var t = Run(RoomLine, MulliganLine, CopyMessage(copyFrom: 9999));
         Assert.That(t.Events.Any(x => x.Kind == EventKind.Copied), Is.False);
     }
+
+    // ---------- Issue 52: a resync repeats itself ----------
+
+    /// <summary>
+    /// Arena re-sends state mid-game, and the resync carries annotations it has already
+    /// sent. Narrating them again turned one land drop into "plays Plains ×2", which is
+    /// not untidy but impossible — one land a turn is a rule.
+    /// </summary>
+    [Test]
+    public void A_resync_repeating_an_annotation_does_not_say_it_twice()
+    {
+        string Land(string kind) => Gre($$"""
+            { "type": "{{kind}}",
+              "zones": [ { "zoneId": 31, "type": "ZoneType_Hand" },
+                         { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "turnInfo": { "turnNumber": 1, "activePlayer": 1 },
+              "gameObjects": [ { "instanceId": 60, "grpId": 648, "name": 648,
+                "controllerSeatId": 1, "zoneId": 28, "cardTypes": [ "CardType_Land" ] } ],
+              "annotations": [ { "id": 900, "affectedIds": [ 60 ],
+                "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+                  { "key": "zone_src",  "valueInt32": [ 31 ] },
+                  { "key": "zone_dest", "valueInt32": [ 28 ] },
+                  { "key": "category",  "type": "KeyValuePairValueType_string",
+                    "valueString": [ "PlayLand" ] } ] } ] }
+            """);
+
+        // The same annotation delivered once for real, then again inside a resync.
+        var t = Run(RoomLine, MulliganLine, Land("GameStateType_Diff"), Land("GameStateType_Full"));
+
+        Assert.That(t.Events.Count(e => e.Kind == EventKind.LandPlayed), Is.EqualTo(1),
+            "one land drop, however many times the log mentions it");
+    }
+
+    /// <summary>
+    /// The memory is only allowed to silence a resync. An annotation repeated between two
+    /// ordinary updates is a different event wearing the same bytes.
+    /// </summary>
+    /// <remarks>
+    /// An annotation names its objects by id, and ids are handed out again as a game
+    /// runs, so identical JSON can mean two different things. One archived match sends
+    /// the same block twice a few messages apart and it reads as "You cast Grab the
+    /// Prize" and then "You cast Campus Guide", because ObjectIdChanged remapped the
+    /// object in between. Silencing the second on content alone lost a real cast and
+    /// left its resolution standing on its own.
+    /// </remarks>
+    [Test]
+    public void The_same_bytes_between_two_ordinary_updates_are_two_events()
+    {
+        string Play(string kind) => Gre($$"""
+            { "type": "{{kind}}",
+              "zones": [ { "zoneId": 31, "type": "ZoneType_Hand" },
+                         { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "turnInfo": { "turnNumber": 1, "activePlayer": 1 },
+              "gameObjects": [ { "instanceId": 60, "grpId": 648, "name": 648,
+                "controllerSeatId": 1, "zoneId": 28, "cardTypes": [ "CardType_Land" ] } ],
+              "annotations": [ { "id": 900, "affectedIds": [ 60 ],
+                "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+                  { "key": "zone_src",  "valueInt32": [ 31 ] },
+                  { "key": "zone_dest", "valueInt32": [ 28 ] },
+                  { "key": "category",  "type": "KeyValuePairValueType_string",
+                    "valueString": [ "PlayLand" ] } ] } ] }
+            """);
+
+        var t = Run(RoomLine, MulliganLine,
+                    Play("GameStateType_Diff"), Play("GameStateType_Diff"));
+
+        Assert.That(t.Events.Count(e => e.Kind == EventKind.LandPlayed), Is.EqualTo(2),
+            "two ordinary updates are two events, whatever their bytes look like");
+    }
+
+    /// <summary>
+    /// The memory belongs to the game, not the match. Instance ids and annotation ids are
+    /// both handed out again in game two, so a set that outlived a game would silence the
+    /// second game's opening as though it had already happened.
+    /// </summary>
+    [Test]
+    public void A_new_game_forgets_what_the_last_one_was_told()
+    {
+        string Land(int gameNumber, string kind) => Gre($$"""
+            { "type": "{{kind}}",
+              "gameInfo": { "gameNumber": {{gameNumber}} },
+              "zones": [ { "zoneId": 31, "type": "ZoneType_Hand" },
+                         { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "turnInfo": { "turnNumber": 1, "activePlayer": 1 },
+              "gameObjects": [ { "instanceId": 60, "grpId": 648, "name": 648,
+                "controllerSeatId": 1, "zoneId": 28, "cardTypes": [ "CardType_Land" ] } ],
+              "annotations": [ { "id": 900, "affectedIds": [ 60 ],
+                "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+                  { "key": "zone_src",  "valueInt32": [ 31 ] },
+                  { "key": "zone_dest", "valueInt32": [ 28 ] },
+                  { "key": "category",  "type": "KeyValuePairValueType_string",
+                    "valueString": [ "PlayLand" ] } ] } ] }
+            """);
+
+        // Game one plays a land. Game two opens with a resync carrying the identical
+        // annotation — which is where a memory that outlived the game would silence it,
+        // so the second delivery has to be the one a resync would suppress.
+        var t = Run(RoomLine, MulliganLine, Land(1, "GameStateType_Diff"),
+                                            Land(2, "GameStateType_Full"));
+
+        Assert.That(t.Events.Count(e => e.Kind == EventKind.LandPlayed), Is.EqualTo(2),
+            "each game gets to play its own first land");
+    }
+
 }

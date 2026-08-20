@@ -86,13 +86,18 @@ public class PermanentLabelsTests
         """;
 
     /// <summary>A turn boundary carrying the board it starts with.</summary>
+    /// <remarks>
+    /// The annotation id climbs with the turn because Arena's do, and never repeats
+    /// inside a game. A fixture that reused one would be a log Arena never sends, and
+    /// would now be read as a resync replaying itself (#52).
+    /// </remarks>
     private static string Turn(int number, params string[] creatures) => Gre($$"""
         { "type": "GameStateType_Full",
           "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" },
                      { "zoneId": 35, "type": "ZoneType_Hand" } ],
           "turnInfo": { "turnNumber": {{number}}, "activePlayer": 1 },
           "gameObjects": [ {{string.Join(",", creatures)}} ],
-          "annotations": [ { "id": 1, "affectorId": 1, "affectedIds": [ 1 ],
+          "annotations": [ { "id": {{number}}, "affectorId": 1, "affectedIds": [ 1 ],
             "type": [ "AnnotationType_NewTurnStarted" ] } ] }
         """);
 
