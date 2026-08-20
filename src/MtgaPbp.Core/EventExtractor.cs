@@ -435,6 +435,60 @@ public sealed class EventExtractor(ICardDb cards)
         /// explains can be noticed. Per game, because instance ids are handed out again.
         /// </summary>
         public readonly Dictionary<int, (int Power, int Toughness)> LastStats = [];
+
+        /// <summary>
+        /// Every annotation this game has already narrated, as its exact JSON.
+        /// </summary>
+        private readonly HashSet<string> _narrated = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Records an annotation and says whether this game had already been told it.
+        /// </summary>
+        /// <remarks>
+        /// Arena re-sends state mid-game — a reconnect, a client hiccup — and the resync
+        /// carries annotations it has already sent. Nothing downstream could tell the
+        /// difference, so a land drop narrated twice became "Opponent plays Plains ×2",
+        /// which is not a tidiness problem: one land a turn is a rule, so the page was
+        /// describing something that cannot happen (#52).
+        /// <para>
+        /// Keyed on the whole annotation and not on its id, which is the trap here. Ids
+        /// are NOT unique within a game: across the archive 944 (game, id) pairs recur,
+        /// and while 708 are byte-identical replays, 236 carry different content — a
+        /// different affector, a different affected object — and are genuinely separate
+        /// events. Deduplicating on the id alone would have silently dropped those 236.
+        /// </para>
+        /// <para>
+        /// Nor on how recently the annotation was seen, which was the other tempting
+        /// rule: replays sit a median of 2 messages from their original, but genuine
+        /// id reuse sits a median of 4, and 233 of those 236 fall inside the same
+        /// twelve-message window. Distance cannot separate them.
+        /// </para>
+        /// <para>
+        /// And content alone is not enough either, which is why only a resync may act
+        /// on this. An annotation is not self-describing: it names objects by id, and
+        /// ids are reassigned as the game runs, so the same bytes can mean two different
+        /// things. One archived match sends a byte-identical block twice, a few messages
+        /// apart, and it renders as "You cast Grab the Prize" the first time and "You
+        /// cast Campus Guide" the second, because <c>ObjectIdChanged</c> remapped the
+        /// object in between. Both are real. Silencing the second on content alone lost
+        /// a cast and left its resolution standing on its own.
+        /// </para>
+        /// <para>
+        /// A <c>GameStateType_Full</c> is the one message that is a re-send by
+        /// definition, so it is the only one allowed to be silenced by this memory.
+        /// That covers 561 of the archive's 708 identical repeats and leaves the
+        /// Diff-to-Diff ones alone, which is the trade this evidence supports.
+        /// </para>
+        /// <para>
+        /// Living on the game rather than the extractor is what resets it correctly.
+        /// Instance ids and annotation ids are both handed out again in game two, and a
+        /// <see cref="GameRun"/> is built fresh for each game — so the set clears when a
+        /// game does and never when a resync arrives, which is the other half of the
+        /// trap: clearing on a resync is what would make the replay look new again.
+        /// </para>
+        /// </remarks>
+        public bool AlreadyTold(JsonElement annotation) =>
+            !_narrated.Add(annotation.GetRawText());
     }
 
     /// <summary>What Arena said about one finished game.</summary>
@@ -600,8 +654,21 @@ public sealed class EventExtractor(ICardDb cards)
                     game.Activations[abilityInst] = actorSeat;
                 }
 
+                // A resync re-sends annotations it has already delivered, and each one
+                // used to narrate a second time. Everything is remembered; only a resync
+                // is allowed to be silenced by that memory — see GameRun.AlreadyTold.
+                //
+                // The filter sits here and nowhere else. The loops above rebuild per
+                // message, so a repeat only re-states what they already hold, and
+                // tracker.Apply is right to take a resync, because a resync is a true
+                // snapshot of the board. It is the telling that must not happen twice.
+                var resync = Json.Str(gsm, "type") == "GameStateType_Full";
                 foreach (var a in Json.Array(gsm, "annotations"))
+                {
+                    var told = game.AlreadyTold(a);
+                    if (resync && told) continue;
                     EmitFor(a, tracker, ts, st, countered);
+                }
 
                 // After the streamed annotations, not before: the grant and the spell
                 // that made it arrive in the same message, and "Enter the Avatar State
