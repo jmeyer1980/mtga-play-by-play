@@ -715,6 +715,16 @@ public sealed class EventExtractor(ICardDb cards)
                 // number as a boundary, and a match-end line filed under "game 0" would
                 // open a game that never existed.
                 GameNumber = games[^1].Number,
+                // And the turn it happened on, for the same kind of reason one step
+                // further along. This event is built by hand rather than through Base,
+                // so it used to keep Turn's default of zero — and nothing is ever turn
+                // zero. `mtga-pbp why` selects lines by turn, so the one line that says
+                // how the match ended could not be reached at any turn number a reader
+                // could type: 470 of 576 archived transcripts end with a line the
+                // diagnostic could not show (#54). A match conceded during the mulligan
+                // legitimately has no turn, and its ending stays at zero, because there
+                // is genuinely no turn to ask about.
+                Turn = games[^1].Tracker.Turn,
                 Kind = EventKind.GameEnd,
                 Amount = winningTeam ?? 0,
                 // A draw has no winner for EndLine to name, which would leave the
