@@ -134,16 +134,36 @@ public static class IndexRenderer
                 // assistive technology, which would otherwise read it as "white star".
                 // It ships disabled because keeping a match needs the local server —
                 // an unavailable control is better than one that silently does nothing.
+                //
+                // Both row controls are named for what they DO and nothing else. They
+                // used to name the match as well — "Keep the 2026-08-19 23:46 match
+                // against X" — so that an archive of them was not a list of identical
+                // entries. That had the trade backwards. The date is this row's header
+                // and the opponent is a column of the same row, so a screen reader
+                // announces both before it reaches the cell: every identity the name
+                // could carry is one the reader has just been given, and the verb — the
+                // only part they did not have — arrived last, after a timestamp read
+                // digit by digit (#48).
+                //
+                // There is no wording that is both self-identifying and non-repetitive,
+                // because self-identifying means repeating the row. Naming the match by
+                // opponent alone was measured and does not work either: 97 of 582
+                // matches share an opponent, and one opponent appears sixteen times.
+                //
+                // The list the long name was protecting is NVDA's elements list, and at
+                // 582 rows that holds 582 keep buttons whatever they are called. Nobody
+                // finds a match that way; they reach the row and then act. That cost is
+                // theoretical, and the one it was paying fell on every row.
                 body.Append($"""
                     <tr data-search="{E(haystack)}">
                     <td{Key(r.Favorite ? 1 : 0)}><button class="star{(r.Favorite ? " on" : "")}" type="button" disabled="disabled"
                         aria-pressed="{(r.Favorite ? "true" : "false")}"
                         aria-describedby="keep-note" data-id="{E(r.MatchId)}"
-                        aria-label="Keep the {E(r.Date)} match against {E(r.Opponent)}"
+                        aria-label="Keep"
                         ><span aria-hidden="true">{(r.Favorite ? "★" : "☆")}</span></button></td>
                     <th scope="row"{Key(r.SortKey)}><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></th>
                     <td><button class="copyid" type="button" data-id="{E(r.MatchId)}"
-                        aria-label="Copy the game ID of the {E(r.Date)} match against {E(r.Opponent)}"
+                        aria-label="Copy game ID"
                         ><span aria-hidden="true">⧉</span></button></td>
                     <td{Key(r.EventName)}>{E(r.EventName)}</td><td class="deck"{Key(r.Colors)}>{Colors(r)}</td>
                     <td{Key(r.Opponent)}>{E(r.Opponent)}</td>

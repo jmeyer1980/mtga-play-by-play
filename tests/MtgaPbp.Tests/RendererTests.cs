@@ -1226,9 +1226,7 @@ public class RendererTests
             .Descendants("button").Single(b => b.Attribute("class")?.Value == "copyid");
         Assert.That(row.Attribute("data-id")?.Value, Is.EqualTo("abc-123"));
 
-        // Named for the row it belongs to: an archive of these is otherwise a list of
-        // controls all called the same thing.
-        Assert.That(row.Attribute("aria-label")?.Value, Does.Contain("2026-"));
+        Assert.That(row.Attribute("aria-label")?.Value, Is.EqualTo("Copy game ID"));
         Assert.That(row.Attribute("type")?.Value, Is.EqualTo("button"));
 
         // The glyph is decoration; a synthesiser reading it would say nothing useful.
@@ -1338,11 +1336,59 @@ public class RendererTests
 
         // "☆" announces as "white star" at best and as nothing at worst, so the name
         // is stated and the glyph is taken out of the accessibility tree entirely.
-        Assert.That(off.Attribute("aria-label")?.Value, Does.Contain("Keep"));
-        Assert.That(off.Attribute("aria-label")?.Value, Does.Contain("PlayerTwo"),
-            "93 buttons all called \"Keep\" are 93 buttons you cannot tell apart");
+        // The name is the verb alone — see
+        // A_row_control_is_named_for_what_it_does_not_for_the_row_it_sits_in.
+        Assert.That(off.Attribute("aria-label")?.Value, Is.EqualTo("Keep"));
         Assert.That(off.Elements("span").Single().Attribute("aria-hidden")?.Value,
             Is.EqualTo("true"));
+    }
+
+    /// <summary>
+    /// A control inside a row is named for what it does, and never for the row.
+    /// </summary>
+    /// <remarks>
+    /// Both of these used to name the match — "Keep the 2026-08-19 23:46 match against
+    /// X" — so that a list of them was not a list of identical entries. That had the
+    /// trade backwards: the date is the row's header and the opponent is a column of the
+    /// same row, so a screen reader announces both before it reaches the cell. Every
+    /// identity the name could carry is one the reader was just given, and the verb —
+    /// the only part they did not have — arrived last, behind a timestamp read digit by
+    /// digit (#48).
+    /// <para>
+    /// Naming by opponent alone was measured rather than assumed, and does not work
+    /// either: 97 of 582 archived matches share an opponent, one of them sixteen times.
+    /// There is no wording that is both self-identifying and non-repetitive, because
+    /// self-identifying means repeating the row.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void A_row_control_is_named_for_what_it_does_not_for_the_row_it_sits_in()
+    {
+        var root = Markup.Parse(IndexHtml());
+        var row = MatchTable(root).Descendants("tbody").Single().Descendants("tr").Single();
+
+        // Every cell of this row, header included — whatever a reader is told before
+        // they reach a control is what that control's name must not repeat. Read from
+        // the row rather than named here, so a new column joins the rule for free.
+        var announced = row.Elements()
+            .Select(cell => cell.Value.Trim())
+            .Where(text => text.Length >= 3)
+            .ToList();
+        Assert.That(announced, Is.Not.Empty, "the row says something before the controls");
+
+        foreach (var control in row.Descendants("button"))
+        {
+            // Through the accessible-name algorithm, not the raw attribute: the glyph
+            // inside these buttons is aria-hidden, so a control that lost its label
+            // has no name at all — and reading element text directly would see "☆" and
+            // call that a name, which is how this test first shipped unable to fail.
+            var name = Markup.AccessibleName(root, control);
+            Assert.That(name, Is.Not.Empty, "a glyph-only control still needs a name");
+
+            foreach (var text in announced)
+                Assert.That(name, Does.Not.Contain(text),
+                    $"the name \"{name}\" repeats \"{text}\" from its own row");
+        }
     }
 
     [Test]
