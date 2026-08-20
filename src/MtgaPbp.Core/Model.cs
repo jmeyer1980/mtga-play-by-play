@@ -101,7 +101,16 @@ public enum EventKind
     Damage, LifeChanged, TokenCreated, CounterChanged,
     Scry, Revealed, ManaPaid, Attack, Block, BoardSnapshot, Triggered, Activated,
     Attached, LevelUp, AbilityGained, AbilityExpired, Copied,
-    GameEnd, Unknown
+    GameEnd,
+
+    /// <summary>
+    /// A place the log does not account for, said where it happened. The warning above
+    /// the transcript reports that something is missing; this reports where, which is
+    /// the part a reader can act on.
+    /// </summary>
+    LogGap,
+
+    Unknown
 }
 
 /// <summary>

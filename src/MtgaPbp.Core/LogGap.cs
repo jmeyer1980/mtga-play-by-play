@@ -34,7 +34,22 @@ public sealed record LogGap(
     long LineNumber,
     int GameObjects,
     int Annotations,
-    IReadOnlyList<string> Messages);
+    IReadOnlyList<string> Messages)
+{
+    /// <summary>
+    /// The turn the match had reached when the log stopped accounting for it, and the
+    /// game it belonged to. Zero when it fell before the first turn.
+    /// </summary>
+    /// <remarks>
+    /// Worked out from the envelope's position in the stream rather than stored in it,
+    /// which is what lets every match already in the archive gain a location without
+    /// being captured again. The envelope records what Arena withheld; where it fell is
+    /// a property of the walk, and the walk is repeated on every render.
+    /// </remarks>
+    public int Turn { get; init; }
+
+    public int Game { get; init; } = 1;
+}
 
 /// <summary>
 /// How a gap survives the trip through the archive.

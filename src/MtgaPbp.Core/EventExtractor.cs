@@ -532,8 +532,22 @@ public sealed class EventExtractor(ICardDb cards)
             catch (JsonException) { continue; }
 
             // Recorded by the scanner in place of a message the log did not keep. It
-            // carries no game state by definition, so it is collected and skipped.
-            if (LogGaps.Read(root) is { } gap) { gaps.Add(gap); continue; }
+            // carries no game state by definition, so there is nothing to apply — but
+            // where it fell is worth saying, and where it fell is simply where the walk
+            // had got to. The warning above a transcript already reports that something
+            // is missing; this puts it at the point it went missing, which is the part a
+            // reader can act on and the part a bug report needs (#55).
+            if (LogGaps.Read(root) is { } gap)
+            {
+                gap = gap with { Turn = game.Tracker.Turn, Game = game.Number };
+                gaps.Add(gap);
+                st.Add(Base(game.Tracker, ended, EventKind.LogGap) with
+                {
+                    Detail = GapLine(gap),
+                    RawType = gap.Kind.ToString()
+                });
+                continue;
+            }
 
             var ts = ReadTimestamp(root);
             if (ts > 0) { if (started == 0) started = ts; ended = ts; }
@@ -1550,6 +1564,35 @@ public sealed class EventExtractor(ICardDb cards)
         "AnnotationType_CounterRemoved" => -(GameStateTracker.DetailInt(a, "transaction_amount") ?? 0),
         _ => 0
     };
+
+    /// <summary>
+    /// What to say where the log stops accounting for the match.
+    /// </summary>
+    /// <remarks>
+    /// It says what Arena did and not how much it withheld, for the same reason the
+    /// warning above the transcript does not: "88 game objects" is Arena's vocabulary,
+    /// and the number a reader can act on is that this spot is not trustworthy. The
+    /// counts stay where a diagnostic audience wants them, on the gap itself and in
+    /// <c>mtga-pbp stats</c>.
+    /// <para>
+    /// A torn line and a summarised message are told apart because a reader's next move
+    /// differs: a summary was a decision Arena made and nothing can undo it, while a
+    /// torn line is damage and the neighbouring capture may still hold the rest.
+    /// </para>
+    /// </remarks>
+    private static string GapLine(LogGap gap)
+    {
+        // "this turn" would be a small lie before turn one, where the only thing that has
+        // happened is the die roll and the mulligans. No gap in the archive falls there —
+        // the earliest sits on turn 1 — so this is a guard rather than an observed case,
+        // and it is here because the alternative is a sentence that names a turn the
+        // match had not reached.
+        var where = gap.Turn > 0 ? "this turn" : "this game";
+
+        return gap.Kind == LogGapKind.Summarized
+            ? $"— part of {where} is missing: Arena summarised an update instead of writing it —"
+            : $"— part of {where} is missing: a log line ended mid-message —";
+    }
 
     private static GameEvent Base(GameStateTracker t, long ts, EventKind kind) => new()
     {

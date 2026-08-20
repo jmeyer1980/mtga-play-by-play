@@ -703,12 +703,74 @@ public class EventExtractorTests
     {
         // It records an absence. Letting it reach the tracker would turn "we do not
         // know what happened here" into a made-up event, which is the lie in miniature.
+        // Saying that the absence is here is a different thing from inventing what was
+        // in it, and only the second one would be a lie.
         var line = LogGaps.ToEnvelope(new LogGap(LogGapKind.Torn, 5, 0, 0, [])).GetRawText();
 
         var t = Run(RoomLine, line);
 
-        Assert.That(t.Events, Is.Empty);
+        var only = t.Events.Single();
+        Assert.That(only.Kind, Is.EqualTo(EventKind.LogGap), "it says a gap is here");
+        Assert.That(only.Detail, Does.Contain("missing"));
+        Assert.That(t.Events.Any(e => e.Kind != EventKind.LogGap), Is.False,
+            "and claims nothing about what was in it");
         Assert.That(t.Gaps.Single().Kind, Is.EqualTo(LogGapKind.Torn));
+    }
+
+    /// <summary>
+    /// The gap is reported at the point the log stopped accounting for the match, so a
+    /// reader who finds a board that changed for no visible reason can tell a parser bug
+    /// from the known hole — and a bug report can say where.
+    /// </summary>
+    /// <remarks>
+    /// Worked out from where the envelope falls in the stream rather than stored in it,
+    /// which is what lets matches already in the archive gain a location without being
+    /// captured again.
+    /// </remarks>
+    [Test]
+    public void A_gap_is_reported_on_the_turn_it_fell_on()
+    {
+        string Turn(int n) => Gre($$"""
+            { "type": "GameStateType_Diff",
+              "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "turnInfo": { "turnNumber": {{n}}, "activePlayer": 1 },
+              "annotations": [ { "id": {{n * 10}}, "affectorId": 1, "affectedIds": [ 1 ],
+                "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+            """);
+
+        var gap = LogGaps.ToEnvelope(
+            new LogGap(LogGapKind.Summarized, 10486, 77, 3, ["GameStateMessage"])).GetRawText();
+
+        var t = Run(RoomLine, MulliganLine, Turn(1), Turn(2), gap, Turn(3));
+
+        Assert.That(t.Gaps.Single().Turn, Is.EqualTo(2), "it fell during turn 2");
+        Assert.That(t.Events.Single(e => e.Kind == EventKind.LogGap).Turn, Is.EqualTo(2));
+        Assert.That(t.Events.Single(e => e.Kind == EventKind.LogGap).Detail,
+            Does.Contain("this turn"));
+    }
+
+    /// <summary>
+    /// Before turn one there is no turn to name, so the line says so rather than naming a
+    /// turn the match had not reached.
+    /// </summary>
+    /// <remarks>
+    /// A guard, not an observed case: no gap in the archive falls here — the earliest sits
+    /// on turn 1. It exists because <see cref="LogGap.Turn"/> is documented as zero in
+    /// this situation, and a documented state that renders a small lie is worse than one
+    /// line of code.
+    /// </remarks>
+    [Test]
+    public void A_gap_before_the_first_turn_does_not_claim_a_turn()
+    {
+        var gap = LogGaps.ToEnvelope(
+            new LogGap(LogGapKind.Summarized, 12, 60, 0, ["GameStateMessage"])).GetRawText();
+
+        var t = Run(RoomLine, MulliganLine, gap);
+
+        var line = t.Events.Single(e => e.Kind == EventKind.LogGap);
+        Assert.That(line.Turn, Is.Zero);
+        Assert.That(line.Detail, Does.Contain("this game"));
+        Assert.That(line.Detail, Does.Not.Contain("this turn"));
     }
 
     /// <summary>

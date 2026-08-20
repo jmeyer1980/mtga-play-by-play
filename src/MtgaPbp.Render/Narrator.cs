@@ -631,6 +631,11 @@ public static class Narrator
         EventKind.PhaseChange => null,
         EventKind.Unknown => $"[unhandled: {e.RawType}]",
 
+        // Said in both densities. A reader skimming the beats is exactly who needs to
+        // know that this turn is not a complete account of itself, and it is the one
+        // line on the page that explains a board changing with nothing to explain it.
+        EventKind.LogGap => e.Detail,
+
         EventKind.GameEnd => e.Detail,
         EventKind.ZoneMove when e.SourceName is not null => ZoneMove(e),
 
