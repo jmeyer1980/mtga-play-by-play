@@ -937,7 +937,11 @@ public class RendererTests
         {
             var glyph = cell.Elements("span").First();
 
-            Assert.That(glyph.Attribute("aria-hidden"), Is.Null,
+            // Not hidden, rather than carrying no such attribute: aria-hidden="false"
+            // and no attribute at all mean the same thing, and the claim here is about
+            // the glyph being in the tree, not about which attributes spell that out.
+            // Markup.Spoken already reads it this way, so this now matches its oracle.
+            Assert.That(glyph.Attribute("aria-hidden")?.Value, Is.Not.EqualTo("true"),
                 $"the glyph a pointer lands on is out of the tree: {cell}");
             Assert.That(glyph.Attribute("aria-label")?.Value, Is.Not.Null.And.Not.Empty,
                 $"the glyph draws text but has no name: {cell}");
