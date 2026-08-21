@@ -455,10 +455,16 @@ public class RendererTests
     [TestCase("Hare Apparent -4/1", "Hare Apparent minus 4 power 1 toughness")]
     [TestCase("Mischievous Mystic 0/-1", "Mischievous Mystic 0 power minus 1 toughness")]
     [TestCase("Hare Apparent 1/1", "Hare Apparent 1 power 1 toughness")]
-    // Signed on both sides: a modifier, said the way players say it.
-    [TestCase("Hare Apparent gets -2/-2", "Hare Apparent gets -2/-2")]
-    [TestCase("Charix, the Raging Isle gets +4/-4", "Charix, the Raging Isle gets +4/-4")]
+    // A pump is spoken like any other pair. Only a counter's name keeps its slash,
+    // and it is the following word that says which this is.
+    [TestCase("Hare Apparent gets -2/-2",
+              "Hare Apparent gets minus 2 power minus 2 toughness")]
+    [TestCase("Charix, the Raging Isle gets +4/-4",
+              "Charix, the Raging Isle gets plus 4 power minus 4 toughness")]
     [TestCase("A-Vivi Ornitier 4/7", "A-Vivi Ornitier 4 power 7 toughness")]
+    // The word after it is what makes this one a name rather than a pump.
+    [TestCase("Zombie Army gets 1 +1/+1 counter", "Zombie Army gets 1 +1/+1 counter")]
+    [TestCase("Zombie Army loses 2 +1/+1 counters", "Zombie Army loses 2 +1/+1 counters")]
     public void A_size_that_carries_a_sign_is_never_spoken_without_it(string label, string heard)
     {
         var lines = Markup.Parse(GamePageRenderer.Render(Sample() with
