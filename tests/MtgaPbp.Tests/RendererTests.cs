@@ -1000,11 +1000,25 @@ public class RendererTests
         var html = IndexHtml(deck: true);
         var root = Markup.Parse(html);
 
-        // The affordance is a description, which does not become part of the name.
+        // The affordance is written once, in the section, and pointed at by nothing.
         var note = root.Descendants().Single(e => e.Attribute("id")?.Value == "deck-filter-note");
         Assert.That(note.Value, Does.Contain("filters the match"));
-        Assert.That(html, Does.Contain("aria-describedby"), "the button points at it");
-        Assert.That(html, Does.Contain("aria-pressed"), "and carries its state");
+        Assert.That(html, Does.Contain("aria-pressed"), "the button carries its state");
+
+        // A description is read out at every button that carries one, so pointing all
+        // of them at a seventeen-word note put those seventeen words on every deck row,
+        // ahead of the one word wanted.
+        //
+        // Asserted at the construction site, not across the document. These buttons are
+        // built by script, so there is no attribute in the static markup to look at —
+        // and the page carries aria-describedby legitimately elsewhere (the search box
+        // points at its result count, the star at the note saying why it is disabled),
+        // which is why the whole-document check this replaces passed no matter what the
+        // deck button did.
+        Assert.That(html, Does.Contain("button.setAttribute('aria-pressed'"),
+            "the deck button is still the thing being described here");
+        Assert.That(html, Does.Not.Contain("button.setAttribute('aria-describedby'"),
+            "the note is met once on the way in, not re-read on every deck row");
 
         // The row header is the deck's name and nothing else.
         var header = root.Descendants("th")
@@ -1107,9 +1121,11 @@ public class RendererTests
     /// The affordance note travels with the buttons it describes, into the disclosure.
     /// </summary>
     /// <remarks>
-    /// Its id is the target of every deck button's <c>aria-describedby</c>, so it has
-    /// to exist wherever it sits; a description may be resolved from content a closed
-    /// disclosure is not rendering, and the buttons are inside it anyway.
+    /// Nothing points at it any more — a description is re-read at every button that
+    /// carries one, which is the opposite of saying a thing once. It earns its place by
+    /// position instead: inside the same disclosure as the buttons, above them, where a
+    /// reader working through the section meets it before the first one and never
+    /// again.
     /// </remarks>
     [Test]
     public void The_deck_filter_note_sits_with_the_buttons_it_describes()

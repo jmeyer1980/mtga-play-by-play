@@ -430,9 +430,9 @@ public static class IndexRenderer
             """);
         sb.Append(format).Append(deck);
 
-        // Inside, with the buttons it describes. Described-by rather than labelled-by:
-        // a description does not become part of the button's name, so each deck's row
-        // header stays the deck's name.
+        // Inside, above the buttons it explains, and pointed at by none of them. A
+        // screen reader meets it once while reading into the section, which is what
+        // aria-describedby was supposed to achieve and did the opposite of.
         if (s.ByDeck.Count > 0)
             sb.Append("""
                 <p class="note" id="deck-filter-note">Selecting a deck filters the match
@@ -598,10 +598,12 @@ public static class IndexRenderer
     /// five techniques: this is the only one a screen reader reads both ways.
     /// <para>
     /// <c>role="img"</c> is what makes <c>aria-label</c> apply at all — the same label
-    /// on a bare span is discarded, which is what #46 discovered the expensive way. The
-    /// price is the word "graphic" before every value, accepted deliberately: it is one
-    /// word, spoken only on the cell you land on, against a column that could not be
-    /// read by pointer at all.
+    /// on a bare span is discarded, which is what #46 discovered the expensive way. It
+    /// was accepted knowing it costs the word "graphic" ahead of every value; hearing
+    /// it afterwards showed that price is smaller than the one agreed to. Keyboard
+    /// navigation says "Graphic White", but pointer reading announces the label alone —
+    /// "white" — so the extra word falls only on the path that already worked, and the
+    /// path this was built for gets the bare value.
     /// </para>
     /// <para>
     /// The clipped span stays, purely so find-in-page can still match the spoken form.
@@ -794,8 +796,17 @@ public static class IndexRenderer
               // No aria-label. This button is the content of a th[scope=row], so its
               // accessible name IS the row header, and a label of "Show only X matches"
               // would be announced ahead of every cell in the row instead of the deck's
-              // name. What it does is said once, in a note the button points at.
-              button.setAttribute('aria-describedby', 'deck-filter-note');
+              // name.
+              //
+              // And no aria-describedby either, though it had one. It pointed at the
+              // note above the table, on the reasoning that what the button does should
+              // be said once — but a description is read out at every button that
+              // carries it, so "Selecting a deck filters the match list below to it.
+              // Selecting it again clears the filter." was announced on every deck row,
+              // seventeen words ahead of the one word wanted. The note is still there,
+              // in the section, where it is met once on the way in. This is the same
+              // trade #48 got backwards on the Keep button: per-row repetition of
+              // something the reader has already been given.
 
               // A toggle, so the state rides on aria-pressed and the name stays put —
               // the same rule the star two hundred lines up follows, and for the same
