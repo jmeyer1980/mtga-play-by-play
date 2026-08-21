@@ -648,6 +648,18 @@ public static class IndexRenderer
         table{width:100%;border-collapse:collapse}
         caption{text-align:left}
         th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid rgba(128,128,128,.35)}
+
+        /* A named glyph stretched over the cell it is the whole content of. Nothing
+           moves: the negative margin gives back exactly the padding that replaces it,
+           and the text stays where it was to the pixel. What changes is how much of the
+           cell answers to the pointer, which is what mouse reading depends on — the
+           name lives on this element, so anywhere the pointer lands that is NOT this
+           element has nothing to say. Measured on the live page: the deck glyph covered
+           7% of its cell and the middle of the cell missed it entirely; length covered
+           15%. Both are now 42%, the record columns 99%, and the centre hits every
+           time. Rows run 87px tall when a neighbouring column wraps, so the height is
+           not fully recoverable this way and the remaining shortfall is vertical. */
+        td>[role=img]{display:block;margin:-.45rem -.6rem;padding:.45rem .6rem}
         thead th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;opacity:.6}
         tbody th{font-weight:400}
         tbody tr:hover{background:rgba(128,128,128,.12)}
@@ -674,6 +686,8 @@ public static class IndexRenderer
         table.stats{width:auto;margin:0 0 1rem;font-size:.95rem}
         table.stats caption{font-weight:600;padding:.3rem 0;opacity:.8}
         table.stats th,table.stats td{padding:.3rem .8rem .3rem 0}
+        /* Same trick, against this table's own padding rather than the match table's. */
+        table.stats td>[role=img]{margin:-.3rem -.8rem -.3rem 0;padding:.3rem .8rem .3rem 0}
         /* A deck name is a span until script makes it a button, so it has to look like
            plain text until then rather than like a control that does nothing. */
         button.deck-name{background:none;border:0;font:inherit;color:inherit;
