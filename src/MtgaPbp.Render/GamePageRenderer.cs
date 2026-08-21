@@ -1,11 +1,12 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using MtgaPbp.Core;
 
 namespace MtgaPbp.Render;
 
-public static class GamePageRenderer
+public static partial class GamePageRenderer
 {
     public static string Render(Transcript t, Neighbours? nav = null)
     {
@@ -169,15 +170,17 @@ public static class GamePageRenderer
 
     /// <summary>
     /// Renders one narrated line so it reads correctly aloud as well as on screen.
-    /// Three notations need help. The narrator folds repeats into a trailing "×3", and
+    /// Four notations need help. The narrator folds repeats into a trailing "×3", and
     /// screen readers at their default punctuation level either skip U+00D7 or read it
     /// as "times" depending on the synthesiser, so "triggers ×3" can arrive as
     /// "triggers 3" — indistinguishable from a turn number. Fields are separated with
     /// "·", which is skipped just as readily, running "You 20 · Opponent 20" together
     /// into one number-soup. A buff reads "1/1 → 6/6", and an arrow that is dropped
-    /// leaves two statlines with nothing between them. Every glyph stays for sighted
-    /// readers and is taken out of the accessibility tree; speech gets words and a comma
-    /// instead, which is what actually makes a synthesiser pause.
+    /// leaves two statlines with nothing between them. And the statline itself reads
+    /// "2 slash 2", which is the notation spelled out rather than what it means. Every
+    /// glyph stays for sighted readers and is taken out of the accessibility tree;
+    /// speech gets words and a comma instead, which is what actually makes a
+    /// synthesiser pause.
     /// </summary>
     private static string Speech(string text)
     {
@@ -202,10 +205,73 @@ public static class GamePageRenderer
         string.Join(Spoken(" · ", ", "), text.Split(" · ").Select(Became));
 
     private static string Became(string text) =>
-        string.Join(Spoken(" → ", " becomes "), text.Split(" → ").Select(E));
+        string.Join(Spoken(" → ", " becomes "), text.Split(" → ").Select(Statlines));
 
     private static string Spoken(string glyph, string words) =>
         $"""<span aria-hidden="true">{glyph}</span><span class="vh">{words}</span>""";
+
+    /// <summary>
+    /// Gives every statline a spoken twin: "2/2" is read as "2 power 2 toughness".
+    /// </summary>
+    /// <remarks>
+    /// Runs after encoding rather than before, which is safe in the one way that
+    /// matters here: <see cref="E"/> emits numeric character references, and none of
+    /// them contain a solidus, so nothing it produces can be mistaken for a statline.
+    /// <para>
+    /// A pair signed on <em>both</em> sides is left exactly as written, because that is
+    /// Magic's notation for a modifier rather than a size: "+1/+1", "-1/-1", "+4/-4".
+    /// Players say those with the slash in them, and spelling one out would turn "gets 1
+    /// +1/+1 counter" into "gets 1 plus 1 plus 1 counter" — three numbers in a row with
+    /// nothing left to separate the count from the thing being counted.
+    /// </para>
+    /// <para>
+    /// A size can still carry one sign, and that is why the test is both sides rather
+    /// than either. Power goes negative under enough shrinking, and the archive holds
+    /// 13 of them — "Hare Apparent -3/2", "Mischievous Mystic 0/-1". An earlier pattern
+    /// here required a digit straight after the slash, which happened to exclude
+    /// "+1/+1" for the right reason and "-3/2" for no reason at all: it matched the
+    /// "3/2" inside it and announced "3 power 2 toughness", stating a number that is
+    /// not the creature's. Dropping a sign is worse than reading a slash aloud, so the
+    /// sign is now part of the match and is spoken as a word.
+    /// </para>
+    /// <para>
+    /// The one case this cannot separate is a creature whose size is negative on both
+    /// sides, which reads as a modifier and is left alone. That is a line unspoken
+    /// rather than a line misspoken, which is the direction to fail in.
+    /// </para>
+    /// <para>
+    /// Measured across the whole rendered archive rather than reasoned about: 239
+    /// distinct unsigned pairs over 45,011 occurrences, every one a real size and some
+    /// of them sizes no card prints (0/30, 434/436); 13 sizes carrying one sign; and 72
+    /// modifiers, which the both-sides rule sorts the other way. Mana cannot stray into
+    /// range because a hybrid symbol never has digits on both sides — "{2/W}" does not
+    /// match, and neither does the "//" of a split card, which has no digits at all.
+    /// </para>
+    /// </remarks>
+    // A sign is part of the pair, never a stray character before it: "-3/2" is matched
+    // whole. The lookbehind refuses a sign it did not consume so that a hyphen already
+    // joined to a word — the "A-" of a rebalanced card — cannot leave the digits after
+    // it looking like a bare size.
+    [GeneratedRegex(@"(?<![\w/+-])([+-]?\d+)/([+-]?\d+)(?![\w/])")]
+    private static partial Regex Statline();
+
+    private static string Statlines(string text) =>
+        Statline().Replace(E(text), m =>
+        {
+            var power = m.Groups[1].Value;
+            var toughness = m.Groups[2].Value;
+
+            return Signed(power) && Signed(toughness)
+                ? m.Value
+                : Spoken(m.Value, $"{Said(power)} power {Said(toughness)} toughness");
+        });
+
+    private static bool Signed(string number) => number[0] is '+' or '-';
+
+    // "minus 3", not "-3": a synthesiser reads a leading hyphen as "dash" or as nothing
+    // at all depending on its punctuation level, and either one loses the sign.
+    private static string Said(string number) =>
+        number[0] == '-' ? $"minus {number[1..]}" : number;
 
 
     /// <summary>

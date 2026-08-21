@@ -388,6 +388,98 @@ public class RendererTests
     }
 
     /// <summary>
+    /// A statline is a size, so it is spoken as one: "3/3" reads "3 power 3 toughness".
+    /// </summary>
+    /// <remarks>
+    /// The single finding of an NVDA pass over the whole archive (#49) — everything else
+    /// already read correctly. A synthesiser says the characters, "3 slash 3", which is
+    /// the notation read out rather than what the notation means, and it only carries
+    /// for a listener who already knows it. Sighted readers keep "3/3"; the spoken half
+    /// is the only one that changes, which the second assertion is here to hold.
+    /// <para>
+    /// One line pins the exception with it. "+1/+1" names the counter rather than a
+    /// size, and players say it with the slash in it; spelling that one out as well
+    /// would turn "gets 1 +1/+1 counter" into "gets 1 plus 1 plus 1 counter" — three
+    /// numbers running together with nothing left to mark where the count ends.
+    /// </para>
+    /// <para>
+    /// The case below it is the one that matters most, and it is a sign rather than a
+    /// slash. A size can go negative, and the first pattern shipped here matched the
+    /// "3/2" inside "Hare Apparent -3/2" and announced "3 power 2 toughness" — not the
+    /// creature's power, and not a number anywhere on the board. Being read a wrong
+    /// number is worse than being read a slash, so the rule is now that a pair signed
+    /// on both sides is a modifier and anything else is a size.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void A_statline_is_spoken_as_a_size_and_the_counter_keeps_its_name()
+    {
+        var lines = Markup.Parse(GamePageRenderer.Render(Sample() with
+        {
+            Events =
+                [
+                    new GameEvent { Seq = 0, Kind = EventKind.TurnStart, Turn = 1, ActorSeat = 1 },
+                    new GameEvent { Seq = 1, Kind = EventKind.CounterChanged, Turn = 1,
+                                    ActorSeat = 1, TargetName = "Bristly Bill, Spine Sower 3/3",
+                                    Amount = 1, Detail = "+1/+1" },
+                ]
+        }))
+            .Descendants("li").Where(li => li.Value.Contains("Bristly Bill")).ToList();
+
+        // Every copy, not the first: the page carries the line at both densities, and
+        // one of the two reading correctly is not the claim being made here.
+        Assert.That(lines, Is.Not.Empty, "the fixture reached the page at all");
+
+        foreach (var line in lines)
+        {
+            Assert.That(Markup.Spoken(line),
+                Is.EqualTo("Bristly Bill, Spine Sower 3 power 3 toughness gets 1 +1/+1 counter"));
+
+            // The eye keeps the notation. Only the spoken half is new.
+            Assert.That(Markup.Clipboard(line),
+                Is.EqualTo("Bristly Bill, Spine Sower 3/3 gets 1 +1/+1 counter"));
+        }
+    }
+
+    /// <summary>
+    /// A size that carries a sign keeps it, and is never read as the size without it.
+    /// </summary>
+    /// <remarks>
+    /// Every one of these is a real line from the archive. The two negative-power cases
+    /// are what the first version of this feature got wrong, so they are stated as the
+    /// exact words rather than as a "contains a minus" check — the failure to catch is
+    /// a plausible sentence carrying the wrong number, which any looser assertion would
+    /// let through.
+    /// </remarks>
+    [TestCase("Hare Apparent -3/2", "Hare Apparent minus 3 power 2 toughness")]
+    [TestCase("Hare Apparent -4/1", "Hare Apparent minus 4 power 1 toughness")]
+    [TestCase("Mischievous Mystic 0/-1", "Mischievous Mystic 0 power minus 1 toughness")]
+    [TestCase("Hare Apparent 1/1", "Hare Apparent 1 power 1 toughness")]
+    // Signed on both sides: a modifier, said the way players say it.
+    [TestCase("Hare Apparent gets -2/-2", "Hare Apparent gets -2/-2")]
+    [TestCase("Charix, the Raging Isle gets +4/-4", "Charix, the Raging Isle gets +4/-4")]
+    [TestCase("A-Vivi Ornitier 4/7", "A-Vivi Ornitier 4 power 7 toughness")]
+    public void A_size_that_carries_a_sign_is_never_spoken_without_it(string label, string heard)
+    {
+        var lines = Markup.Parse(GamePageRenderer.Render(Sample() with
+        {
+            Events =
+                [
+                    new GameEvent { Seq = 0, Kind = EventKind.TurnStart, Turn = 1, ActorSeat = 1 },
+                    new GameEvent { Seq = 1, Kind = EventKind.Triggered, Turn = 1,
+                                    ActorSeat = 1, SourceName = label },
+                ]
+        }))
+            .Descendants("li").Where(li => li.Value.Contains("power") || li.Value.Contains("/"))
+            .ToList();
+
+        Assert.That(lines, Is.Not.Empty, "the fixture reached the page at all");
+
+        foreach (var line in lines)
+            Assert.That(Markup.Spoken(line), Does.StartWith(heard));
+    }
+
+    /// <summary>
     /// A neighbour with no timestamp leaves a whole phrase behind, not a dangling comma.
     /// </summary>
     [Test]
@@ -1727,13 +1819,19 @@ public class RendererTests
         var li = Markup.Parse(GamePageRenderer.Render(Buffed())).Descendants("li").First();
 
         Assert.That(Markup.Spoken(li),
-            Is.EqualTo("You cast Ethereal Armor, targeting Rabbit A (1/1 becomes 6/6)"));
+            Is.EqualTo("You cast Ethereal Armor, targeting Rabbit A " +
+                       "(1 power 1 toughness becomes 6 power 6 toughness)"));
 
-        // The glyph is still in the markup, in its own hidden span — which is also what
-        // the copy button strips the spoken text back down to, so pasted markdown reads
-        // "(1/1 → 6/6)" and matches the markdown export.
-        var glyph = li.Elements("span").Single(s => s.Attribute("aria-hidden") is not null);
-        Assert.That(glyph.Value, Is.EqualTo(" → "));
+        // The glyphs are still in the markup, each in its own hidden span — which is also
+        // what the copy button strips the spoken text back down to, so pasted markdown
+        // reads "(1/1 → 6/6)" and matches the markdown export. Stated as the whole visible
+        // line rather than as the one hidden span there used to be: both sizes are now
+        // hidden alongside the arrow, and counting them is not the claim.
+        Assert.That(Markup.Clipboard(li),
+            Is.EqualTo("You cast Ethereal Armor, targeting Rabbit A (1/1 → 6/6)"));
+
+        var hidden = li.Elements("span").Where(s => s.Attribute("aria-hidden") is not null);
+        Assert.That(hidden.Select(s => s.Value), Does.Contain(" → "), "the arrow is still drawn");
     }
 
     [Test]
