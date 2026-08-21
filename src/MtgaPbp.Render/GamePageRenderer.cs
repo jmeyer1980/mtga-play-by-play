@@ -197,9 +197,9 @@ public static partial class GamePageRenderer
     }
 
     /// <summary>
-    /// Splits on each glyph before encoding rather than after: <see cref="E"/> turns
-    /// non-ASCII into numeric references, so "·" is no longer there to find by the time
-    /// the text is safe to emit.
+    /// Splits on each glyph before encoding rather than after: <see cref="E"/> replaces
+    /// "·" with a numeric reference, so it is no longer there to find by the time the
+    /// text is safe to emit.
     /// </summary>
     private static string Separated(string text) =>
         string.Join(Spoken(" · ", ", "), text.Split(" · ").Select(Became));
@@ -215,14 +215,26 @@ public static partial class GamePageRenderer
     /// </summary>
     /// <remarks>
     /// Runs after encoding rather than before, which is safe in the one way that
-    /// matters here: <see cref="E"/> emits numeric character references, and none of
-    /// them contain a solidus, so nothing it produces can be mistaken for a statline.
+    /// matters here. <see cref="E"/> emits three kinds of output, checked rather than
+    /// assumed: named entities for the markup characters (<c>&amp;lt;</c>,
+    /// <c>&amp;amp;</c>, <c>&amp;quot;</c>), numeric references for the apostrophe and
+    /// for Latin-1 (<c>&amp;#39;</c>, <c>&amp;#215;</c>), and the character itself for
+    /// everything above U+00FF — "→" and "—" come through untouched. No form of any of
+    /// them contains a solidus, so nothing encoding produces can be read as a statline.
     /// <para>
-    /// A pair signed on <em>both</em> sides is left exactly as written, because that is
-    /// Magic's notation for a modifier rather than a size: "+1/+1", "-1/-1", "+4/-4".
-    /// Players say those with the slash in them, and spelling one out would turn "gets 1
-    /// +1/+1 counter" into "gets 1 plus 1 plus 1 counter" — three numbers in a row with
-    /// nothing left to separate the count from the thing being counted.
+    /// One thing keeps its slash: a counter's <em>name</em>. "+1/+1" is what the counter
+    /// is called, and the line that puts one on a creature already carries a count —
+    /// spelling the name out turns "gets 1 +1/+1 counter" into "gets 1 plus 1 power plus
+    /// 1 toughness counter", burying the number that says how many under the number that
+    /// says which kind. A counter is recognised by the word that follows it, which is
+    /// exact: across the archive 4,818 signed pairs are followed by "counter" and no
+    /// unsigned pair ever is.
+    /// </para>
+    /// <para>
+    /// A signed pair with no counter after it is a pump — "gets -2/-2", "gets +1/+0", and
+    /// the "+1/+1" inside a card's own rules text — and it is spoken like any other pair.
+    /// That is 1,372 of the 6,190 signed pairs in the archive; the other 4,818 name a
+    /// counter and keep their slash.
     /// </para>
     /// <para>
     /// A size can still carry one sign, and that is why the test is both sides rather
@@ -235,9 +247,9 @@ public static partial class GamePageRenderer
     /// sign is now part of the match and is spoken as a word.
     /// </para>
     /// <para>
-    /// The one case this cannot separate is a creature whose size is negative on both
-    /// sides, which reads as a modifier and is left alone. That is a line unspoken
-    /// rather than a line misspoken, which is the direction to fail in.
+    /// Nothing left is ambiguous by shape alone: a size negative on both sides used to
+    /// read as a modifier and stay silent, and now speaks, because the counter test asks
+    /// what follows rather than only what the pair looks like.
     /// </para>
     /// <para>
     /// Measured across the whole rendered archive rather than reasoned about: 239
@@ -255,23 +267,36 @@ public static partial class GamePageRenderer
     [GeneratedRegex(@"(?<![\w/+-])([+-]?\d+)/([+-]?\d+)(?![\w/])")]
     private static partial Regex Statline();
 
-    private static string Statlines(string text) =>
-        Statline().Replace(E(text), m =>
+    private static string Statlines(string text)
+    {
+        var encoded = E(text);
+
+        return Statline().Replace(encoded, m =>
         {
             var power = m.Groups[1].Value;
             var toughness = m.Groups[2].Value;
 
-            return Signed(power) && Signed(toughness)
+            return Signed(power) && Signed(toughness) && NamesACounter(encoded, m.Index + m.Length)
                 ? m.Value
                 : Spoken(m.Value, $"{Said(power)} power {Said(toughness)} toughness");
         });
+    }
 
     private static bool Signed(string number) => number[0] is '+' or '-';
 
-    // "minus 3", not "-3": a synthesiser reads a leading hyphen as "dash" or as nothing
-    // at all depending on its punctuation level, and either one loses the sign.
-    private static string Said(string number) =>
-        number[0] == '-' ? $"minus {number[1..]}" : number;
+    /// <summary>Whether the word "counter" follows, which makes the pair a name.</summary>
+    private static bool NamesACounter(string text, int after) =>
+        text.AsSpan(after).TrimStart().StartsWith("counter", StringComparison.Ordinal);
+
+    // "minus 3" and "plus 3", not "-3" and "+3": a synthesiser reads a leading sign as a
+    // word, as "dash", or as nothing at all depending on its punctuation level, and two
+    // of those three lose it.
+    private static string Said(string number) => number[0] switch
+    {
+        '-' => $"minus {number[1..]}",
+        '+' => $"plus {number[1..]}",
+        _ => number
+    };
 
 
     /// <summary>
