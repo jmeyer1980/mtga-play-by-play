@@ -388,6 +388,52 @@ public class RendererTests
     }
 
     /// <summary>
+    /// A statline is a size, so it is spoken as one: "3/3" reads "3 power 3 toughness".
+    /// </summary>
+    /// <remarks>
+    /// The single finding of an NVDA pass over the whole archive (#49) — everything else
+    /// already read correctly. A synthesiser says the characters, "3 slash 3", which is
+    /// the notation read out rather than what the notation means, and it only carries
+    /// for a listener who already knows it. Sighted readers keep "3/3"; the spoken half
+    /// is the only one that changes, which the second assertion is here to hold.
+    /// <para>
+    /// One line pins the exception with it. "+1/+1" names the counter rather than a
+    /// size, and players say it with the slash in it; spelling that one out as well
+    /// would turn "gets 1 +1/+1 counter" into "gets 1 plus 1 plus 1 counter" — three
+    /// numbers running together with nothing left to mark where the count ends.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void A_statline_is_spoken_as_a_size_and_the_counter_keeps_its_name()
+    {
+        var lines = Markup.Parse(GamePageRenderer.Render(Sample() with
+        {
+            Events =
+                [
+                    new GameEvent { Seq = 0, Kind = EventKind.TurnStart, Turn = 1, ActorSeat = 1 },
+                    new GameEvent { Seq = 1, Kind = EventKind.CounterChanged, Turn = 1,
+                                    ActorSeat = 1, TargetName = "Bristly Bill, Spine Sower 3/3",
+                                    Amount = 1, Detail = "+1/+1" },
+                ]
+        }))
+            .Descendants("li").Where(li => li.Value.Contains("Bristly Bill")).ToList();
+
+        // Every copy, not the first: the page carries the line at both densities, and
+        // one of the two reading correctly is not the claim being made here.
+        Assert.That(lines, Is.Not.Empty, "the fixture reached the page at all");
+
+        foreach (var line in lines)
+        {
+            Assert.That(Markup.Spoken(line),
+                Is.EqualTo("Bristly Bill, Spine Sower 3 power 3 toughness gets 1 +1/+1 counter"));
+
+            // The eye keeps the notation. Only the spoken half is new.
+            Assert.That(Markup.Clipboard(line),
+                Is.EqualTo("Bristly Bill, Spine Sower 3/3 gets 1 +1/+1 counter"));
+        }
+    }
+
+    /// <summary>
     /// A neighbour with no timestamp leaves a whole phrase behind, not a dangling comma.
     /// </summary>
     [Test]
@@ -1727,13 +1773,19 @@ public class RendererTests
         var li = Markup.Parse(GamePageRenderer.Render(Buffed())).Descendants("li").First();
 
         Assert.That(Markup.Spoken(li),
-            Is.EqualTo("You cast Ethereal Armor, targeting Rabbit A (1/1 becomes 6/6)"));
+            Is.EqualTo("You cast Ethereal Armor, targeting Rabbit A " +
+                       "(1 power 1 toughness becomes 6 power 6 toughness)"));
 
-        // The glyph is still in the markup, in its own hidden span — which is also what
-        // the copy button strips the spoken text back down to, so pasted markdown reads
-        // "(1/1 → 6/6)" and matches the markdown export.
-        var glyph = li.Elements("span").Single(s => s.Attribute("aria-hidden") is not null);
-        Assert.That(glyph.Value, Is.EqualTo(" → "));
+        // The glyphs are still in the markup, each in its own hidden span — which is also
+        // what the copy button strips the spoken text back down to, so pasted markdown
+        // reads "(1/1 → 6/6)" and matches the markdown export. Stated as the whole visible
+        // line rather than as the one hidden span there used to be: both sizes are now
+        // hidden alongside the arrow, and counting them is not the claim.
+        Assert.That(Markup.Clipboard(li),
+            Is.EqualTo("You cast Ethereal Armor, targeting Rabbit A (1/1 → 6/6)"));
+
+        var hidden = li.Elements("span").Where(s => s.Attribute("aria-hidden") is not null);
+        Assert.That(hidden.Select(s => s.Value), Does.Contain(" → "), "the arrow is still drawn");
     }
 
     [Test]
