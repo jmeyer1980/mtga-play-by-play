@@ -603,8 +603,18 @@ public class RendererTests
         var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample(colors: "WU"))]);
 
         Assert.That(ColumnNames(html), Does.Contain("Deck"));
-        Assert.That(html, Does.Contain("<span aria-hidden=\"true\">WU</span>"));
-        Assert.That(html, Does.Contain("<span class=\"vh\">white and blue</span>"));
+
+        // Read through the cell rather than matched against a markup literal, so the
+        // technique can change without the claim changing: the eye gets the letters,
+        // the ear gets the words, and both halves are present.
+        var cell = Markup.Parse(html).Descendants("td")
+            .Single(c => c.Attribute("class")?.Value == "deck");
+
+        Assert.That(Markup.Clipboard(cell), Is.EqualTo("WU"), "the eye gets the letters");
+        Assert.That(Markup.Spoken(cell), Is.EqualTo("white and blue"), "the ear gets the words");
+
+        // Still real text somewhere in the cell, which is what find-in-page matches on.
+        Assert.That(cell.Value, Does.Contain("white and blue"));
     }
 
     /// <summary>
@@ -893,6 +903,53 @@ public class RendererTests
     }
 
     /// <summary>
+    /// A cell that is nothing but an abbreviation has something to announce at the
+    /// pixels the glyph itself occupies.
+    /// </summary>
+    /// <remarks>
+    /// This is the difference between a column a mouse user can read and one that
+    /// answers them with silence, and it was settled by listening rather than by
+    /// reasoning (#61). Five techniques were put in front of NVDA; the hidden-glyph
+    /// twin this project used everywhere was the only one that said nothing on hover,
+    /// because the words were clipped to a 1×1 box and the glyph the pointer was over
+    /// had been taken out of the accessibility tree. Deck colour, length and the record
+    /// columns were all silent that way, while reading correctly by keyboard.
+    /// <para>
+    /// So the property worth pinning is not which attributes are used but where the
+    /// name lives: on the element that draws the visible text. A future change that
+    /// hides the glyph again and moves the name somewhere else would read correctly in
+    /// every keyboard test in this file and regress the thing this fixed.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void An_abbreviated_cell_names_the_glyph_the_pointer_is_actually_over()
+    {
+        var root = Markup.Parse(IndexHtml(deck: true));
+
+        var cells = root.Descendants("td")
+            .Where(td => td.Elements("span").Any(sp => sp.Attribute("class")?.Value == "vh"))
+            .Where(td => td.Nodes().OfType<XText>().All(t => t.Value.Trim().Length == 0))
+            .ToList();
+
+        Assert.That(cells, Is.Not.Empty, "the sample renders abbreviated cells at all");
+
+        foreach (var cell in cells)
+        {
+            var glyph = cell.Elements("span").First();
+
+            Assert.That(glyph.Attribute("aria-hidden"), Is.Null,
+                $"the glyph a pointer lands on is out of the tree: {cell}");
+            Assert.That(glyph.Attribute("aria-label")?.Value, Is.Not.Null.And.Not.Empty,
+                $"the glyph draws text but has no name: {cell}");
+            Assert.That(glyph.Attribute("role")?.Value, Is.EqualTo("img"),
+                $"aria-label on an element with no role is discarded: {cell}");
+
+            // And the words are still real text, which is what find-in-page matches.
+            Assert.That(cell.Value, Does.Contain(glyph.Attribute("aria-label")!.Value));
+        }
+    }
+
+    /// <summary>
     /// The dash means two different things one column apart — no wins yet, and a log
     /// that never recorded an opening — so it cannot be the only thing rendered.
     /// </summary>
@@ -902,21 +959,28 @@ public class RendererTests
         var stats = Markup.Parse(IndexHtml(deck: true)).Descendants()
             .Single(e => e.Attribute("id")?.Value == "stats");
 
-        var dashes = stats.Descendants("span")
-            .Where(s => s.Attribute("aria-hidden")?.Value == "true" && s.Value.Trim() == "—")
-            .ToList();
+        // Found by the character they draw, not by whichever attribute currently hides
+        // or names them: selecting on that attribute would make this pass by iterating
+        // nothing on the day it goes missing, which is the one day it needs to fail.
+        var dashes = stats.Descendants("span").Where(s => s.Value.Trim() == "—").ToList();
         Assert.That(dashes, Is.Not.Empty, "the sample has a deck with no losses");
 
         foreach (var dash in dashes)
         {
+            var name = dash.Attribute("aria-label")?.Value.Trim() ?? "";
+            Assert.That(name, Is.Not.Empty, "the dash says what is missing");
+            Assert.That(name, Does.Not.Contain("—"), "and says it in words");
+
+            // The clipped half stays for find-in-page and is kept out of the tree, so
+            // the same phrase is not announced twice.
             var twin = dash.NodesAfterSelf().OfType<XElement>().First();
             Assert.That(twin.Attribute("class")?.Value, Is.EqualTo("vh"));
-            Assert.That(twin.Value.Trim(), Is.Not.Empty);
-            Assert.That(twin.Value, Does.Not.Contain("—"));
+            Assert.That(twin.Attribute("aria-hidden")?.Value, Is.EqualTo("true"));
+            Assert.That(twin.Value.Trim(), Is.EqualTo(name));
         }
 
         // And the two meanings are told apart rather than sharing one phrase.
-        var said = dashes.Select(d => d.NodesAfterSelf().OfType<XElement>().First().Value.Trim())
+        var said = dashes.Select(d => d.Attribute("aria-label")!.Value.Trim())
             .Distinct().ToList();
         Assert.That(said, Does.Contain("no losses yet").Or.Contain("no wins yet"));
     }
@@ -2289,11 +2353,21 @@ internal static class Markup
     /// subtrees marked aria-hidden, which the browser leaves out of the tree it
     /// exposes. <see cref="XElement.Value"/> alone would include the decorative glyphs.
     /// </summary>
+    /// <remarks>
+    /// A <c>role="img"</c> element is a leaf, and its accessible name stands in for
+    /// everything inside it — so "B" labelled "black" is handed over as "black" and the
+    /// letter is never reached. Modelling that is not optional: without it this method
+    /// reports the glyph, and every assertion about what is heard would be checking the
+    /// opposite of the truth. The role is only honoured with a name present, because an
+    /// unnamed one falls back to its contents.
+    /// </remarks>
     internal static string Spoken(XElement element) =>
         string.Concat(element.Nodes().Select(n => n switch
         {
             XText text => text.Value,
             XElement child when child.Attribute("aria-hidden")?.Value == "true" => "",
+            XElement child when child.Attribute("role")?.Value == "img" &&
+                                child.Attribute("aria-label") is { } label => label.Value,
             XElement child => Spoken(child),
             _ => ""
         }));

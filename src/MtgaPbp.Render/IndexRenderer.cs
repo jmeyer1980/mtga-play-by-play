@@ -251,8 +251,7 @@ public static class IndexRenderer
     /// </summary>
     private static string Length(MatchSummary r) => r.Length is not { } d
         ? ""
-        : $"""<span aria-hidden="true">{E(TurnClock.Format(d))}</span>""" +
-          $"""<span class="vh">{E(TurnClock.Spoken(d))}</span>""";
+        : Twin(E(TurnClock.Format(d)), E(TurnClock.Spoken(d)));
 
     /// <summary>
     /// Which deck was played, said in the only way Arena leaves open: its colours.
@@ -329,8 +328,7 @@ public static class IndexRenderer
 
     private static string Colors(MatchSummary r) => r.Colors is not { Length: > 0 } c
         ? ""
-        : $"""<span aria-hidden="true">{E(c)}</span>""" +
-          $"""<span class="vh">{E(DeckColors.Spoken(c))}</span>""";
+        : Twin(E(c), E(DeckColors.Spoken(c)));
 
     /// <summary>
     /// The record, above the table it summarises.
@@ -552,7 +550,7 @@ public static class IndexRenderer
             ? $"{r.Won} won, {r.Lost} lost"
             : $"{r.Won} won, {r.Lost} lost, {r.Drawn} drawn";
 
-        return $"""<span aria-hidden="true">{seen}</span><span class="vh">{said}</span>""";
+        return Twin(E(seen), E(said));
     }
 
     /// <summary>
@@ -587,8 +585,40 @@ public static class IndexRenderer
     /// </summary>
     private static string Missing(string why) => Twin("—", why);
 
+    /// <summary>
+    /// An abbreviation that fills a whole cell: what the column shows, and what a
+    /// synthesiser says instead.
+    /// </summary>
+    /// <remarks>
+    /// The glyph carries the name rather than being hidden behind one. Hiding it was
+    /// the obvious construction and it had a measured cost: a cell whose entire content
+    /// is <c>aria-hidden</c> glyph plus clipped words has nothing under the pointer to
+    /// announce, so mouse users heard silence on the deck-colour, length and record
+    /// columns while keyboard users heard them correctly (#61). Listening test across
+    /// five techniques: this is the only one a screen reader reads both ways.
+    /// <para>
+    /// <c>role="img"</c> is what makes <c>aria-label</c> apply at all — the same label
+    /// on a bare span is discarded, which is what #46 discovered the expensive way. The
+    /// price is the word "graphic" before every value, accepted deliberately: it is one
+    /// word, spoken only on the cell you land on, against a column that could not be
+    /// read by pointer at all.
+    /// </para>
+    /// <para>
+    /// The clipped span stays, purely so find-in-page can still match the spoken form.
+    /// It is <c>aria-hidden</c> now — the name lives on the glyph, and without this it
+    /// would be announced a second time. <c>aria-hidden</c> has no effect on rendering
+    /// or on the browser's find, so nothing is lost by it.
+    /// </para>
+    /// <para>
+    /// A mark appended to a cell that already has text — the incomplete asterisk, the
+    /// missing-data dagger — is deliberately not built this way. Those cells have real
+    /// text under the pointer already, and they were not among the columns reported
+    /// silent.
+    /// </para>
+    /// </remarks>
     private static string Twin(string seen, string said) =>
-        $"""<span aria-hidden="true">{seen}</span><span class="vh">{said}</span>""";
+        $"""<span role="img" aria-label="{said}">{seen}</span>""" +
+        $"""<span class="vh" aria-hidden="true">{said}</span>""";
 
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 
