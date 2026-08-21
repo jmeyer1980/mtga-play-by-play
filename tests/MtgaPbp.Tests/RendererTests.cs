@@ -1000,11 +1000,25 @@ public class RendererTests
         var html = IndexHtml(deck: true);
         var root = Markup.Parse(html);
 
-        // The affordance is a description, which does not become part of the name.
+        // The affordance is written once, in the section, and pointed at by nothing.
         var note = root.Descendants().Single(e => e.Attribute("id")?.Value == "deck-filter-note");
         Assert.That(note.Value, Does.Contain("filters the match"));
-        Assert.That(html, Does.Contain("aria-describedby"), "the button points at it");
-        Assert.That(html, Does.Contain("aria-pressed"), "and carries its state");
+        Assert.That(html, Does.Contain("aria-pressed"), "the button carries its state");
+
+        // A description is read out at every button that carries one, so pointing all
+        // of them at this sixteen-word note put those sixteen words on every deck row,
+        // ahead of the one word wanted.
+        //
+        // Asserted at the construction site, not across the document. These buttons are
+        // built by script, so there is no attribute in the static markup to look at —
+        // and the page carries aria-describedby legitimately elsewhere (the search box
+        // points at its result count, the star at the note saying why it is disabled),
+        // which is why the whole-document check this replaces passed no matter what the
+        // deck button did.
+        Assert.That(html, Does.Contain("button.setAttribute('aria-pressed'"),
+            "the deck button is still the thing being described here");
+        Assert.That(html, Does.Not.Contain("button.setAttribute('aria-describedby'"),
+            "the note is met once on the way in, not re-read on every deck row");
 
         // The row header is the deck's name and nothing else.
         var header = root.Descendants("th")
@@ -1107,9 +1121,12 @@ public class RendererTests
     /// The affordance note travels with the buttons it describes, into the disclosure.
     /// </summary>
     /// <remarks>
-    /// Its id is the target of every deck button's <c>aria-describedby</c>, so it has
-    /// to exist wherever it sits; a description may be resolved from content a closed
-    /// disclosure is not rendering, and the buttons are inside it anyway.
+    /// Nothing points at it any more — a description is re-read at every button that
+    /// carries one, which is the opposite of saying a thing once. It earns its place by
+    /// position instead, and this test covers only half of that: that the note is inside
+    /// the same disclosure, so a closed one does not hide it from the buttons. The other
+    /// half, that it comes first, is
+    /// <see cref="A_deck_filter_note_comes_before_the_buttons_it_explains"/>.
     /// </remarks>
     [Test]
     public void The_deck_filter_note_sits_with_the_buttons_it_describes()
@@ -1123,6 +1140,38 @@ public class RendererTests
         var name = root.Descendants().First(e => e.Attribute("class")?.Value == "deck-name");
         Assert.That(name.Ancestors("details").Any(d => d.Attribute("id")?.Value == "breakdowns"),
             Is.True, "and so do they");
+    }
+
+    /// <summary>
+    /// The note explaining the deck filter is reached before the buttons it explains.
+    /// </summary>
+    /// <remarks>
+    /// Position is the whole of the contract now, and it was not always. While every
+    /// button carried an <c>aria-describedby</c> pointing here, the note could sit
+    /// anywhere at all — a description is resolved by id, from wherever it lives — and
+    /// it did: it was emitted after both tables, eleven thousand characters and every
+    /// deck button later than the thing it explains. Dropping the attribute because it
+    /// was re-read on all 25 rows would have left the explanation unreachable until
+    /// after the last button, which is worse than repeating it.
+    /// <para>
+    /// Nothing in this file noticed, because nothing asserted order. That is the whole
+    /// reason this test exists rather than a comment saying the note comes first.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void A_deck_filter_note_comes_before_the_buttons_it_explains()
+    {
+        // Document order off the parsed tree, which has the script and style blanked,
+        // so a CSS selector or a string in the wiring cannot stand in for markup.
+        var flat = Markup.Parse(IndexHtml(deck: true)).Descendants().ToList();
+
+        var note = flat.FindIndex(e => e.Attribute("id")?.Value == "deck-filter-note");
+        var button = flat.FindIndex(e => e.Attribute("class")?.Value == "deck-name");
+
+        Assert.That(note, Is.GreaterThanOrEqualTo(0), "the note is rendered at all");
+        Assert.That(button, Is.GreaterThanOrEqualTo(0), "and so are the buttons");
+        Assert.That(note, Is.LessThan(button),
+            "the explanation is met on the way to the thing it explains, not after it");
     }
 
     /// <summary>

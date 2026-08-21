@@ -428,17 +428,23 @@ public static class IndexRenderer
         sb.Append($"""
             <details id="breakdowns"><summary>{E(BreakdownSummary(s))}</summary>
             """);
-        sb.Append(format).Append(deck);
+        sb.Append(format);
 
-        // Inside, with the buttons it describes. Described-by rather than labelled-by:
-        // a description does not become part of the button's name, so each deck's row
-        // header stays the deck's name.
+        // Before the table whose buttons it explains, and pointed at by none of them.
+        // Nothing but position makes it reachable now, so position is the whole of the
+        // contract: a reader working down the section meets it once and then meets the
+        // buttons. It used to sit after both tables, where aria-describedby reached it
+        // from anywhere and its own placement did not matter — removing the attribute
+        // without moving the note would have left the explanation eleven thousand
+        // characters past the first button it explains, which is worse than repeating
+        // it. A_deck_filter_note_comes_before_the_buttons_it_explains holds this.
         if (s.ByDeck.Count > 0)
             sb.Append("""
                 <p class="note" id="deck-filter-note">Selecting a deck filters the match
                 list below to it. Selecting it again clears the filter.</p>
                 """);
 
+        sb.Append(deck);
         sb.Append("</details>");
         return sb.ToString();
     }
@@ -598,10 +604,12 @@ public static class IndexRenderer
     /// five techniques: this is the only one a screen reader reads both ways.
     /// <para>
     /// <c>role="img"</c> is what makes <c>aria-label</c> apply at all — the same label
-    /// on a bare span is discarded, which is what #46 discovered the expensive way. The
-    /// price is the word "graphic" before every value, accepted deliberately: it is one
-    /// word, spoken only on the cell you land on, against a column that could not be
-    /// read by pointer at all.
+    /// on a bare span is discarded, which is what #46 discovered the expensive way. It
+    /// was accepted knowing it costs the word "graphic" ahead of every value; hearing
+    /// it afterwards showed that price is smaller than the one agreed to. Keyboard
+    /// navigation says "Graphic White", but pointer reading announces the label alone —
+    /// "white" — so the extra word falls only on the path that already worked, and the
+    /// path this was built for gets the bare value.
     /// </para>
     /// <para>
     /// The clipped span stays, purely so find-in-page can still match the spoken form.
@@ -646,6 +654,18 @@ public static class IndexRenderer
         table{width:100%;border-collapse:collapse}
         caption{text-align:left}
         th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid rgba(128,128,128,.35)}
+
+        /* A named glyph stretched over the cell it is the whole content of. Nothing
+           moves: the negative margin gives back exactly the padding that replaces it,
+           and the text stays where it was to the pixel. What changes is how much of the
+           cell answers to the pointer, which is what mouse reading depends on — the
+           name lives on this element, so anywhere the pointer lands that is NOT this
+           element has nothing to say. Measured on the live page: the deck glyph covered
+           7% of its cell and the middle of the cell missed it entirely; length covered
+           15%. Both are now 42%, the record columns 99%, and the centre hits every
+           time. Rows run 87px tall when a neighbouring column wraps, so the height is
+           not fully recoverable this way and the remaining shortfall is vertical. */
+        td>[role=img]{display:block;margin:-.45rem -.6rem;padding:.45rem .6rem}
         thead th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;opacity:.6}
         tbody th{font-weight:400}
         tbody tr:hover{background:rgba(128,128,128,.12)}
@@ -672,6 +692,8 @@ public static class IndexRenderer
         table.stats{width:auto;margin:0 0 1rem;font-size:.95rem}
         table.stats caption{font-weight:600;padding:.3rem 0;opacity:.8}
         table.stats th,table.stats td{padding:.3rem .8rem .3rem 0}
+        /* Same trick, against this table's own padding rather than the match table's. */
+        table.stats td>[role=img]{margin:-.3rem -.8rem -.3rem 0;padding:.3rem .8rem .3rem 0}
         /* A deck name is a span until script makes it a button, so it has to look like
            plain text until then rather than like a control that does nothing. */
         button.deck-name{background:none;border:0;font:inherit;color:inherit;
@@ -794,8 +816,17 @@ public static class IndexRenderer
               // No aria-label. This button is the content of a th[scope=row], so its
               // accessible name IS the row header, and a label of "Show only X matches"
               // would be announced ahead of every cell in the row instead of the deck's
-              // name. What it does is said once, in a note the button points at.
-              button.setAttribute('aria-describedby', 'deck-filter-note');
+              // name.
+              //
+              // And no aria-describedby either, though it had one. It pointed at the
+              // note, on the reasoning that what the button does should be said once —
+              // but a description is read out at every button that carries it, so
+              // "Selecting a deck filters the match list below to it. Selecting it
+              // again clears the filter." was announced on every deck row, sixteen
+              // words ahead of the one word wanted. The note now sits before the table
+              // instead, where it is met once on the way in. This is the same trade #48
+              // got backwards on the Keep button: per-row repetition of something the
+              // reader has already been given.
 
               // A toggle, so the state rides on aria-pressed and the name stays put —
               // the same rule the star two hundred lines up follows, and for the same
