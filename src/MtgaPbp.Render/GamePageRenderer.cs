@@ -197,9 +197,9 @@ public static partial class GamePageRenderer
     }
 
     /// <summary>
-    /// Splits on each glyph before encoding rather than after: <see cref="E"/> turns
-    /// non-ASCII into numeric references, so "·" is no longer there to find by the time
-    /// the text is safe to emit.
+    /// Splits on each glyph before encoding rather than after: <see cref="E"/> replaces
+    /// "·" with a numeric reference, so it is no longer there to find by the time the
+    /// text is safe to emit.
     /// </summary>
     private static string Separated(string text) =>
         string.Join(Spoken(" · ", ", "), text.Split(" · ").Select(Became));
@@ -215,8 +215,12 @@ public static partial class GamePageRenderer
     /// </summary>
     /// <remarks>
     /// Runs after encoding rather than before, which is safe in the one way that
-    /// matters here: <see cref="E"/> emits numeric character references, and none of
-    /// them contain a solidus, so nothing it produces can be mistaken for a statline.
+    /// matters here. <see cref="E"/> emits three kinds of output, checked rather than
+    /// assumed: named entities for the markup characters (<c>&amp;lt;</c>,
+    /// <c>&amp;amp;</c>, <c>&amp;quot;</c>), numeric references for the apostrophe and
+    /// for Latin-1 (<c>&amp;#39;</c>, <c>&amp;#215;</c>), and the character itself for
+    /// everything above U+00FF — "→" and "—" come through untouched. No form of any of
+    /// them contains a solidus, so nothing encoding produces can be read as a statline.
     /// <para>
     /// One thing keeps its slash: a counter's <em>name</em>. "+1/+1" is what the counter
     /// is called, and the line that puts one on a creature already carries a count —
