@@ -402,6 +402,14 @@ public class RendererTests
     /// would turn "gets 1 +1/+1 counter" into "gets 1 plus 1 plus 1 counter" — three
     /// numbers running together with nothing left to mark where the count ends.
     /// </para>
+    /// <para>
+    /// The case below it is the one that matters most, and it is a sign rather than a
+    /// slash. A size can go negative, and the first pattern shipped here matched the
+    /// "3/2" inside "Hare Apparent -3/2" and announced "3 power 2 toughness" — not the
+    /// creature's power, and not a number anywhere on the board. Being read a wrong
+    /// number is worse than being read a slash, so the rule is now that a pair signed
+    /// on both sides is a modifier and anything else is a size.
+    /// </para>
     /// </remarks>
     [Test]
     public void A_statline_is_spoken_as_a_size_and_the_counter_keeps_its_name()
@@ -431,6 +439,44 @@ public class RendererTests
             Assert.That(Markup.Clipboard(line),
                 Is.EqualTo("Bristly Bill, Spine Sower 3/3 gets 1 +1/+1 counter"));
         }
+    }
+
+    /// <summary>
+    /// A size that carries a sign keeps it, and is never read as the size without it.
+    /// </summary>
+    /// <remarks>
+    /// Every one of these is a real line from the archive. The two negative-power cases
+    /// are what the first version of this feature got wrong, so they are stated as the
+    /// exact words rather than as a "contains a minus" check — the failure to catch is
+    /// a plausible sentence carrying the wrong number, which any looser assertion would
+    /// let through.
+    /// </remarks>
+    [TestCase("Hare Apparent -3/2", "Hare Apparent minus 3 power 2 toughness")]
+    [TestCase("Hare Apparent -4/1", "Hare Apparent minus 4 power 1 toughness")]
+    [TestCase("Mischievous Mystic 0/-1", "Mischievous Mystic 0 power minus 1 toughness")]
+    [TestCase("Hare Apparent 1/1", "Hare Apparent 1 power 1 toughness")]
+    // Signed on both sides: a modifier, said the way players say it.
+    [TestCase("Hare Apparent gets -2/-2", "Hare Apparent gets -2/-2")]
+    [TestCase("Charix, the Raging Isle gets +4/-4", "Charix, the Raging Isle gets +4/-4")]
+    [TestCase("A-Vivi Ornitier 4/7", "A-Vivi Ornitier 4 power 7 toughness")]
+    public void A_size_that_carries_a_sign_is_never_spoken_without_it(string label, string heard)
+    {
+        var lines = Markup.Parse(GamePageRenderer.Render(Sample() with
+        {
+            Events =
+                [
+                    new GameEvent { Seq = 0, Kind = EventKind.TurnStart, Turn = 1, ActorSeat = 1 },
+                    new GameEvent { Seq = 1, Kind = EventKind.Triggered, Turn = 1,
+                                    ActorSeat = 1, SourceName = label },
+                ]
+        }))
+            .Descendants("li").Where(li => li.Value.Contains("power") || li.Value.Contains("/"))
+            .ToList();
+
+        Assert.That(lines, Is.Not.Empty, "the fixture reached the page at all");
+
+        foreach (var line in lines)
+            Assert.That(Markup.Spoken(line), Does.StartWith(heard));
     }
 
     /// <summary>

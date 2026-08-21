@@ -218,26 +218,60 @@ public static partial class GamePageRenderer
     /// matters here: <see cref="E"/> emits numeric character references, and none of
     /// them contain a solidus, so nothing it produces can be mistaken for a statline.
     /// <para>
-    /// Signed pairs are deliberately left as they are. "+1/+1" is the counter's name
-    /// rather than a size, and players say it with the slash in it. Spelling that one
-    /// out would turn "gets 1 +1/+1 counter" into "gets 1 plus 1 plus 1 counter" —
-    /// three numbers in a row with nothing left to separate the count from the thing
-    /// being counted. The slash is doing work there that it does not do in a bare size.
+    /// A pair signed on <em>both</em> sides is left exactly as written, because that is
+    /// Magic's notation for a modifier rather than a size: "+1/+1", "-1/-1", "+4/-4".
+    /// Players say those with the slash in them, and spelling one out would turn "gets 1
+    /// +1/+1 counter" into "gets 1 plus 1 plus 1 counter" — three numbers in a row with
+    /// nothing left to separate the count from the thing being counted.
     /// </para>
     /// <para>
-    /// The pattern was measured across all 610 rendered transcripts before it shipped:
-    /// 239 distinct pairs over 45,011 occurrences, and every one of them was a real
-    /// size, including sizes no card prints (0/30, 434/436). Mana cannot stray into
+    /// A size can still carry one sign, and that is why the test is both sides rather
+    /// than either. Power goes negative under enough shrinking, and the archive holds
+    /// 13 of them — "Hare Apparent -3/2", "Mischievous Mystic 0/-1". An earlier pattern
+    /// here required a digit straight after the slash, which happened to exclude
+    /// "+1/+1" for the right reason and "-3/2" for no reason at all: it matched the
+    /// "3/2" inside it and announced "3 power 2 toughness", stating a number that is
+    /// not the creature's. Dropping a sign is worse than reading a slash aloud, so the
+    /// sign is now part of the match and is spoken as a word.
+    /// </para>
+    /// <para>
+    /// The one case this cannot separate is a creature whose size is negative on both
+    /// sides, which reads as a modifier and is left alone. That is a line unspoken
+    /// rather than a line misspoken, which is the direction to fail in.
+    /// </para>
+    /// <para>
+    /// Measured across the whole rendered archive rather than reasoned about: 239
+    /// distinct unsigned pairs over 45,011 occurrences, every one a real size and some
+    /// of them sizes no card prints (0/30, 434/436); 13 sizes carrying one sign; and 72
+    /// modifiers, which the both-sides rule sorts the other way. Mana cannot stray into
     /// range because a hybrid symbol never has digits on both sides — "{2/W}" does not
     /// match, and neither does the "//" of a split card, which has no digits at all.
     /// </para>
     /// </remarks>
-    [GeneratedRegex(@"(?<![\w/])(\d+)/(\d+)(?![\w/])")]
+    // A sign is part of the pair, never a stray character before it: "-3/2" is matched
+    // whole. The lookbehind refuses a sign it did not consume so that a hyphen already
+    // joined to a word — the "A-" of a rebalanced card — cannot leave the digits after
+    // it looking like a bare size.
+    [GeneratedRegex(@"(?<![\w/+-])([+-]?\d+)/([+-]?\d+)(?![\w/])")]
     private static partial Regex Statline();
 
     private static string Statlines(string text) =>
         Statline().Replace(E(text), m =>
-            Spoken(m.Value, $"{m.Groups[1].Value} power {m.Groups[2].Value} toughness"));
+        {
+            var power = m.Groups[1].Value;
+            var toughness = m.Groups[2].Value;
+
+            return Signed(power) && Signed(toughness)
+                ? m.Value
+                : Spoken(m.Value, $"{Said(power)} power {Said(toughness)} toughness");
+        });
+
+    private static bool Signed(string number) => number[0] is '+' or '-';
+
+    // "minus 3", not "-3": a synthesiser reads a leading hyphen as "dash" or as nothing
+    // at all depending on its punctuation level, and either one loses the sign.
+    private static string Said(string number) =>
+        number[0] == '-' ? $"minus {number[1..]}" : number;
 
 
     /// <summary>
