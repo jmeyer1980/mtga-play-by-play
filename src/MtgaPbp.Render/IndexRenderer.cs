@@ -428,17 +428,23 @@ public static class IndexRenderer
         sb.Append($"""
             <details id="breakdowns"><summary>{E(BreakdownSummary(s))}</summary>
             """);
-        sb.Append(format).Append(deck);
+        sb.Append(format);
 
-        // Inside, above the buttons it explains, and pointed at by none of them. A
-        // screen reader meets it once while reading into the section, which is what
-        // aria-describedby was supposed to achieve and did the opposite of.
+        // Before the table whose buttons it explains, and pointed at by none of them.
+        // Nothing but position makes it reachable now, so position is the whole of the
+        // contract: a reader working down the section meets it once and then meets the
+        // buttons. It used to sit after both tables, where aria-describedby reached it
+        // from anywhere and its own placement did not matter — removing the attribute
+        // without moving the note would have left the explanation eleven thousand
+        // characters past the first button it explains, which is worse than repeating
+        // it. A_deck_filter_note_comes_before_the_buttons_it_explains holds this.
         if (s.ByDeck.Count > 0)
             sb.Append("""
                 <p class="note" id="deck-filter-note">Selecting a deck filters the match
                 list below to it. Selecting it again clears the filter.</p>
                 """);
 
+        sb.Append(deck);
         sb.Append("</details>");
         return sb.ToString();
     }
@@ -813,14 +819,14 @@ public static class IndexRenderer
               // name.
               //
               // And no aria-describedby either, though it had one. It pointed at the
-              // note above the table, on the reasoning that what the button does should
-              // be said once — but a description is read out at every button that
-              // carries it, so "Selecting a deck filters the match list below to it.
-              // Selecting it again clears the filter." was announced on every deck row,
-              // seventeen words ahead of the one word wanted. The note is still there,
-              // in the section, where it is met once on the way in. This is the same
-              // trade #48 got backwards on the Keep button: per-row repetition of
-              // something the reader has already been given.
+              // note, on the reasoning that what the button does should be said once —
+              // but a description is read out at every button that carries it, so
+              // "Selecting a deck filters the match list below to it. Selecting it
+              // again clears the filter." was announced on every deck row, sixteen
+              // words ahead of the one word wanted. The note now sits before the table
+              // instead, where it is met once on the way in. This is the same trade #48
+              // got backwards on the Keep button: per-row repetition of something the
+              // reader has already been given.
 
               // A toggle, so the state rides on aria-pressed and the name stays put —
               // the same rule the star two hundred lines up follows, and for the same
