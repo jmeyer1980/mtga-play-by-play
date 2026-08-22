@@ -120,6 +120,10 @@ public sealed record IndexStats(
             // Over every match, not only the decided ones: an unfinished game still took
             // up part of the evening, and a session that reports two games when three
             // were played is describing a night that did not happen.
+            //
+            // Namespace-qualified because this record has a property called Sessions,
+            // which shadows the type of the same name inside its own body — unqualified,
+            // this reads as the property and fails with CS0120.
             Sessions: Render.Sessions.From(rows, deckOf,
                 byDeck.Where(d => d.Slug is not null)
                       .ToDictionary(d => d.Slug!, d => d.Name, StringComparer.Ordinal)));

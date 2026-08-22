@@ -527,10 +527,15 @@ public static class IndexRenderer
             // something — the regression issue #63 was about.
             var rate = r.WinRate is { } w ? $"{w:P0}" : "";
             var decks = string.Join(", ", r.Decks);
+
+            // Draws are part of the record and have to show in the visible half too, or
+            // a 1-1-1 night reads as 1-1 while the spoken twin beside it says otherwise.
+            // Same shape as Record(StatRow) above, which already had this right.
+            var seen = r.Drawn == 0 ? $"{r.Won}-{r.Lost}" : $"{r.Won}-{r.Lost}-{r.Drawn}";
             sb.Append($"""
                 <tr><th scope="row"{Key(r.StartedAtMs)}>{E(r.Started)}</th>
                 <td{Key(r.Games)}>{r.Games}</td>
-                <td{Key(r.Won - r.Lost)}>{Twin($"{r.Won}-{r.Lost}", E(r.Spoken))}</td>
+                <td{Key(r.Won - r.Lost)}>{Twin(E(seen), E(r.Spoken))}</td>
                 <td{Key(r.WinRate)}>{rate}</td>
                 <td{Key(decks)}>{E(decks)}</td></tr>
                 """);

@@ -263,6 +263,23 @@ public class SessionCoachTests
     }
 
     /// <summary>
+    /// A draw is part of the record and has to reach the visible half too. Caught in
+    /// review: the cell rendered wins and losses only, so a 1-1-1 night showed as "1-1"
+    /// while the spoken twin sitting beside it said "1 win, 1 loss, 1 draw" — the two
+    /// halves of one cell disagreeing about what happened.
+    /// </summary>
+    [Test]
+    public void A_session_with_a_draw_shows_it_in_both_halves_of_the_cell()
+    {
+        var rows = Run(Alpha, "Won 1-0", "Lost 0-1", "Drew 1-1");
+        var html = IndexRenderer.Render(rows, null);
+
+        Assert.That(html, Does.Contain("1-1-1"), "the visible record carries the draw");
+        Assert.That(html, Does.Contain("1 win, 1 loss, 1 draw"));
+        Assert.That(html, Does.Not.Contain(">1-1<"), "and never the two-part form");
+    }
+
+    /// <summary>
     /// Dismissal is keyed on the exact text, so a nudge about a different deck — or a
     /// longer streak — is a new message and says itself again rather than inheriting a
     /// dismissal meant for something else.
