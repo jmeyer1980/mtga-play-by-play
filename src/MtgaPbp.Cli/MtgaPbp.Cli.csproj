@@ -13,6 +13,15 @@
     <!-- The docs and the config file both call this mtga-pbp; the binary should too. -->
     <AssemblyName>mtga-pbp</AssemblyName>
     <RootNamespace>MtgaPbp.Cli</RootNamespace>
+
+    <!--
+      Without this the apphost ships Windows' generic console-application icon, which
+      is what every unsigned exe on the machine looks like. A release is unzipped and
+      double-clicked, so the icon is the only thing distinguishing this binary in a
+      Downloads folder or on a taskbar. The .ico carries 16 through 256 px frames
+      because Windows picks the frame per surface rather than rescaling one.
+    -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>
