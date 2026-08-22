@@ -1054,7 +1054,7 @@ public class RendererTests
 
         var folded = disclosure.Descendants("table").ToList();
         Assert.That(folded.Select(t => t.Descendants("caption").First().Value),
-            Is.EquivalentTo(new[] { "By format", "By deck" }));
+            Is.EquivalentTo(new[] { "By format", "By deck", "By session" }));
 
         // The record is still on the page without opening anything.
         var loose = stats.Descendants("table")
