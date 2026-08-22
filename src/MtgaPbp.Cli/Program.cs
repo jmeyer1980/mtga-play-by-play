@@ -445,8 +445,22 @@ public static class Program
                 unresolved.Add(c);
         }
 
+        // Asked with the clock, so it answers about the sitting in progress and stays
+        // quiet on a build run the next morning — see SessionCoach.Check. A one-shot
+        // build after an evening's play gets the same nudge `watch` would have shown,
+        // which is the point: the report is the report either way.
+        var nudge = SessionCoach.Check(
+            summaries, IndexStats.From(summaries),
+            silenced: null, nowMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
         var indexPath = Path.GetFullPath(Path.Combine(cfg.OutputDir, "index.html"));
-        File.WriteAllText(indexPath, IndexRenderer.Render(summaries));
+        File.WriteAllText(indexPath, IndexRenderer.Render(summaries, nudge));
+
+        // Said once per build, and only when there is something to say. `watch` rebuilds
+        // on every finished match, so this lands in the terminal at the same moment the
+        // banner appears on the page — between two games, which is the only moment it
+        // is any use.
+        if (nudge is not null) Console.WriteLine($"  ** {nudge.Text}");
         if (unresolved.Count > 0)
             File.WriteAllLines(Path.Combine(cfg.OutputDir, "unresolved.txt"), unresolved);
 

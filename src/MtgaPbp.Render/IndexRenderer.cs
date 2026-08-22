@@ -74,7 +74,12 @@ public static class IndexRenderer
     /// enhancement over a data-search attribute — no fetch, which browsers block on
     /// file:// anyway.
     /// </summary>
-    public static string Render(IEnumerable<MatchSummary> rows)
+    /// <param name="nudge">
+    /// Something the coach wants to say about the sitting in progress, or null. Passed in
+    /// rather than worked out here, because whether a night is still going is a question
+    /// about the clock and this method is otherwise a pure function of its rows.
+    /// </param>
+    public static string Render(IEnumerable<MatchSummary> rows, Nudge? nudge = null)
     {
         var ordered = rows.OrderByDescending(r => r.SortKey).ToList();
 
@@ -92,6 +97,7 @@ public static class IndexRenderer
             // Worked out once: the panel reports the records, and every row carries the
             // deck it was played with so one click in the panel can filter to it.
             var stats = IndexStats.From(ordered);
+            body.Append(Coach(nudge));
             body.Append(Panel(stats));
 
             // The counter is server-rendered rather than filled in by script: it is a
@@ -445,7 +451,97 @@ public static class IndexRenderer
                 """);
 
         sb.Append(deck);
+        sb.Append(SessionTable(s));
         sb.Append("</details>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// What the coach has to say about the sitting in progress, above everything else.
+    /// </summary>
+    /// <remarks>
+    /// A suggestion, never a verdict. It replaces a rule that read "bench the deck after
+    /// three straight losses", which fired in 22 of the archive's 28 sittings and so was
+    /// not detecting a failing deck at all — it was detecting that somebody had played
+    /// for a while. What survives is the useful half: a note between two games that the
+    /// last three went badly, with a way to say "yes, and I am still playing".
+    /// <para>
+    /// <c>role="status"</c> rather than <c>alert</c>. This arrives between games, when
+    /// nothing is urgent, and an assertive region interrupts whatever a screen reader is
+    /// currently saying — which on this page is usually the result of the match that just
+    /// finished. Polite is the whole point.
+    /// </para>
+    /// <para>
+    /// Dismissal is remembered in <c>sessionStorage</c> against the exact text, and not
+    /// on the server. The page is rebuilt and reloaded every time a match lands, so a
+    /// dismissal held anywhere else would be undone within the minute; and keying it on
+    /// the text means a nudge for a different deck, or a longer streak, is a new message
+    /// and says itself again.
+    /// </para>
+    /// </remarks>
+    private static string Coach(Nudge? nudge)
+    {
+        if (nudge is null) return "";
+        return $"""
+            <aside id="coach" class="coach" role="status" data-nudge="{E(nudge.Text)}">
+            <p>{E(nudge.Text)}</p>
+            <button type="button" id="coach-dismiss">Dismiss</button>
+            </aside>
+            """;
+    }
+
+    /// <summary>
+    /// How each sitting went, newest first.
+    /// </summary>
+    /// <remarks>
+    /// The table below lists every match and never says how a night went, so the last row
+    /// of an evening was the whole impression it left — and a session that finished on a
+    /// loss read as a losing session whatever the record. This is the row that says
+    /// otherwise.
+    /// <para>
+    /// The gap that ends a sitting is stated rather than left implicit. A threshold that
+    /// silently decides what counts as "a night" is one nobody can argue with, and the
+    /// page already explains what a turn duration covers for the same reason.
+    /// </para>
+    /// </remarks>
+    private static string SessionTable(IndexStats s)
+    {
+        if (s.Sessions.Count == 0) return "";
+
+        var sb = new StringBuilder();
+        sb.Append($"""
+            <p class="note" id="session-note">A session is a run of matches with no break
+            longer than {(int)Sessions.Gap.TotalHours} hours.</p>
+            <div class="scroller"><table class="stats" id="by-session">
+            <caption>By session</caption>
+            <thead><tr>{Col("Session", Text)}{Col("Games", Num)}
+            {Col("Record", Num)}{Col("Win rate", Num)}{Col("Decks", Text)}</tr></thead><tbody>
+            """);
+
+        foreach (var r in s.Sessions)
+        {
+            // Twin, like the Length and Deck columns: "7-8" for the eye and the sentence
+            // for a synthesiser, which reads the shorthand as "seven eight" otherwise.
+            // Going through the shared helper rather than hand-rolling the two spans is
+            // what keeps the glyph itself named, so a pointer resting on it says
+            // something — the regression issue #63 was about.
+            var rate = r.WinRate is { } w ? $"{w:P0}" : "";
+            var decks = string.Join(", ", r.Decks);
+
+            // Draws are part of the record and have to show in the visible half too, or
+            // a 1-1-1 night reads as 1-1 while the spoken twin beside it says otherwise.
+            // Same shape as Record(StatRow) above, which already had this right.
+            var seen = r.Drawn == 0 ? $"{r.Won}-{r.Lost}" : $"{r.Won}-{r.Lost}-{r.Drawn}";
+            sb.Append($"""
+                <tr><th scope="row"{Key(r.StartedAtMs)}>{E(r.Started)}</th>
+                <td{Key(r.Games)}>{r.Games}</td>
+                <td{Key(r.Won - r.Lost)}>{Twin(E(seen), E(r.Spoken))}</td>
+                <td{Key(r.WinRate)}>{rate}</td>
+                <td{Key(decks)}>{E(decks)}</td></tr>
+                """);
+        }
+
+        sb.Append("</tbody></table></div>");
         return sb.ToString();
     }
 
@@ -675,6 +771,15 @@ public static class IndexRenderer
         .loss,.draw{opacity:.7}
         .empty{opacity:.7}
         .note{opacity:.7;font-size:.85rem;max-width:44rem}
+        /* A left rule rather than a coloured fill: the page is read in both schemes and
+           in forced colours, and currentColor is the one border that survives all three. */
+        .coach{display:flex;gap:.75rem;align-items:baseline;flex-wrap:wrap;
+               border-left:3px solid currentColor;padding:.5rem .8rem;margin:0 0 1rem}
+        .coach p{margin:0}
+        .coach button{font:inherit;padding:.35rem .7rem;min-height:1.75rem;
+                      border:1px solid currentColor;border-radius:.3rem;
+                      background:transparent;color:inherit;cursor:pointer}
+        .coach button:hover{background:rgba(128,128,128,.15)}
         body.live #keep-note{display:none}
         .star{background:none;border:0;cursor:default;font-size:1rem;padding:0;color:#666666;
               display:inline-flex;align-items:center;justify-content:center;
@@ -796,6 +901,23 @@ public static class IndexRenderer
             counting = setTimeout(function () {
               if (count.textContent !== text) count.textContent = text;
             }, 300);
+          }
+
+          // Dismissal lives in sessionStorage against the exact text. The page is
+          // rebuilt and reloaded whenever a match lands, so anything held in a variable
+          // would be undone within the minute; and keying on the text means a nudge for
+          // a different deck, or a longer streak, is a new message and speaks up again.
+          var coach = document.getElementById('coach');
+          if (coach) {
+            var said = coach.getAttribute('data-nudge') || '';
+            try {
+              if (sessionStorage.getItem('coach-dismissed') === said) coach.remove();
+            } catch (e) { /* private mode: the nudge simply stays */ }
+            var off = document.getElementById('coach-dismiss');
+            if (off) off.addEventListener('click', function () {
+              try { sessionStorage.setItem('coach-dismissed', said); } catch (e) {}
+              coach.remove();
+            });
           }
 
           q.addEventListener('input', apply);

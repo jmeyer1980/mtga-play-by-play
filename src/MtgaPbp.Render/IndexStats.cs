@@ -58,7 +58,14 @@ public sealed record IndexStats(
     /// click on a deck in the panel can filter to that deck's matches, using the search
     /// the index already has rather than a page it does not.
     /// </summary>
-    IReadOnlyDictionary<string, string> DeckOf)
+    IReadOnlyDictionary<string, string> DeckOf,
+
+    /// <summary>
+    /// How each sitting went, newest first. Computed here rather than by whoever renders
+    /// it so that the panel and the coach that watches a live session cannot disagree
+    /// about where one night ends and the next begins.
+    /// </summary>
+    IReadOnlyList<SessionRow> Sessions)
 {
     /// <summary>Nothing to report when nothing has a result yet.</summary>
     public bool Any => Overall.Played > 0;
@@ -109,7 +116,17 @@ public sealed record IndexStats(
             LongestStreak(counted),
             Unattributed: counted.Count(r => r.Deck is null or { Count: 0 }),
             Excluded: rows.Count - counted.Count,
-            DeckOf: deckOf);
+            DeckOf: deckOf,
+            // Over every match, not only the decided ones: an unfinished game still took
+            // up part of the evening, and a session that reports two games when three
+            // were played is describing a night that did not happen.
+            //
+            // Namespace-qualified because this record has a property called Sessions,
+            // which shadows the type of the same name inside its own body — unqualified,
+            // this reads as the property and fails with CS0120.
+            Sessions: Render.Sessions.From(rows, deckOf,
+                byDeck.Where(d => d.Slug is not null)
+                      .ToDictionary(d => d.Slug!, d => d.Name, StringComparer.Ordinal)));
     }
 
     private static StatRow Row(string name, string? slug, IReadOnlyList<MatchSummary> rows)
