@@ -228,6 +228,7 @@ public static class Program
         server.OnFavorite = (id, on) =>
         {
             var ok = new RawArchive(cfg.ArchiveDir).SetFavorite(id, on);
+            // No repaint: keeping a match changes the archive, not the night's record.
             if (ok) { Build(cfg, open: false, quiet: true); server.NotifyChanged(); }
             return ok;
         };
@@ -242,9 +243,44 @@ public static class Program
         }
 
         Console.WriteLine($"watching {cfg.LogPaths.FirstOrDefault()}");
-        Console.WriteLine($"report is live at {server.Url}");
-        Console.WriteLine("leave this window open; press Ctrl+C to stop.");
         OpenInBrowser(server.Url);
+
+        // The standing state is drawn once and repainted; only the notable lines scroll.
+        // See LiveBoard for why that split exists — 41 lines an evening saying "report
+        // updated" is how the one line that mattered came to be 38 scrolls out of sight.
+        var board = new LiveBoard();
+        var beats = new List<Beat>();
+        var said = new HashSet<string>(StringComparer.Ordinal);
+
+        void Repaint(IReadOnlyList<MatchSummary> rows, IndexStats st, Nudge? nudge)
+        {
+            var tonight = st.Sessions.FirstOrDefault();
+            var newest = tonight?.MatchIds.Count > 0
+                ? rows.FirstOrDefault(r => r.MatchId == tonight.MatchIds[^1])
+                : null;
+            var playing = newest is not null && st.DeckOf.TryGetValue(newest.MatchId, out var slug)
+                ? st.ByDeck.FirstOrDefault(d => d.Slug == slug)?.Name
+                : null;
+
+            if (newest is not null)
+            {
+                var beat = new Beat(
+                    newest.Date.Length >= 16 ? newest.Date[11..16] : newest.Date,
+                    playing ?? newest.EventName,
+                    newest.Incomplete ? "unfinished" : newest.Result);
+                if (beats.Count == 0 || beats[0] != beat) beats.Insert(0, beat);
+                if (beats.Count > Scoreboard.Recent) beats.RemoveRange(Scoreboard.Recent, beats.Count - Scoreboard.Recent);
+            }
+
+            // Above the block, where it scrolls and stays — but only the first time it
+            // is said. `watch` rebuilds on a favourite toggle too, and a nudge repeated
+            // on every rebuild is the noise this whole change is about removing.
+            if (nudge is not null && said.Add(nudge.Text))
+                board.Say($"[{DateTime.Now:HH:mm:ss}] ** {nudge.Text}");
+
+            board.Draw(Scoreboard.Lines(
+                tonight, beats, playing, server.Url, DateTime.Now, board.Width, board.Height));
+        }
 
         var stop = new ManualResetEventSlim(false);
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Set(); };
@@ -269,12 +305,11 @@ public static class Program
             var (exit, written) = CaptureCore(cfg, quiet: true);
             if (exit != 0 || written == 0) continue;
 
-            Build(cfg, open: false, quiet: true);
+            Build(cfg, open: false, quiet: true, observed: Repaint);
             server.NotifyChanged();
-            Console.WriteLine(
-                $"[{DateTime.Now:HH:mm:ss}] {written} match(es) captured or completed — report updated");
         }
 
+        Console.WriteLine();
         Console.WriteLine("stopped.");
         return 0;
     }
@@ -387,7 +422,14 @@ public static class Program
     /// second, so there is no cache to invalidate. <c>--rebuild</c> is accepted and
     /// documented because that is the guarantee it names, but it changes nothing today.
     /// </summary>
-    private static int Build(Config cfg, bool open, bool quiet = false)
+    /// <param name="observed">
+    /// Handed the state this build worked out, for a caller that wants to draw it. The
+    /// alternative was recomputing the sessions and the coach's verdict in `watch`,
+    /// which would have been the second implementation of both and free to disagree
+    /// with the page it sits beside.
+    /// </param>
+    private static int Build(Config cfg, bool open, bool quiet = false,
+        Action<IReadOnlyList<MatchSummary>, IndexStats, Nudge?>? observed = null)
     {
         var archive = new RawArchive(cfg.ArchiveDir);
         using var cards = OpenCards(cfg, out var dbPath);
@@ -449,18 +491,19 @@ public static class Program
         // quiet on a build run the next morning — see SessionCoach.Check. A one-shot
         // build after an evening's play gets the same nudge `watch` would have shown,
         // which is the point: the report is the report either way.
+        var stats = IndexStats.From(summaries);
         var nudge = SessionCoach.Check(
-            summaries, IndexStats.From(summaries),
+            summaries, stats,
             silenced: null, nowMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
         var indexPath = Path.GetFullPath(Path.Combine(cfg.OutputDir, "index.html"));
         File.WriteAllText(indexPath, IndexRenderer.Render(summaries, nudge));
 
-        // Said once per build, and only when there is something to say. `watch` rebuilds
-        // on every finished match, so this lands in the terminal at the same moment the
-        // banner appears on the page — between two games, which is the only moment it
-        // is any use.
-        if (nudge is not null) Console.WriteLine($"  ** {nudge.Text}");
+        // A caller that draws its own screen takes the state and says it its own way;
+        // everyone else gets the plain line. `watch` is the former, so the nudge does
+        // not get printed twice.
+        if (observed is not null) observed(summaries, stats, nudge);
+        else if (nudge is not null) Console.WriteLine($"  ** {nudge.Text}");
         if (unresolved.Count > 0)
             File.WriteAllLines(Path.Combine(cfg.OutputDir, "unresolved.txt"), unresolved);
 

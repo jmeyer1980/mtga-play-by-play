@@ -3,13 +3,27 @@ using MtgaPbp.Core;
 namespace MtgaPbp.Render;
 
 /// <summary>
+/// One deck's share of one sitting.
+/// </summary>
+/// <remarks>
+/// Carried per session rather than looked up from the archive-wide record, because the
+/// question a scoreboard answers is "how is this going tonight" — a deck at 57% lifetime
+/// can be 0-4 this evening, and the lifetime number is no comfort at all in that moment.
+/// </remarks>
+public sealed record SessionDeck(string Name, int Won, int Lost)
+{
+    public int Played => Won + Lost;
+}
+
+/// <summary>
 /// One sitting: the matches played in a single unbroken run, and how it went.
 /// </summary>
 /// <param name="StartedAtMs">When the first match of the session began.</param>
 /// <param name="Started">The same, formatted the way the index formats a match date.</param>
 /// <param name="Decks">
-/// The decks played, most-played first, by the labels <see cref="DeckIdentity"/> gives
-/// them. Empty for a session whose matches all predate deck capture.
+/// The decks played and how each did, most-played first, by the labels
+/// <see cref="DeckIdentity"/> gives them. Empty for a session whose matches all predate
+/// deck capture.
 /// </param>
 /// <param name="MatchIds">Every match in the session, oldest first.</param>
 public sealed record SessionRow(
@@ -19,7 +33,7 @@ public sealed record SessionRow(
     int Won,
     int Lost,
     int Drawn,
-    IReadOnlyList<string> Decks,
+    IReadOnlyList<SessionDeck> Decks,
     IReadOnlyList<string> MatchIds)
 {
     /// <summary>
@@ -149,18 +163,19 @@ public static class Sessions
         // file the whole thing under the day it ended.
         var first = games[0];
 
-        var decks = new List<string>();
+        var decks = new List<SessionDeck>();
         if (deckOf is not null)
         {
-            foreach (var slug in games
-                         .Select(g => deckOf.GetValueOrDefault(g.MatchId))
-                         .Where(s => s is not null)
-                         .GroupBy(s => s!, StringComparer.Ordinal)
+            foreach (var group in games
+                         .Where(g => deckOf.ContainsKey(g.MatchId))
+                         .GroupBy(g => deckOf[g.MatchId], StringComparer.Ordinal)
                          .OrderByDescending(g => g.Count())
-                         .ThenBy(g => g.Key, StringComparer.Ordinal)
-                         .Select(g => g.Key))
+                         .ThenBy(g => g.Key, StringComparer.Ordinal))
             {
-                decks.Add(labelOf?.GetValueOrDefault(slug) ?? slug);
+                decks.Add(new SessionDeck(
+                    labelOf?.GetValueOrDefault(group.Key) ?? group.Key,
+                    Won: group.Count(g => Outcome(g) == 'W'),
+                    Lost: group.Count(g => Outcome(g) == 'L')));
             }
         }
 

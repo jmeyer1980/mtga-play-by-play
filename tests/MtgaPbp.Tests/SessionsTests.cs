@@ -127,7 +127,7 @@ public class SessionsTests
     [Test]
     public void Sessions_name_the_decks_that_were_played_most_played_first()
     {
-        var rows = new[] { At(0), At(5), At(10) };
+        var rows = new[] { At(0), At(5), At(10, "Lost 0-1") };
         var deckOf = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [rows[0].MatchId] = "gix",
@@ -140,7 +140,12 @@ public class SessionsTests
             ["hares"] = "Hare Apparent"
         };
         var s = Sessions.From(rows, deckOf, labels);
-        Assert.That(s[0].Decks, Is.EqualTo(new[] { "Hare Apparent", "Gix" }));
+        Assert.That(s[0].Decks.Select(d => d.Name), Is.EqualTo(new[] { "Hare Apparent", "Gix" }));
+
+        // Each deck carries its own share of the night, not the archive-wide record: a
+        // deck at 57% lifetime can be 0-2 this evening, and tonight is the question.
+        Assert.That(s[0].Decks[0], Is.EqualTo(new SessionDeck("Hare Apparent", Won: 1, Lost: 1)));
+        Assert.That(s[0].Decks[1], Is.EqualTo(new SessionDeck("Gix", Won: 1, Lost: 0)));
     }
 
     [Test]
