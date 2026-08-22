@@ -526,7 +526,7 @@ public static class IndexRenderer
             // what keeps the glyph itself named, so a pointer resting on it says
             // something — the regression issue #63 was about.
             var rate = r.WinRate is { } w ? $"{w:P0}" : "";
-            var decks = string.Join(", ", r.Decks);
+            var decks = string.Join(", ", r.Decks.Select(d => d.Name));
 
             // Draws are part of the record and have to show in the visible half too, or
             // a 1-1-1 night reads as 1-1 while the spoken twin beside it says otherwise.

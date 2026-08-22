@@ -61,6 +61,14 @@ public sealed record IndexStats(
     IReadOnlyDictionary<string, string> DeckOf,
 
     /// <summary>
+    /// What each deck cluster is called, by slug. Taken from the clustering itself
+    /// rather than from <see cref="ByDeck"/>, which keeps only decks with a decided
+    /// match in them: a deck whose only game so far is unfinished has a cluster and a
+    /// name but no record, and anything reading the name off the records finds nothing.
+    /// </summary>
+    IReadOnlyDictionary<string, string> LabelOf,
+
+    /// <summary>
     /// How each sitting went, newest first. Computed here rather than by whoever renders
     /// it so that the panel and the coach that watches a live session cannot disagree
     /// about where one night ends and the next begins.
@@ -105,9 +113,13 @@ public sealed record IndexStats(
             .ToList();
 
         var deckOf = new Dictionary<string, string>(StringComparer.Ordinal);
+        var labelOf = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var c in clusters)
+        {
+            labelOf[c.Slug] = c.Label;
             foreach (var id in c.MatchIds)
                 deckOf[id] = c.Slug;
+        }
 
         return new IndexStats(
             Row("Overall", null, counted),
@@ -117,6 +129,7 @@ public sealed record IndexStats(
             Unattributed: counted.Count(r => r.Deck is null or { Count: 0 }),
             Excluded: rows.Count - counted.Count,
             DeckOf: deckOf,
+            LabelOf: labelOf,
             // Over every match, not only the decided ones: an unfinished game still took
             // up part of the evening, and a session that reports two games when three
             // were played is describing a night that did not happen.
@@ -124,9 +137,7 @@ public sealed record IndexStats(
             // Namespace-qualified because this record has a property called Sessions,
             // which shadows the type of the same name inside its own body — unqualified,
             // this reads as the property and fails with CS0120.
-            Sessions: Render.Sessions.From(rows, deckOf,
-                byDeck.Where(d => d.Slug is not null)
-                      .ToDictionary(d => d.Slug!, d => d.Name, StringComparer.Ordinal)));
+            Sessions: Render.Sessions.From(rows, deckOf, labelOf));
     }
 
     private static StatRow Row(string name, string? slug, IReadOnlyList<MatchSummary> rows)

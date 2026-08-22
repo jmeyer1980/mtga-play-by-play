@@ -222,13 +222,28 @@ public static class Program
 
         Directory.CreateDirectory(cfg.OutputDir);
         Capture(cfg);
-        if (Build(cfg, open: false) is var code and not 0) return code;
+
+        // The first build's state is kept rather than discarded: without it the board
+        // could not be drawn until a match finished, so `watch` started on an existing
+        // archive showed the plain build text and nothing else — sometimes for hours.
+        IReadOnlyList<MatchSummary> firstRows = [];
+        IndexStats? firstStats = null;
+        Nudge? firstNudge = null;
+        var code = Build(cfg, open: false, observed: (rows, st, nudge) =>
+        {
+            firstRows = rows; firstStats = st; firstNudge = nudge;
+        });
+        if (code != 0) return code;
 
         using var server = new LiveServer(cfg.OutputDir, port);
         server.OnFavorite = (id, on) =>
         {
             var ok = new RawArchive(cfg.ArchiveDir).SetFavorite(id, on);
-            if (ok) { Build(cfg, open: false, quiet: true); server.NotifyChanged(); }
+            // Observed with a no-op rather than left unobserved: keeping a match changes
+            // the archive and not the night's record, so there is nothing to repaint —
+            // but an unobserved build prints the nudge itself, straight into the middle
+            // of the pinned block, bypassing the erase that keeps it intact.
+            if (ok) { Build(cfg, open: false, quiet: true, observed: (_, _, _) => { }); server.NotifyChanged(); }
             return ok;
         };
 
@@ -242,9 +257,64 @@ public static class Program
         }
 
         Console.WriteLine($"watching {cfg.LogPaths.FirstOrDefault()}");
-        Console.WriteLine($"report is live at {server.Url}");
-        Console.WriteLine("leave this window open; press Ctrl+C to stop.");
         OpenInBrowser(server.Url);
+
+        // The standing state is drawn once and repainted; only the notable lines scroll.
+        // See LiveBoard for why that split exists — 41 lines an evening saying "report
+        // updated" is how the one line that mattered came to be 38 scrolls out of sight.
+        var board = new LiveBoard();
+        var beats = new List<Beat>();
+        var said = new HashSet<string>(StringComparer.Ordinal);
+
+        void Repaint(IReadOnlyList<MatchSummary> rows, IndexStats st, Nudge? nudge)
+        {
+            var tonight = st.Sessions.FirstOrDefault();
+            var byId = rows.GroupBy(r => r.MatchId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+            // Rebuilt from the session every time rather than appended to. Several
+            // matches can finish inside one poll, and a match first seen mid-game is
+            // archived unfinished and rewritten when it ends — so an append-only tail
+            // both drops the earlier ones and lists the rewritten one twice.
+            beats.Clear();
+            foreach (var id in tonight?.MatchIds.AsEnumerable().Reverse().Take(Scoreboard.Recent)
+                               ?? Enumerable.Empty<string>())
+            {
+                if (!byId.TryGetValue(id, out var m)) continue;
+                beats.Add(new Beat(
+                    m.Date.Length >= 16 ? m.Date[11..16] : m.Date,
+                    Deck(st, m) ?? m.EventName,
+                    m.Incomplete ? "unfinished" : m.Result));
+            }
+
+            var newest = tonight?.MatchIds.Count > 0 && byId.TryGetValue(tonight.MatchIds[^1], out var last)
+                ? last
+                : null;
+            var playing = newest is null ? null : Deck(st, newest);
+
+            // Above the block, where it scrolls and stays — but only the first time it
+            // is said. `watch` rebuilds on a favourite toggle too, and a nudge repeated
+            // on every rebuild is the noise this whole change is about removing.
+            if (nudge is not null && said.Add(nudge.Text))
+                board.Say($"[{DateTime.Now:HH:mm:ss}] ** {nudge.Text}");
+
+            board.Draw(Scoreboard.Lines(
+                tonight, beats, playing, server.Url, DateTime.Now, board.Width, board.Height));
+        }
+
+        // Read from the session's own deck list rather than from the by-deck records,
+        // which keep only matches that reached a result: a deck whose first game is
+        // still unfinished has a cluster and a label but no row there, and looking it up
+        // that way left the deck in play unmarked and its result line named after the
+        // event instead.
+        static string? Deck(IndexStats st, MatchSummary m) =>
+            st.DeckOf.TryGetValue(m.MatchId, out var slug)
+                ? st.ByDeck.FirstOrDefault(d => d.Slug == slug)?.Name ?? st.LabelOf.GetValueOrDefault(slug)
+                : null;
+
+        // Drawn before the first match of the evening, so the window says what it is
+        // watching from the moment it opens.
+        if (firstStats is not null) Repaint(firstRows, firstStats, firstNudge);
 
         var stop = new ManualResetEventSlim(false);
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Set(); };
@@ -269,12 +339,11 @@ public static class Program
             var (exit, written) = CaptureCore(cfg, quiet: true);
             if (exit != 0 || written == 0) continue;
 
-            Build(cfg, open: false, quiet: true);
+            Build(cfg, open: false, quiet: true, observed: Repaint);
             server.NotifyChanged();
-            Console.WriteLine(
-                $"[{DateTime.Now:HH:mm:ss}] {written} match(es) captured or completed — report updated");
         }
 
+        Console.WriteLine();
         Console.WriteLine("stopped.");
         return 0;
     }
@@ -387,7 +456,14 @@ public static class Program
     /// second, so there is no cache to invalidate. <c>--rebuild</c> is accepted and
     /// documented because that is the guarantee it names, but it changes nothing today.
     /// </summary>
-    private static int Build(Config cfg, bool open, bool quiet = false)
+    /// <param name="observed">
+    /// Handed the state this build worked out, for a caller that wants to draw it. The
+    /// alternative was recomputing the sessions and the coach's verdict in `watch`,
+    /// which would have been the second implementation of both and free to disagree
+    /// with the page it sits beside.
+    /// </param>
+    private static int Build(Config cfg, bool open, bool quiet = false,
+        Action<IReadOnlyList<MatchSummary>, IndexStats, Nudge?>? observed = null)
     {
         var archive = new RawArchive(cfg.ArchiveDir);
         using var cards = OpenCards(cfg, out var dbPath);
@@ -449,18 +525,19 @@ public static class Program
         // quiet on a build run the next morning — see SessionCoach.Check. A one-shot
         // build after an evening's play gets the same nudge `watch` would have shown,
         // which is the point: the report is the report either way.
+        var stats = IndexStats.From(summaries);
         var nudge = SessionCoach.Check(
-            summaries, IndexStats.From(summaries),
+            summaries, stats,
             silenced: null, nowMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
         var indexPath = Path.GetFullPath(Path.Combine(cfg.OutputDir, "index.html"));
         File.WriteAllText(indexPath, IndexRenderer.Render(summaries, nudge));
 
-        // Said once per build, and only when there is something to say. `watch` rebuilds
-        // on every finished match, so this lands in the terminal at the same moment the
-        // banner appears on the page — between two games, which is the only moment it
-        // is any use.
-        if (nudge is not null) Console.WriteLine($"  ** {nudge.Text}");
+        // A caller that draws its own screen takes the state and says it its own way;
+        // everyone else gets the plain line. `watch` is the former, so the nudge does
+        // not get printed twice.
+        if (observed is not null) observed(summaries, stats, nudge);
+        else if (nudge is not null && !quiet) Console.WriteLine($"  ** {nudge.Text}");
         if (unresolved.Count > 0)
             File.WriteAllLines(Path.Combine(cfg.OutputDir, "unresolved.txt"), unresolved);
 
