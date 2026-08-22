@@ -222,14 +222,28 @@ public static class Program
 
         Directory.CreateDirectory(cfg.OutputDir);
         Capture(cfg);
-        if (Build(cfg, open: false) is var code and not 0) return code;
+
+        // The first build's state is kept rather than discarded: without it the board
+        // could not be drawn until a match finished, so `watch` started on an existing
+        // archive showed the plain build text and nothing else — sometimes for hours.
+        IReadOnlyList<MatchSummary> firstRows = [];
+        IndexStats? firstStats = null;
+        Nudge? firstNudge = null;
+        var code = Build(cfg, open: false, observed: (rows, st, nudge) =>
+        {
+            firstRows = rows; firstStats = st; firstNudge = nudge;
+        });
+        if (code != 0) return code;
 
         using var server = new LiveServer(cfg.OutputDir, port);
         server.OnFavorite = (id, on) =>
         {
             var ok = new RawArchive(cfg.ArchiveDir).SetFavorite(id, on);
-            // No repaint: keeping a match changes the archive, not the night's record.
-            if (ok) { Build(cfg, open: false, quiet: true); server.NotifyChanged(); }
+            // Observed with a no-op rather than left unobserved: keeping a match changes
+            // the archive and not the night's record, so there is nothing to repaint —
+            // but an unobserved build prints the nudge itself, straight into the middle
+            // of the pinned block, bypassing the erase that keeps it intact.
+            if (ok) { Build(cfg, open: false, quiet: true, observed: (_, _, _) => { }); server.NotifyChanged(); }
             return ok;
         };
 
@@ -255,22 +269,28 @@ public static class Program
         void Repaint(IReadOnlyList<MatchSummary> rows, IndexStats st, Nudge? nudge)
         {
             var tonight = st.Sessions.FirstOrDefault();
-            var newest = tonight?.MatchIds.Count > 0
-                ? rows.FirstOrDefault(r => r.MatchId == tonight.MatchIds[^1])
-                : null;
-            var playing = newest is not null && st.DeckOf.TryGetValue(newest.MatchId, out var slug)
-                ? st.ByDeck.FirstOrDefault(d => d.Slug == slug)?.Name
-                : null;
+            var byId = rows.GroupBy(r => r.MatchId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
-            if (newest is not null)
+            // Rebuilt from the session every time rather than appended to. Several
+            // matches can finish inside one poll, and a match first seen mid-game is
+            // archived unfinished and rewritten when it ends — so an append-only tail
+            // both drops the earlier ones and lists the rewritten one twice.
+            beats.Clear();
+            foreach (var id in tonight?.MatchIds.AsEnumerable().Reverse().Take(Scoreboard.Recent)
+                               ?? Enumerable.Empty<string>())
             {
-                var beat = new Beat(
-                    newest.Date.Length >= 16 ? newest.Date[11..16] : newest.Date,
-                    playing ?? newest.EventName,
-                    newest.Incomplete ? "unfinished" : newest.Result);
-                if (beats.Count == 0 || beats[0] != beat) beats.Insert(0, beat);
-                if (beats.Count > Scoreboard.Recent) beats.RemoveRange(Scoreboard.Recent, beats.Count - Scoreboard.Recent);
+                if (!byId.TryGetValue(id, out var m)) continue;
+                beats.Add(new Beat(
+                    m.Date.Length >= 16 ? m.Date[11..16] : m.Date,
+                    Deck(st, m) ?? m.EventName,
+                    m.Incomplete ? "unfinished" : m.Result));
             }
+
+            var newest = tonight?.MatchIds.Count > 0 && byId.TryGetValue(tonight.MatchIds[^1], out var last)
+                ? last
+                : null;
+            var playing = newest is null ? null : Deck(st, newest);
 
             // Above the block, where it scrolls and stays — but only the first time it
             // is said. `watch` rebuilds on a favourite toggle too, and a nudge repeated
@@ -281,6 +301,20 @@ public static class Program
             board.Draw(Scoreboard.Lines(
                 tonight, beats, playing, server.Url, DateTime.Now, board.Width, board.Height));
         }
+
+        // Read from the session's own deck list rather than from the by-deck records,
+        // which keep only matches that reached a result: a deck whose first game is
+        // still unfinished has a cluster and a label but no row there, and looking it up
+        // that way left the deck in play unmarked and its result line named after the
+        // event instead.
+        static string? Deck(IndexStats st, MatchSummary m) =>
+            st.DeckOf.TryGetValue(m.MatchId, out var slug)
+                ? st.ByDeck.FirstOrDefault(d => d.Slug == slug)?.Name ?? st.LabelOf.GetValueOrDefault(slug)
+                : null;
+
+        // Drawn before the first match of the evening, so the window says what it is
+        // watching from the moment it opens.
+        if (firstStats is not null) Repaint(firstRows, firstStats, firstNudge);
 
         var stop = new ManualResetEventSlim(false);
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Set(); };
@@ -503,7 +537,7 @@ public static class Program
         // everyone else gets the plain line. `watch` is the former, so the nudge does
         // not get printed twice.
         if (observed is not null) observed(summaries, stats, nudge);
-        else if (nudge is not null) Console.WriteLine($"  ** {nudge.Text}");
+        else if (nudge is not null && !quiet) Console.WriteLine($"  ** {nudge.Text}");
         if (unresolved.Count > 0)
             File.WriteAllLines(Path.Combine(cfg.OutputDir, "unresolved.txt"), unresolved);
 

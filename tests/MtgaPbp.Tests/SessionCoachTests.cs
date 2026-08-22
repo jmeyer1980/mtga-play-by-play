@@ -291,4 +291,27 @@ public class SessionCoachTests
         var nudge = Coach(rows)!;
         Assert.That(IndexRenderer.Render(rows, nudge), Does.Contain($"data-nudge=\"{nudge.Text}\""));
     }
+
+    // ---------- naming a deck whose games have not finished ----------
+
+    /// <summary>
+    /// Caught in review: by-deck records keep only matches that reached a result, so a
+    /// deck whose first game is still unfinished has a cluster and a name but no row
+    /// there. Reading the label off the records left that deck unnamed — unmarked on the
+    /// scoreboard, and its result line titled after the event instead.
+    /// </summary>
+    [Test]
+    public void A_deck_whose_only_game_is_unfinished_still_has_a_name()
+    {
+        var rows = new List<MatchSummary> { At(0, "Lost 0-1", Alpha, incomplete: true) };
+        var stats = IndexStats.From(rows);
+        var slug = stats.DeckOf[rows[0].MatchId];
+
+        Assert.That(stats.ByDeck.Any(d => d.Slug == slug), Is.False,
+            "no record yet, which is correct — nothing has finished");
+        Assert.That(stats.LabelOf.GetValueOrDefault(slug), Is.Not.Null.And.Not.Empty,
+            "but it still has a name");
+        Assert.That(stats.Sessions[0].Decks.Single().Name,
+            Is.EqualTo(stats.LabelOf[slug]), "and the session uses it");
+    }
 }

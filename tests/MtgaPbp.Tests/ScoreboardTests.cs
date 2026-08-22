@@ -135,6 +135,30 @@ public class ScoreboardTests
         Assert.That(Text(Board(Session(decks: decks), height: 50)), Does.Not.Contain("more"));
     }
 
+    /// <summary>
+    /// Caught in review: the fixed-line count was one short, so a four-deck session with
+    /// three results came to thirteen lines inside a twelve-line budget — the guarantee
+    /// broken in exactly the case it exists for. The earlier test missed it by passing
+    /// no results at all.
+    /// </summary>
+    [TestCase(16)]
+    [TestCase(20)]
+    [TestCase(24)]
+    [TestCase(30)]
+    [TestCase(50)]
+    public void The_block_never_takes_more_than_half_the_window(int height)
+    {
+        var decks = Enumerable.Range(0, 8)
+            .Select(i => new SessionDeck($"Deck {i}", i, i)).ToArray();
+        var beats = Enumerable.Range(0, Scoreboard.Recent)
+            .Select(i => new Beat($"16:{i:00}", "Elspeth", "Won 1-0")).ToList();
+
+        var lines = Board(Session(decks: decks), beats, height: height);
+
+        Assert.That(lines.Count, Is.LessThanOrEqualTo(height / 2),
+            $"the block claimed {lines.Count} of a {height}-row window");
+    }
+
     [Test]
     public void The_footer_says_where_the_report_is_and_how_to_stop()
     {

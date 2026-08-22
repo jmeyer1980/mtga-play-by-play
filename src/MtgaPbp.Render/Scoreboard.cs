@@ -52,6 +52,7 @@ public static class Scoreboard
         int width = 80,
         int height = 24)
     {
+        var fit = Fit(session?.Decks.Count ?? 0, beats.Count, height);
         var lines = new List<string> { new('-', Math.Clamp(width - 1, 10, 100)) };
 
         if (session is null)
@@ -71,7 +72,7 @@ public static class Scoreboard
             // longest one, rather than against a fixed column that leaves a gulf when
             // every deck is called something short. Capped, because one absurd label
             // must not push the numbers off the edge — it clips instead.
-            var decks = Fit(session.Decks, height);
+            var decks = session.Decks.Take(fit.Decks).ToList();
             var room = decks.Count == 0
                 ? 0
                 : Math.Clamp(decks.Max(d => d.Name.Length), 8, Math.Max(8, Math.Min(34, width - 24)));
@@ -86,7 +87,7 @@ public static class Scoreboard
             if (session.Decks.Count > 0) lines.Add("");
         }
 
-        foreach (var b in beats.Take(Recent))
+        foreach (var b in beats.Take(fit.Beats))
             lines.Add($"  {b.At}  {Clip(b.Deck, 24).PadRight(24)}  {b.Result}");
 
         lines.Add("");
@@ -98,12 +99,40 @@ public static class Scoreboard
     /// <summary>
     /// As many decks as fit in half the window, most-played first.
     /// </summary>
-    private static IReadOnlyList<SessionDeck> Fit(IReadOnlyList<SessionDeck> decks, int height)
+    /// <summary>
+    /// Everything in the block that is not a deck line or a result line: the rule, the
+    /// header, the blank under it, the blank under the deck list, the blank above the
+    /// footer and the footer itself.
+    /// </summary>
+    private const int Furniture = 6;
+
+    /// <summary>
+    /// How many decks and how many results fit in half the window.
+    /// </summary>
+    /// <remarks>
+    /// Both are trimmed, not just the decks. Trimming decks alone cannot honour the
+    /// budget on a short window: the furniture plus one deck plus three results is
+    /// eleven lines, which already overruns half of a sixteen-row terminal. Results go
+    /// first — a deck line answers "how is tonight going" and a result line only says
+    /// what already happened, and the block is worth nothing if it cannot say the first.
+    /// <para>
+    /// The half-window rule is what keeps the block from fighting the scrollback, and
+    /// what gets pushed off when it loses is whichever nudge was printed above it — the
+    /// one thing this whole design exists to preserve.
+    /// </para>
+    /// </remarks>
+    private static (int Decks, int Beats) Fit(int deckCount, int beatCount, int height)
     {
-        // Seven lines of the block are not decks: the rule, the header, two blanks, the
-        // beats and the footer. What is left of half the window is what a deck list gets.
-        var room = Math.Max(1, height / 2 - Recent - 5);
-        return decks.Count <= room ? decks : decks.Take(Math.Max(1, room - 1)).ToList();
+        var budget = Math.Max(Furniture + 1, height / 2);
+        var decks = deckCount;
+        var beats = Math.Min(beatCount, Recent);
+
+        // A "+N more" line costs one of its own whenever the deck list is cut.
+        int Total() => Furniture + decks + beats + (decks < deckCount ? 1 : 0);
+
+        while (Total() > budget && beats > 0) beats--;
+        while (Total() > budget && decks > 1) decks--;
+        return (decks, beats);
     }
 
     /// <summary>The time out of a "yyyy-MM-dd HH:mm" stamp, since the date is today's.</summary>
