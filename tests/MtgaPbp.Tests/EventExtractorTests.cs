@@ -14,9 +14,10 @@ public class EventExtractorTests
             1001 => "Llanowar Elves",
             1002 => "Elspeth, Storm Slayer",
 
-            // The two faces of one Adventure card. Arena hands the card object the
-            // Adventure's grpId while that half is on the stack and the creature's
-            // again as it leaves, so a test for #71 needs both to be nameable.
+            // The two faces of one Adventure card. Both are locIds, like everything
+            // else in this table: the grpIds that go with them are in the game objects
+            // the #71 test builds, and are what Arena swaps as the spell leaves the
+            // stack. Here they only have to be nameable.
             1010 => "Easy Pickings",
             1011 => "Gloin the Mighty",
 

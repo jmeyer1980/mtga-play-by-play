@@ -1848,14 +1848,21 @@ public sealed class EventExtractor(ICardDb cards)
     /// carries the creature's grpId, and it is the new id the Resolve transfer names. So
     /// the transcript said "You cast Take a Glance" and then "Bilbo Baggins, Burglar
     /// resolves", announcing a creature that was still in its owner's hand, and
-    /// contradicting the board line printed underneath it. 58 resolutions across 43 of
-    /// the archive's matches read that way (#71).
+    /// contradicting the board line printed underneath it. 96 lines across 74 of the
+    /// archive's matches read that way (#71).
     /// <para>
-    /// The rule is the rules': the spell that resolves is the spell that was cast. The
-    /// two annotations are already matched on the object through the alias map by
-    /// <see cref="ResolvedAt"/>, which is what <see cref="FillTargets"/> uses to find the
-    /// same pairing, so nothing new has to be worked out to say which resolution belongs
-    /// to which cast.
+    /// The rule is the rules': the spell that resolves is the spell that was cast. A cast
+    /// puts its name up under the object's canonical id, and the resolution that takes it
+    /// down is the one it belongs to — the alias map having already made a spell's two
+    /// ids into one key. Casting the same card again simply puts a name up again, so the
+    /// second Adventure of the game is matched to its own resolution rather than to the
+    /// first one's, and a spell that is countered leaves its name to be replaced rather
+    /// than claimed.
+    /// </para>
+    /// <para>
+    /// One pass rather than a search per cast: <see cref="ResolvedAt"/> would answer the
+    /// same question, but it scans forward from each cast, and doing that for every spell
+    /// in the game is a quadratic way to ask something a single walk already knows.
     /// </para>
     /// <para>
     /// Runs before <see cref="NamePermanents"/>, which adds statlines to names that still
@@ -1866,21 +1873,28 @@ public sealed class EventExtractor(ICardDb cards)
     /// </remarks>
     private static void NameResolutions(GameStateTracker tracker, Emit st, GameRun g)
     {
+        // Canonical spell id -> what the cast called it, for casts not yet resolved.
+        var cast = new Dictionary<int, string>();
+
         for (var i = g.FirstSeq; i < g.EndSeq; i++)
         {
-            var cast = st.Events[i];
-            if (cast.Kind != EventKind.SpellCast) continue;
+            var e = st.Events[i];
+            if (e.SourceInstanceId is not { } id) continue;
 
-            // A cast the log could not name has nothing to lend. The resolution's own
-            // name may be the better of the two, and is left alone.
-            if (cast.SourceName is not { } spell || CardNames.IsPlaceholder(spell)) continue;
+            if (e.Kind == EventKind.SpellCast)
+            {
+                // A cast the log could not name has nothing to lend, and must not
+                // displace a name already standing for this object.
+                if (e.SourceName is { } spell && !CardNames.IsPlaceholder(spell))
+                    cast[tracker.Resolve(id)] = spell;
+                continue;
+            }
 
-            if (ResolvedAt(tracker, st, cast, g.EndSeq) is not { } at) continue;
+            if (e.Kind != EventKind.Resolved) continue;
+            if (!cast.Remove(tracker.Resolve(id), out var spellCast)) continue;
+            if (string.Equals(e.SourceName, spellCast, StringComparison.Ordinal)) continue;
 
-            var resolution = st.Events[at];
-            if (string.Equals(resolution.SourceName, spell, StringComparison.Ordinal)) continue;
-
-            st.Events[at] = resolution with { SourceName = spell };
+            st.Events[i] = e with { SourceName = spellCast };
         }
     }
 
