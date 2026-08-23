@@ -703,6 +703,7 @@ public sealed class EventExtractor(ICardDb cards)
         foreach (var g in games)
         {
             MarkActivations(g.Tracker, st, g);
+            NameResolutions(g.Tracker, st, g);
             var labels = PermanentLabels.Build(g.Tracker, cards, Boundaries(st, g));
             NamePermanents(g.Tracker, labels, st, g);
             NameBoards(g.Tracker, labels, st, g);
@@ -1835,6 +1836,65 @@ public sealed class EventExtractor(ICardDb cards)
                 CauseInstanceId = null,
                 CauseName = null
             };
+        }
+    }
+
+    /// <summary>
+    /// Names each resolution after the spell that was cast, where the two disagree.
+    /// </summary>
+    /// <remarks>
+    /// An Adventure card is one card wearing two faces. The spell goes on the stack under
+    /// the Adventure's grpId, and Arena renumbers the object as it leaves — the new id
+    /// carries the creature's grpId, and it is the new id the Resolve transfer names. So
+    /// the transcript said "You cast Take a Glance" and then "Bilbo Baggins, Burglar
+    /// resolves", announcing a creature that was still in its owner's hand, and
+    /// contradicting the board line printed underneath it. 96 lines across 74 of the
+    /// archive's matches read that way (#71).
+    /// <para>
+    /// The rule is the rules': the spell that resolves is the spell that was cast. A cast
+    /// puts its name up under the object's canonical id, and the resolution that takes it
+    /// down is the one it belongs to — the alias map having already made a spell's two
+    /// ids into one key. Casting the same card again simply puts a name up again, so the
+    /// second Adventure of the game is matched to its own resolution rather than to the
+    /// first one's, and a spell that is countered leaves its name to be replaced rather
+    /// than claimed.
+    /// </para>
+    /// <para>
+    /// One pass rather than a search per cast: <see cref="ResolvedAt"/> would answer the
+    /// same question, but it scans forward from each cast, and doing that for every spell
+    /// in the game is a quadratic way to ask something a single walk already knows.
+    /// </para>
+    /// <para>
+    /// Runs before <see cref="NamePermanents"/>, which adds statlines to names that still
+    /// agree with the tracker's. A resolution renamed here no longer agrees, so it is
+    /// left as the bare name — which is what an Adventure half wants, having no power or
+    /// toughness of its own to report.
+    /// </para>
+    /// </remarks>
+    private static void NameResolutions(GameStateTracker tracker, Emit st, GameRun g)
+    {
+        // Canonical spell id -> what the cast called it, for casts not yet resolved.
+        var cast = new Dictionary<int, string>();
+
+        for (var i = g.FirstSeq; i < g.EndSeq; i++)
+        {
+            var e = st.Events[i];
+            if (e.SourceInstanceId is not { } id) continue;
+
+            if (e.Kind == EventKind.SpellCast)
+            {
+                // A cast the log could not name has nothing to lend, and must not
+                // displace a name already standing for this object.
+                if (e.SourceName is { } spell && !CardNames.IsPlaceholder(spell))
+                    cast[tracker.Resolve(id)] = spell;
+                continue;
+            }
+
+            if (e.Kind != EventKind.Resolved) continue;
+            if (!cast.Remove(tracker.Resolve(id), out var spellCast)) continue;
+            if (string.Equals(e.SourceName, spellCast, StringComparison.Ordinal)) continue;
+
+            st.Events[i] = e with { SourceName = spellCast };
         }
     }
 

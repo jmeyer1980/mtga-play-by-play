@@ -14,6 +14,13 @@ public class EventExtractorTests
             1001 => "Llanowar Elves",
             1002 => "Elspeth, Storm Slayer",
 
+            // The two faces of one Adventure card. Both are locIds, like everything
+            // else in this table: the grpIds that go with them are in the game objects
+            // the #71 test builds, and are what Arena swaps as the spell leaves the
+            // stack. Here they only have to be nameable.
+            1010 => "Easy Pickings",
+            1011 => "Gloin the Mighty",
+
             // The copy tests need a permanent whose locId name and grpId disagree,
             // which is what a copy effect produces and nothing else here does.
             2041 => "Lembas",
@@ -1973,4 +1980,53 @@ public class EventExtractorTests
         Assert.That(end.Turn, Is.Not.Zero, "nothing is ever turn zero");
     }
 
+    /// <summary>
+    /// An Adventure card cast on its Adventure half. The spell goes on the stack as 312
+    /// carrying the Adventure's grpId; a later message renumbers it to 317, which carries
+    /// the creature's grpId, and attaches the Resolve transfer to that. Naming the
+    /// resolution after the object it left behind announced a creature that was still in
+    /// its owner's hand as having resolved (#71).
+    /// </summary>
+    [Test]
+    public void Extract_names_a_resolution_after_the_spell_that_was_cast()
+    {
+        var cast = Gre("""
+        { "type": "GameStateType_Full",
+          "turnInfo": { "turnNumber": 3, "activePlayer": 2 },
+          "gameObjects": [
+            { "instanceId": 312, "grpId": 103477, "name": 1010,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 1, "affectedIds": [ 312 ],
+              "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+                { "key": "zone_src",  "valueInt32": [ 35 ] },
+                { "key": "zone_dest", "valueInt32": [ 27 ] },
+                { "key": "category", "valueString": [ "CastSpell" ] } ] } ] }
+        """);
+
+        var resolve = Gre("""
+        { "type": "GameStateType_Diff",
+          "gameObjects": [
+            { "instanceId": 317, "grpId": 103476, "name": 1011,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 2, "affectorId": 2, "affectedIds": [ 312 ],
+              "type": [ "AnnotationType_ObjectIdChanged" ], "details": [
+                { "key": "orig_id", "valueInt32": [ 312 ] },
+                { "key": "new_id",  "valueInt32": [ 317 ] } ] },
+            { "id": 3, "affectorId": 2, "affectedIds": [ 317 ],
+              "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+                { "key": "zone_src",  "valueInt32": [ 27 ] },
+                { "key": "zone_dest", "valueInt32": [ 29 ] },
+                { "key": "category", "valueString": [ "Resolve" ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, cast, resolve);
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.SpellCast).SourceName,
+            Is.EqualTo("Easy Pickings"));
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Resolved).SourceName,
+            Is.EqualTo("Easy Pickings"),
+            "the creature half was still in hand and did not resolve");
+    }
 }
