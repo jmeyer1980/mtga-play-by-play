@@ -703,6 +703,7 @@ public sealed class EventExtractor(ICardDb cards)
         foreach (var g in games)
         {
             MarkActivations(g.Tracker, st, g);
+            NameResolutions(g.Tracker, st, g);
             var labels = PermanentLabels.Build(g.Tracker, cards, Boundaries(st, g));
             NamePermanents(g.Tracker, labels, st, g);
             NameBoards(g.Tracker, labels, st, g);
@@ -1835,6 +1836,51 @@ public sealed class EventExtractor(ICardDb cards)
                 CauseInstanceId = null,
                 CauseName = null
             };
+        }
+    }
+
+    /// <summary>
+    /// Names each resolution after the spell that was cast, where the two disagree.
+    /// </summary>
+    /// <remarks>
+    /// An Adventure card is one card wearing two faces. The spell goes on the stack under
+    /// the Adventure's grpId, and Arena renumbers the object as it leaves — the new id
+    /// carries the creature's grpId, and it is the new id the Resolve transfer names. So
+    /// the transcript said "You cast Take a Glance" and then "Bilbo Baggins, Burglar
+    /// resolves", announcing a creature that was still in its owner's hand, and
+    /// contradicting the board line printed underneath it. 58 resolutions across 43 of
+    /// the archive's matches read that way (#71).
+    /// <para>
+    /// The rule is the rules': the spell that resolves is the spell that was cast. The
+    /// two annotations are already matched on the object through the alias map by
+    /// <see cref="ResolvedAt"/>, which is what <see cref="FillTargets"/> uses to find the
+    /// same pairing, so nothing new has to be worked out to say which resolution belongs
+    /// to which cast.
+    /// </para>
+    /// <para>
+    /// Runs before <see cref="NamePermanents"/>, which adds statlines to names that still
+    /// agree with the tracker's. A resolution renamed here no longer agrees, so it is
+    /// left as the bare name — which is what an Adventure half wants, having no power or
+    /// toughness of its own to report.
+    /// </para>
+    /// </remarks>
+    private static void NameResolutions(GameStateTracker tracker, Emit st, GameRun g)
+    {
+        for (var i = g.FirstSeq; i < g.EndSeq; i++)
+        {
+            var cast = st.Events[i];
+            if (cast.Kind != EventKind.SpellCast) continue;
+
+            // A cast the log could not name has nothing to lend. The resolution's own
+            // name may be the better of the two, and is left alone.
+            if (cast.SourceName is not { } spell || CardNames.IsPlaceholder(spell)) continue;
+
+            if (ResolvedAt(tracker, st, cast, g.EndSeq) is not { } at) continue;
+
+            var resolution = st.Events[at];
+            if (string.Equals(resolution.SourceName, spell, StringComparison.Ordinal)) continue;
+
+            st.Events[at] = resolution with { SourceName = spell };
         }
     }
 
