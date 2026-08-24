@@ -613,8 +613,12 @@ public class RendererTests
         Assert.That(Markup.Clipboard(cell), Is.EqualTo("WU"), "the eye gets the letters");
         Assert.That(Markup.Spoken(cell), Is.EqualTo("white and blue"), "the ear gets the words");
 
-        // Still real text somewhere in the cell, which is what find-in-page matches on.
-        Assert.That(cell.Value, Does.Contain("white and blue"));
+        // And the words are NOT also loose in the cell as text. They used to be, so that
+        // find-in-page could match them; that put 712 matches for "minutes" on a rendered
+        // index where nothing on screen said "minutes", and the browser scrolls to them
+        // and highlights nothing (#34). Searching a deck by colour is the filter field's
+        // job, which has always known both "wu" and "blue".
+        Assert.That(cell.Value.Trim(), Is.EqualTo("WU"));
     }
 
     /// <summary>
@@ -891,15 +895,16 @@ public class RendererTests
         var stats = Markup.Parse(IndexHtml(deck: true)).Descendants()
             .Single(e => e.Attribute("id")?.Value == "stats");
         var cell = stats.Descendants("td")
-            .First(td => td.Elements("span").Any(s => s.Attribute("class")?.Value == "vh"));
+            .First(td => td.Elements("span").Any(s => s.Attribute("role")?.Value == "img"));
 
         // One match, won. The panel counts matches, not the games inside them — the
         // sample's own result line reads "Won 2-1" and this cell must not.
         Assert.That(Markup.Clipboard(cell), Is.EqualTo("1-0"), "the eye gets the notation");
         Assert.That(Markup.Spoken(cell), Is.EqualTo("1 won, 0 lost"), "the ear gets the meaning");
 
-        // Neither half is threaded through the other, so no digit abuts a word.
-        Assert.That(cell.Elements("span").Count(), Is.EqualTo(2));
+        // One span, not two. The second was a clipped copy of the spoken form kept so
+        // find-in-page could match it, and it matched where nothing could be shown (#34).
+        Assert.That(cell.Elements("span").Count(), Is.EqualTo(1));
     }
 
     /// <summary>
@@ -927,7 +932,7 @@ public class RendererTests
         var root = Markup.Parse(IndexHtml(deck: true));
 
         var cells = root.Descendants("td")
-            .Where(td => td.Elements("span").Any(sp => sp.Attribute("class")?.Value == "vh"))
+            .Where(td => td.Elements("span").Any(sp => sp.Attribute("role")?.Value == "img"))
             .Where(td => td.Nodes().OfType<XText>().All(t => t.Value.Trim().Length == 0))
             .ToList();
 
@@ -948,8 +953,11 @@ public class RendererTests
             Assert.That(glyph.Attribute("role")?.Value, Is.EqualTo("img"),
                 $"aria-label on an element with no role is discarded: {cell}");
 
-            // And the words are still real text, which is what find-in-page matches.
-            Assert.That(cell.Value, Does.Contain(glyph.Attribute("aria-label")!.Value));
+            // And the words are not repeated as loose text beside it. A clipped copy
+            // used to sit there for find-in-page and matched text nothing could show,
+            // so the cell now draws the glyph and nothing else (#34).
+            Assert.That(cell.Value.Trim(), Is.EqualTo(glyph.Value.Trim()),
+                $"the spoken form is duplicated as text a reader cannot see: {cell}");
         }
     }
 
@@ -975,12 +983,10 @@ public class RendererTests
             Assert.That(name, Is.Not.Empty, "the dash says what is missing");
             Assert.That(name, Does.Not.Contain("—"), "and says it in words");
 
-            // The clipped half stays for find-in-page and is kept out of the tree, so
-            // the same phrase is not announced twice.
-            var twin = dash.NodesAfterSelf().OfType<XElement>().First();
-            Assert.That(twin.Attribute("class")?.Value, Is.EqualTo("vh"));
-            Assert.That(twin.Attribute("aria-hidden")?.Value, Is.EqualTo("true"));
-            Assert.That(twin.Value.Trim(), Is.EqualTo(name));
+            // There is no clipped half beside it any more. One was kept for find-in-page
+            // and was aria-hidden so the phrase was not announced twice — which meant it
+            // was invisible, unselectable and unspoken, and existed only to be matched
+            // by a search that could not show it (#34).
         }
 
         // And the two meanings are told apart rather than sharing one phrase.
