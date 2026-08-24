@@ -2110,8 +2110,8 @@ public class EventExtractorTests
 
         var t = Run(RoomLine, MulliganLine, card, ability);
 
-        Assert.That(t.Events.Where(x => x.Kind == EventKind.Triggered)
-                            .Select(x => x.SourceName), Does.Not.Contain("Lightning Bolt"),
-            "the card whose id was reused did not trigger");
+        Assert.That(t.Events.Where(x => x.Kind == EventKind.Triggered), Is.Empty,
+            "an ability that cannot be named produces no line, and the card whose id "
+            + "was reused is not a name for it");
     }
 }
