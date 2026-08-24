@@ -136,7 +136,14 @@ public static class IndexRenderer
                     // The deck token the panel filters by. Only matches whose log
                     // carried a decklist have one, which is what keeps a search for a
                     // deck from turning up matches nobody knows the deck of.
-                    stats.DeckOf.TryGetValue(r.MatchId, out var deck) ? $"deck:{deck}" : "")
+                    stats.DeckOf.TryGetValue(r.MatchId, out var deck) ? $"deck:{deck}" : "",
+                    // Both forms of the length, for the same reason as the colours, and
+                    // now the only way to search one: the clipped twin that Ctrl+F used
+                    // to match was removed for matching text nothing could show (#34).
+                    // Filtering is the better answer anyway — it hides the rows that do
+                    // not match, where find-in-page scrolls to a highlight that is one
+                    // clipped pixel wide.
+                    r.Length is { } ran ? $"{TurnClock.Format(ran)} {TurnClock.Spoken(ran)}" : "")
                     .ToLowerInvariant();
 
                 // The star is a toggle button, so its state rides on aria-pressed and
@@ -794,10 +801,22 @@ public static class IndexRenderer
     /// path this was built for gets the bare value.
     /// </para>
     /// <para>
-    /// The clipped span stays, purely so find-in-page can still match the spoken form.
-    /// It is <c>aria-hidden</c> now — the name lives on the glyph, and without this it
-    /// would be announced a second time. <c>aria-hidden</c> has no effect on rendering
-    /// or on the browser's find, so nothing is lost by it.
+    /// There is no clipped twin beside it any more. One was kept here so find-in-page
+    /// could still match the spoken form, and that turned out to cost more than it
+    /// bought: on a rendered index of 794 matches it put 1,719 clipped spans in the
+    /// page, 712 of them holding the word "minutes" where nothing on screen said
+    /// "minutes" at all. Driving a browser against it showed the match does not merely
+    /// fail to highlight — <c>window.find</c> returns true and scrolls nearly three
+    /// thousand pixels to a place with nothing to see, because #30 had already made the
+    /// twins unselectable (#34).
+    /// </para>
+    /// <para>
+    /// Searching a length is now the filter field's job, which knows both forms the way
+    /// it already knew both forms of the colours. That is the better path regardless: it
+    /// hides the rows that do not match, where find-in-page walks you to a highlight one
+    /// clipped pixel wide. Removing the span could not change what any of this
+    /// announces, because it was <c>aria-hidden</c> — the name has lived on the glyph
+    /// since #61.
     /// </para>
     /// <para>
     /// A mark appended to a cell that already has text — the incomplete asterisk, the
@@ -807,8 +826,7 @@ public static class IndexRenderer
     /// </para>
     /// </remarks>
     private static string Twin(string seen, string said) =>
-        $"""<span role="img" aria-label="{said}">{seen}</span>""" +
-        $"""<span class="vh" aria-hidden="true">{said}</span>""";
+        $"""<span role="img" aria-label="{said}">{seen}</span>""";
 
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 
