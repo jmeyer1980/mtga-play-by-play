@@ -2029,4 +2029,55 @@ public class EventExtractorTests
             Is.EqualTo("Easy Pickings"),
             "the creature half was still in hand and did not resolve");
     }
+
+    /// <summary>
+    /// What an Adventure does on its way to exile is the Adventure's doing. The spell
+    /// deals its damage as 312, Arena renumbers it to 317 in the same breath, and the
+    /// creature half whose grpId 317 carries is still in its owner's hand — so naming the
+    /// damage after it puts a creature the reader never saw into the transcript as the
+    /// source of it (#75).
+    /// </summary>
+    [Test]
+    public void Extract_names_an_adventures_own_damage_after_the_adventure()
+    {
+        var cast = Gre("""
+        { "type": "GameStateType_Full",
+          "turnInfo": { "turnNumber": 3, "activePlayer": 2 },
+          "gameObjects": [
+            { "instanceId": 312, "grpId": 103477, "name": 1010,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 1, "affectedIds": [ 312 ],
+              "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+                { "key": "zone_src",  "valueInt32": [ 35 ] },
+                { "key": "zone_dest", "valueInt32": [ 27 ] },
+                { "key": "category", "valueString": [ "CastSpell" ] } ] } ] }
+        """);
+
+        var resolve = Gre("""
+        { "type": "GameStateType_Diff",
+          "gameObjects": [
+            { "instanceId": 317, "grpId": 103476, "name": 1011,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 2, "affectorId": 2, "affectedIds": [ 312 ],
+              "type": [ "AnnotationType_ObjectIdChanged" ], "details": [
+                { "key": "orig_id", "valueInt32": [ 312 ] },
+                { "key": "new_id",  "valueInt32": [ 317 ] } ] },
+            { "id": 3, "affectorId": 312, "affectedIds": [ 1 ],
+              "type": [ "AnnotationType_DamageDealt" ], "details": [
+                { "key": "damage", "valueInt32": [ 1 ] } ] },
+            { "id": 4, "affectorId": 2, "affectedIds": [ 317 ],
+              "type": [ "AnnotationType_ZoneTransfer" ], "details": [
+                { "key": "zone_src",  "valueInt32": [ 27 ] },
+                { "key": "zone_dest", "valueInt32": [ 29 ] },
+                { "key": "category", "valueString": [ "Resolve" ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, cast, resolve);
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Damage).SourceName,
+            Is.EqualTo("Easy Pickings"),
+            "the creature half was still in hand and dealt nothing");
+    }
 }
