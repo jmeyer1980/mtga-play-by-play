@@ -334,12 +334,20 @@ installed:
 dotnet test --filter "FullyQualifiedName~CardNameFixtureGenerator" -- NUnit.Explicit=true
 ```
 
+## If something goes wrong
+
+[SUPPORT.md](SUPPORT.md) covers the three things that settle almost every report: the
+build stamp, Detailed Logs, and where the output went. Worth a minute before opening an
+issue — each of them has been the answer more than once.
+
 ## Contributing
 
 Bug reports are welcome, especially "the transcript said something that did not happen" —
 that is the failure mode that matters most here.
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — building, testing, and the rules about fixtures
+- [SUPPORT.md](SUPPORT.md) — first checks when the output is missing, stale or surprising
+- [CONTRIBUTING.md](CONTRIBUTING.md) — building, testing, releasing, and the rules about
+  fixtures
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - [SECURITY.md](SECURITY.md) — what this program touches, and where to report privately
 

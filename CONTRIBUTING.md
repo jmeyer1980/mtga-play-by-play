@@ -94,6 +94,65 @@ test.
 
 CI must be green. There is no separate review gate beyond that and my own reading.
 
+## Cutting a release
+
+The release workflow fires on any tag matching `v*` and takes the version from the tag
+itself. Nothing else triggers it.
+
+```powershell
+# 1. bump the version a working-copy build reports
+#    Directory.Build.props:  <Version>0.5.1</Version>
+git commit -am "chore: 0.5.1"
+git push origin main
+
+# 2. tag that commit and push the tag
+git tag -a v0.5.1 -m "v0.5.1"
+git push origin v0.5.1
+```
+
+Both halves matter. The workflow overrides the version with `-p:Version` from the tag, so
+skipping the bump still produces a correct release — but every build from a working copy
+then goes on reporting the old number, and the whole point of the stamp is that the
+report and the repository agree about which build wrote it.
+
+Release notes are generated from the merged pull request titles, so a good PR title is
+the release note. There is no hand-maintained changelog and there should not be: it would
+be the same list, kept by hand, drifting.
+
+### Which number to bump
+
+| Change | Bump |
+| --- | --- |
+| A new user-visible capability — a panel, a command, a new file in the archive | **minor** (0.5.1 → 0.6.0) |
+| Output wording, bug fixes, performance — anything that changes what is *said* about the same data | **patch** (0.5.0 → 0.5.1) |
+| A breaking change to config keys, the archive layout, or CLI arguments | **minor** while pre-1.0; **major** after |
+
+Most parser work is a patch even when it moves hundreds of lines: rewording 96 resolutions
+across 74 transcripts changes what the tool says about data it already had, and nothing a
+reader does differently. Adding the vault panel changed what the tool can do, and was a
+minor by this table — it shipped as 0.5.1 anyway, which is the mistake this table exists
+to stop repeating.
+
+**The `+hash` is not part of the version.** `0.5.1+5becf5ea` is semver build metadata —
+the commit the build came from — and it is ignored when versions are compared. Two builds
+of `0.5.1` from different commits are the same version wearing different stamps.
+
+### After the release, if you run `watch`
+
+Rebuilding `dist/` while `watch` is running fails: Windows locks a running executable.
+
+```powershell
+Get-Process mtga-pbp | Stop-Process
+dotnet publish src/MtgaPbp.Cli -c Release -r win-x64 --self-contained `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
+Start-Process dist/mtga-pbp.exe watch
+```
+
+Give it **30–45 seconds** before expecting the report to be served. `watch` runs a full
+capture and build before it binds its port, so checking sooner shows a refused connection
+that looks like a crash and is not. `dist/` is gitignored and local; the released zip is
+built by CI from the tag, not from whatever is in your working copy.
+
 ## Things deliberately not done
 
 Please check before building these; each was investigated and dropped with evidence, and
