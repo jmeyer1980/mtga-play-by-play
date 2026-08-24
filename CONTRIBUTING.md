@@ -124,7 +124,7 @@ be the same list, kept by hand, drifting.
 | Change | Bump |
 | --- | --- |
 | A new user-visible capability — a panel, a command, a new file in the archive | **minor** (0.5.1 → 0.6.0) |
-| Output wording, bug fixes, performance — anything that changes what is *said* about the same data | **patch** (0.5.0 → 0.5.1) |
+| Output wording, bug fixes, performance — anything that changes what is *said* about the same data | **patch** (0.5.1 → 0.5.2) |
 | A breaking change to config keys, the archive layout, or CLI arguments | **minor** while pre-1.0; **major** after |
 
 Most parser work is a patch even when it moves hundreds of lines: rewording 96 resolutions
