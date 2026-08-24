@@ -27,11 +27,14 @@ public class FindInPageTests
     [Test]
     public void The_page_carries_no_clipped_text_that_only_find_in_page_can_reach()
     {
-        var html = IndexRenderer.Render([Row()]);
+        var clipped = Markup.Parse(IndexRenderer.Render([Row()])).Descendants()
+            .Where(e => e.Attribute("class")?.Value == "vh"
+                     && e.Attribute("aria-hidden")?.Value == "true")
+            .ToList();
 
-        Assert.That(html, Does.Not.Contain("""<span class="vh" aria-hidden="true">"""),
-            "a span hidden from sight, from selection and from assistive technology is "
-            + "reachable only by find-in-page, which cannot show it");
+        Assert.That(clipped, Is.Empty,
+            "an element hidden from sight, from selection and from assistive technology "
+            + "is reachable only by find-in-page, which cannot show it");
     }
 
     /// <summary>
@@ -42,9 +45,20 @@ public class FindInPageTests
     [Test]
     public void The_spoken_form_still_rides_on_the_visible_text()
     {
-        var html = IndexRenderer.Render([Row()]);
+        var glyph = Markup.Parse(IndexRenderer.Render([Row()])).Descendants("span")
+            .Single(e => e.Attribute("aria-label")?.Value == "11 minutes 12 seconds");
 
-        Assert.That(html, Does.Contain("""<span role="img" aria-label="11 minutes 12 seconds">11m 12s</span>"""));
+        // role="img" is what makes the label apply at all — the same label on a bare
+        // span is discarded, which #46 found the expensive way.
+        Assert.That(glyph.Attribute("role")?.Value, Is.EqualTo("img"));
+
+        // Read through the cell, not the glyph: Markup.Spoken substitutes a label for a
+        // child it finds, which is what a synthesiser does when it reaches the cell.
+        // Asked of the labelled element itself it reads straight through to the text
+        // underneath, which is the one thing this must not conclude.
+        var cell = glyph.Parent!;
+        Assert.That(Markup.Clipboard(cell), Is.EqualTo("11m 12s"), "the eye gets the short form");
+        Assert.That(Markup.Spoken(cell), Is.EqualTo("11 minutes 12 seconds"), "the ear gets the words");
     }
 
     /// <summary>
