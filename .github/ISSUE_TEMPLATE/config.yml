@@ -1,5 +1,10 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Nothing came out, or the report looks stale
+    url: https://github.com/jmeyer1980/mtga-play-by-play/blob/main/SUPPORT.md
+    about: >-
+      Three things settle almost every report — the build stamp, Detailed Logs, and where
+      the output went. Each has been the answer more than once.
   - name: Accessibility — screen reader testing
     url: https://github.com/jmeyer1980/mtga-play-by-play/issues/1
     about: >-
