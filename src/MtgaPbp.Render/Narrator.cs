@@ -419,21 +419,40 @@ public static class Narrator
     /// </para>
     /// </remarks>
     private const int AbilityLimit = 60;
+    private const char OpenQuote = '\u201c';
+    private const char CloseQuote = '\u201d';
 
     private static string Ability(string detail, Density density)
     {
-        if (density == Density.Verbose) return detail;
-        if (detail.Length < 2 || detail[0] != '“') return detail;
+        if (density == Density.Verbose || detail.Length <= AbilityLimit) return detail;
 
-        var rule = detail[1..^1];
-        if (rule.Length <= AbilityLimit) return detail;
+        var space = detail.LastIndexOf(' ', Math.Min(AbilityLimit, detail.Length - 1));
+        var head = (space > 0 ? detail[..space] : detail[..AbilityLimit]).TrimEnd();
 
-        // Back to a word boundary, then off any punctuation the cut left stranded, so the
-        // ellipsis follows a word rather than a comma or a lone brace.
-        var cut = rule.LastIndexOf(' ', AbilityLimit);
-        if (cut <= 0) cut = AbilityLimit;
-        return $"“{rule[..cut].TrimEnd(' ', ',', ';', ':', '.')}…”";
+        // Off whatever the cut left dangling, so the ellipsis follows a word rather than
+        // a conjunction or a comma. Repeated because a list can end ", and".
+        for (var trimming = true; trimming && head.Length > 0;)
+        {
+            var before = head;
+            foreach (var tail in Dangling)
+                if (head.EndsWith(tail, StringComparison.Ordinal))
+                {
+                    head = head[..^tail.Length].TrimEnd();
+                    break;
+                }
+            trimming = head != before;
+        }
+
+        // A cut inside a quoted clause leaves it open. Closing it is not cosmetic: four
+        // lines in the archive ended with a quote that never opened, because the first
+        // version of this stripped Detail's outer characters on the assumption that it
+        // was one quoted rule. It is not — EventExtractor joins a permanent's clauses,
+        // so Detail can be a keyword and a rule, or several rules.
+        var open = head.Count(c => c == OpenQuote) > head.Count(c => c == CloseQuote);
+        return head + "\u2026" + (open ? CloseQuote.ToString() : "");
     }
+
+    private static readonly string[] Dangling = [" and", " or", ",", ";", ":", "."];
 
     private static string? ZoneMove(GameEvent e)
     {

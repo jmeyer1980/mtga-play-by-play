@@ -75,6 +75,44 @@ public class NarratorTests
     public void Beats_leaves_a_granted_keyword_alone() =>
         Assert.That(Granted("first strike", Density.Beats), Does.EndWith("first strike"));
 
+
+    /// <summary>
+    /// Detail is not always one quoted rule. EventExtractor joins a permanent's granted
+    /// clauses with AbilityText.Join, so it can be a keyword and a rule — "haste and
+    /// “When this permanent…”" — or several rules in a row. The archive holds 16 lines
+    /// with two or more quoted clauses and 58 where a keyword list ends in one.
+    /// <para>
+    /// The first cut at this treated Detail as a single quoted rule and stripped its
+    /// outer characters, which left four lines in the archive with an opening quote, a
+    /// closing quote and then a stray second closing quote after the ellipsis. It also
+    /// skipped every list that began with a keyword, so 20 long lines stayed long.
+    /// </para>
+    /// </summary>
+    [TestCase("haste and “When this permanent is put into a graveyard from the battlefield, draw a card.”",
+        Description = "a keyword and a rule")]
+    [TestCase("“You may look at the top card of your library any time.” and “Whenever this creature attacks, surveil 2.”",
+        Description = "two rules")]
+    [TestCase("“Each player discards a card.”, “Target player sacrifices a creature.” and “Draw a card.”",
+        Description = "three rules")]
+    public void Beats_leaves_a_shortened_clause_list_properly_quoted(string detail)
+    {
+        var line = Granted(detail, Density.Beats)!;
+
+        Assert.That(line.Count(c => c == '“'), Is.EqualTo(line.Count(c => c == '”')),
+            $"quotes are unbalanced: {line}");
+        Assert.That(line, Does.Contain("…"), "a shortened list says that it stopped");
+        Assert.That(line, Does.Not.Contain("and…"), "no dangling conjunction before the ellipsis");
+        Assert.That(line, Does.Not.Contain(",…"), "no dangling comma before the ellipsis");
+    }
+
+    /// <summary>
+    /// A list short enough to read is left whole, quotes and conjunction and all.
+    /// </summary>
+    [Test]
+    public void Beats_leaves_a_short_clause_list_whole() =>
+        Assert.That(Granted("flying and “Draw a card.”", Density.Beats),
+            Does.EndWith("flying and “Draw a card.”"));
+
     [Test]
     public void Beats_omits_phase_changes_mana_and_unknown()
     {
