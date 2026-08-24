@@ -119,7 +119,7 @@ public static class Narrator
 
             if (density == Density.Beats && VerboseOnly.Contains(e.Kind)) continue;
             if (density == Density.Beats && IsRoutineDraw(e)) continue;
-            var text = Phrase(e, t);
+            var text = Phrase(e, t, density);
             if (string.IsNullOrWhiteSpace(text)) continue;
 
             // After the phrasing, not before it: what beats refuse to show is a line
@@ -393,6 +393,48 @@ public static class Narrator
     /// in the same zone is a shuffle or a reorder and says nothing worth a line.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// How much of a granted ability's rules text the line carries.
+    /// </summary>
+    /// <remarks>
+    /// A granted keyword is a word or two — "first strike", "menace" — and is left
+    /// alone, which needs no test of length because <see cref="AbilityText.Clause"/> has
+    /// already separated the two: a keyword carries no sentence punctuation and a stated
+    /// rule always does, so only a rule arrives in quotes.
+    /// <para>
+    /// A stated rule can run to a paragraph. Measured over the archive: 438 grant lines
+    /// carry one, the median is 31 characters and reads perfectly well in place, but 99
+    /// of the lines run past 110 characters and the longest rule is 212 — a transcript
+    /// line that is mostly Oracle text. Verbose keeps all of it, because that is the view
+    /// that exists to hold everything the log said. Beats keeps the head, which is the
+    /// part that says what the ability <em>is</em>: "{T}: Add {U}" before the clause
+    /// restricting where the mana may be spent.
+    /// </para>
+    /// <para>
+    /// The limit is derived rather than picked. At 60 characters, 22% of grant lines are
+    /// shortened and 11 over-long lines remain — and those 11 are long because the card
+    /// names are long, which no amount of trimming the ability can fix. Tightening to 50
+    /// shortens 145 lines instead of 95 to save six more, which is paying a third of the
+    /// grants to fix six.
+    /// </para>
+    /// </remarks>
+    private const int AbilityLimit = 60;
+
+    private static string Ability(string detail, Density density)
+    {
+        if (density == Density.Verbose) return detail;
+        if (detail.Length < 2 || detail[0] != '“') return detail;
+
+        var rule = detail[1..^1];
+        if (rule.Length <= AbilityLimit) return detail;
+
+        // Back to a word boundary, then off any punctuation the cut left stranded, so the
+        // ellipsis follows a word rather than a comma or a lone brace.
+        var cut = rule.LastIndexOf(' ', AbilityLimit);
+        if (cut <= 0) cut = AbilityLimit;
+        return $"“{rule[..cut].TrimEnd(' ', ',', ';', ':', '.')}…”";
+    }
+
     private static string? ZoneMove(GameEvent e)
     {
         var how = Mechanic(e.Detail) is { } named ? $" ({named})" : "";
@@ -464,7 +506,7 @@ public static class Narrator
         _ => ""
     };
 
-    private static string? Phrase(GameEvent e, Transcript t) => e.Kind switch
+    private static string? Phrase(GameEvent e, Transcript t, Density density) => e.Kind switch
     {
         EventKind.TurnStart =>
             $"Turn {e.Turn} — {Who(e.ActorSeat ?? e.ActiveSeat, t)}{LifeScore(e, t)}",
@@ -607,13 +649,13 @@ public static class Narrator
         // grant is invisible and the damage step reads like the parser lost count.
         EventKind.AbilityGained when e.TargetName is not null && e.Detail is not null =>
             e.CauseName is not null
-                ? $"{e.CauseName} gives {e.TargetName} {e.Detail}"
-                : $"{e.TargetName} gains {e.Detail}",
+                ? $"{e.CauseName} gives {e.TargetName} {Ability(e.Detail, density)}"
+                : $"{e.TargetName} gains {Ability(e.Detail, density)}",
 
         // "loses", the same verb counters and life use. No cause: a wear-off has no
         // actor, and the grant line already named who put the ability there.
         EventKind.AbilityExpired when e.TargetName is not null && e.Detail is not null =>
-            $"{e.TargetName} loses {e.Detail}",
+            $"{e.TargetName} loses {Ability(e.Detail, density)}",
 
         // "enters as" rather than "becomes" for the clones that arrived copying
         // something: nothing changed about them, they came that way, and "becomes"
