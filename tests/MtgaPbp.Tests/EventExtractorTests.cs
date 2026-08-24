@@ -2080,4 +2080,38 @@ public class EventExtractorTests
             Is.EqualTo("Easy Pickings"),
             "the creature half was still in hand and dealt nothing");
     }
+
+    /// <summary>
+    /// Arena hands an ability instance an id that already belonged to something else and
+    /// never describes it again, so the tracker goes on answering with the old thing's
+    /// name. Across the archive that put 10 trigger lines in the transcript under the
+    /// name of a card that did not trigger — a land's mana ability wearing the name of an
+    /// Adventure whose id it inherited (#77).
+    /// </summary>
+    [Test]
+    public void Extract_refuses_to_name_an_ability_after_the_object_whose_id_it_reused()
+    {
+        var card = Gre("""
+        { "type": "GameStateType_Full",
+          "turnInfo": { "turnNumber": 2, "activePlayer": 1 },
+          "gameObjects": [
+            { "instanceId": 269, "grpId": 1, "name": 1000,
+              "type": "GameObjectType_Card", "controllerSeatId": 1 } ] }
+        """);
+
+        // The same id comes back as an ability, announced only by the annotation.
+        var ability = Gre("""
+        { "type": "GameStateType_Diff",
+          "annotations": [
+            { "id": 9, "affectorId": 218, "affectedIds": [ 269 ],
+              "type": [ "AnnotationType_AbilityInstanceCreated" ], "details": [
+                { "key": "source_zone", "valueInt32": [ 28 ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, card, ability);
+
+        Assert.That(t.Events.Where(x => x.Kind == EventKind.Triggered)
+                            .Select(x => x.SourceName), Does.Not.Contain("Lightning Bolt"),
+            "the card whose id was reused did not trigger");
+    }
 }
