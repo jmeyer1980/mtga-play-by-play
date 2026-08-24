@@ -1055,4 +1055,94 @@ public class NarratorTests
         Assert.That(lines, Has.None.Matches<Line>(l => l.Text.Contains("draws a card")));
         Assert.That(lines, Has.One.Matches<Line>(l => l.Text.Contains("Hop to It")));
     }
+
+    // ---------- a run marker over a crowd ----------
+
+    /// <summary>
+    /// Reported from a real transcript: "Squirrel gets 1 +1/+1 counter ×24" read as one
+    /// Squirrel standing up as a 25/25. The log has 45 objects taking exactly one counter
+    /// apiece, and the attack lines directly below said "Squirrel 2/2 ×21" in the same
+    /// breath. Collapsing is still right — twenty-four identical lines would be worse —
+    /// but the marker has to say which of the two things happened.
+    /// </summary>
+    [Test]
+    public void Counters_landing_on_different_permanents_say_one_each()
+    {
+        var lines = Narrator.Narrate(T(
+            Enumerable.Range(0, 24).Select(i =>
+                E(EventKind.CounterChanged, i) with
+                {
+                    TargetInstanceId = 100 + i,
+                    TargetName = "Squirrel",
+                    Amount = 1,
+                    Detail = "+1/+1"
+                }).ToArray()), Density.Beats);
+
+        Assert.That(lines.Single().Text,
+            Is.EqualTo("24× Squirrel gets 1 +1/+1 counter"));
+    }
+
+    /// <summary>
+    /// The case the plain marker was written for, and it must not change: one permanent
+    /// taking counters over and over really does add up.
+    /// </summary>
+    [Test]
+    public void Counters_landing_on_one_permanent_keep_the_plain_marker()
+    {
+        var lines = Narrator.Narrate(T(
+            Enumerable.Range(0, 4).Select(i =>
+                E(EventKind.CounterChanged, i) with
+                {
+                    TargetInstanceId = 100,
+                    TargetName = "Mossborn Hydra",
+                    Amount = 1,
+                    Detail = "+1/+1"
+                }).ToArray()), Density.Beats);
+
+        Assert.That(lines.Single().Text,
+            Is.EqualTo("Mossborn Hydra gets 1 +1/+1 counter ×4"));
+    }
+
+    /// <summary>
+    /// Attacking does not accumulate, so five Rabbits are five Rabbits to any reader and
+    /// a note saying so is clutter on a line nobody misread.
+    /// </summary>
+    [Test]
+    public void A_run_of_attacks_by_different_creatures_is_left_alone()
+    {
+        var lines = Narrator.Narrate(T(
+            Enumerable.Range(0, 5).Select(i =>
+                E(EventKind.Attack, i) with
+                {
+                    SourceInstanceId = 200 + i,
+                    SourceName = "Rabbit",
+                    ActorSeat = 1
+                }).ToArray()), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("You attack with Rabbit ×5"));
+    }
+
+    /// <summary>
+    /// A statline change adds up the same way a counter does.
+    /// </summary>
+    /// <remarks>
+    /// The detail is the modifier alone — the renderer supplies the verb. This test
+    /// first passed "gets +2/+1" and so built "Soldier 1/1 gets gets +2/+1", which a
+    /// prefix-only assertion was perfectly happy to accept. Asserting the whole line is
+    /// what makes that impossible to miss again.
+    /// </remarks>
+    [Test]
+    public void A_pump_on_different_creatures_counts_the_creatures()
+    {
+        var lines = Narrator.Narrate(T(
+            Enumerable.Range(0, 3).Select(i =>
+                E(EventKind.StatsModified, i) with
+                {
+                    TargetInstanceId = 300 + i,
+                    TargetName = "Soldier 1/1",
+                    Detail = "+2/+1"
+                }).ToArray()), Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("3× Soldier 1/1 gets +2/+1"));
+    }
 }

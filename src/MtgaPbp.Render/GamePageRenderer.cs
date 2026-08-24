@@ -184,14 +184,28 @@ public static partial class GamePageRenderer
     /// </summary>
     private static string Speech(string text)
     {
+        // A leading count means the run was a crowd rather than a repetition — see
+        // Narrator.Collapse. The glyph is hidden for the same reason the decklist hides
+        // its own: a synthesiser that skips U+00D7 reads "24×" as "24" and runs it into
+        // the card name. The count is said at the end instead, where it cannot be
+        // mistaken for part of the sentence.
+        var crowd = System.Text.RegularExpressions.Regex.Match(text, @"^(\d+)× ");
+        if (crowd.Success)
+        {
+            var n = crowd.Groups[1].Value;
+            return $"""<span class="run" aria-hidden="true">{E(n)}× </span>""" +
+                   Separated(text[crowd.Length..]) +
+                   $"""<span class="vh">, {E(n)} of them, one each</span>""";
+        }
+
         var i = text.LastIndexOf(" ×", StringComparison.Ordinal);
         if (i > 0 &&
             int.TryParse(text.AsSpan(i + 2), NumberStyles.None, CultureInfo.InvariantCulture,
-                out var n) && n > 1)
+                out var run) && run > 1)
         {
             return Separated(text[..i]) +
-                   $"""<span class="run" aria-hidden="true"> ×{n}</span>""" +
-                   $"""<span class="vh">, {n} times in a row</span>""";
+                   $"""<span class="run" aria-hidden="true"> ×{run}</span>""" +
+                   $"""<span class="vh">, {run} times in a row</span>""";
         }
         return Separated(text);
     }
