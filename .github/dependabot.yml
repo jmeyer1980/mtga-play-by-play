@@ -1,0 +1,29 @@
+# Updates for the two ecosystems this repository actually has. CI already fails on a
+# vulnerable dependency — see the audit step in ci.yml — so this is about not being
+# several versions behind when one is found, rather than about finding them.
+version: 2
+updates:
+  # The workflows pin actions by major version, so this is what moves them when a new
+  # one lands. Monthly: three actions change a few times a year between them.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore"
+    labels: ["dependencies"]
+
+  # NuGet is grouped into a single pull request rather than one per package. The test
+  # projects move together — NUnit and its analyzer and the test SDK are one upgrade in
+  # practice, and three separate PRs that must be merged in order is worse than one.
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore"
+    labels: ["dependencies"]
+    groups:
+      test-stack:
+        patterns: ["NUnit*", "Microsoft.NET.Test.Sdk", "coverlet*"]
