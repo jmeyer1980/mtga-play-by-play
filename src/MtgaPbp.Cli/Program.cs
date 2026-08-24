@@ -122,6 +122,25 @@ public static class Program
         return 1;
     }
 
+    /// <summary>
+    /// Passes the scan through untouched, showing each envelope to the ledger on its way.
+    /// </summary>
+    /// <remarks>
+    /// A side channel rather than a second scan, because the log is 28 MB and reading it
+    /// twice to answer two questions would double the cost of every capture. The slicer
+    /// keeps only what falls between a match's start and end, and an inventory snapshot
+    /// falls outside every match — so without this it reaches nothing (#51).
+    /// </remarks>
+    private static IEnumerable<LogEnvelope> Offering(
+        IEnumerable<LogEnvelope> envelopes, InventoryLedger ledger)
+    {
+        foreach (var envelope in envelopes)
+        {
+            ledger.Observe(envelope.Root);
+            yield return envelope;
+        }
+    }
+
     private static int Capture(Config cfg) => CaptureCore(cfg, quiet: false).Exit;
 
     /// <summary>
@@ -136,6 +155,7 @@ public static class Program
     private static (int Exit, int Written) CaptureCore(Config cfg, bool quiet)
     {
         var archive = new RawArchive(cfg.ArchiveDir);
+        var ledger = new InventoryLedger(cfg.ArchiveDir);
         var stats = new ScanStats();
         var written = 0;
         var sawAnyLog = false;
@@ -143,9 +163,14 @@ public static class Program
         foreach (var log in cfg.LogPaths.Where(File.Exists))
         {
             sawAnyLog = true;
-            foreach (var slice in MatchSlicer.Slice(LogScanner.Scan(log, stats)))
+            foreach (var slice in MatchSlicer.Slice(Offering(LogScanner.Scan(log, stats), ledger)))
                 if (archive.Write(slice)) written++;
         }
+
+        // After the logs, because the ledger records where the last of them left the
+        // player. Its own no-op cases are cheap, so this is called even on a run that
+        // captured nothing.
+        ledger.Commit();
 
         if (!sawAnyLog)
         {
@@ -531,7 +556,11 @@ public static class Program
             silenced: null, nowMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
         var indexPath = Path.GetFullPath(Path.Combine(cfg.OutputDir, "index.html"));
-        File.WriteAllText(indexPath, IndexRenderer.Render(summaries, nudge));
+        // Read rather than carried through from capture: `build` re-derives the whole
+        // site from the archive without reading a log at all, and the ledger is part of
+        // the archive.
+        var inventory = new InventoryLedger(cfg.ArchiveDir).Entries;
+        File.WriteAllText(indexPath, IndexRenderer.Render(summaries, nudge, inventory));
 
         // A caller that draws its own screen takes the state and says it its own way;
         // everyone else gets the plain line. `watch` is the former, so the nudge does

@@ -158,6 +158,7 @@ Output lands in `$env:USERPROFILE\MTGA_PlayByPlay` (`%USERPROFILE%\MTGA_PlayByPl
 
 ```
 archive/raw/<matchId>.json.gz    durable source of truth, ~80 KB per match
+archive/inventory.json           gold, gems, vault and wildcards, appended when they move
 out/index.html                   all games, most recent first, searchable
 out/games/<matchId>.html         one self-contained page per game
 out/text/<matchId>.md            markdown, for pasting into chat
@@ -165,6 +166,13 @@ out/text/<matchId>.md            markdown, for pasting into chat
 
 Open `out/index.html` in any browser. Search filters on opponent, event, result,
 date, deck colours, and every card that appeared.
+
+The **Vault** panel reports gold, gems, vault progress and your four wildcard counts,
+and how each has moved since the tool first saw them. Arena writes those totals into
+the log but never wrote the old ones anywhere a reader could reach, so the history
+starts the first time you capture and cannot be backfilled — the panel says so until
+there are two readings to compare. It cannot tell you which cards you own or crafted:
+the log records that thirteen uncommon wildcards were spent and names none of them.
 
 The Deck column says which deck you played, as WUBRG letters — Arena never sends a
 deck name, so colour is the only thing that tells one of yours from another. In Brawl

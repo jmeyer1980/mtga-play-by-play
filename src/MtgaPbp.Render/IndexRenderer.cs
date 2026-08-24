@@ -79,7 +79,10 @@ public static class IndexRenderer
     /// rather than worked out here, because whether a night is still going is a question
     /// about the clock and this method is otherwise a pure function of its rows.
     /// </param>
-    public static string Render(IEnumerable<MatchSummary> rows, Nudge? nudge = null)
+    public static string Render(
+        IEnumerable<MatchSummary> rows,
+        Nudge? nudge = null,
+        IReadOnlyList<InventorySnapshot>? inventory = null)
     {
         var ordered = rows.OrderByDescending(r => r.SortKey).ToList();
 
@@ -99,6 +102,7 @@ public static class IndexRenderer
             var stats = IndexStats.From(ordered);
             body.Append(Coach(nudge));
             body.Append(Panel(stats));
+            body.Append(Vault(inventory ?? []));
 
             // The counter is server-rendered rather than filled in by script: it is a
             // live region, and a region that gains its first text after load announces
@@ -479,6 +483,88 @@ public static class IndexRenderer
     /// and says itself again.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// What the player holds that is not a card, and how it has moved.
+    /// </summary>
+    /// <remarks>
+    /// Nothing at all when the ledger is empty, which is every archive until this has
+    /// been capturing for a while: the snapshots were discarded at capture time for the
+    /// whole life of the project and cannot be backfilled. A panel of zeroes would read
+    /// as "you own nothing", which is worse than saying nothing (#51).
+    /// <para>
+    /// The change column appears only once there are two readings to compare. On the
+    /// first day there is a total and no history, and a column of "+0" would suggest the
+    /// tool had watched a week of nothing happening rather than having just started.
+    /// </para>
+    /// <para>
+    /// It cannot say what was crafted. The log records that thirteen uncommon wildcards
+    /// were spent and names none of the cards, so the honest report is the count.
+    /// </para>
+    /// </remarks>
+    private static string Vault(IReadOnlyList<InventorySnapshot> ledger)
+    {
+        if (ledger.Count == 0) return "";
+
+        var now = ledger[^1];
+        var first = ledger[0];
+        var moved = ledger.Count > 1;
+
+        var sb = new StringBuilder();
+        sb.Append("""
+            <section id="vault" aria-labelledby="vault-heading">
+            <h2 id="vault-heading">Vault</h2>
+            <table class="stats"><caption class="vh">Currencies and wildcards</caption>
+            <thead><tr><th scope="col">Holding</th><th scope="col">Now</th>
+            """);
+        if (moved)
+            sb.Append($"""<th scope="col">Change since {E(Day(first))}</th>""");
+        sb.Append("</tr></thead><tbody>");
+
+        foreach (var (label, value, was) in new[]
+        {
+            ("Gold", now.Gold, first.Gold),
+            ("Gems", now.Gems, first.Gems),
+            ("Vault progress", now.VaultProgress, first.VaultProgress),
+            ("Common wildcards", now.Commons, first.Commons),
+            ("Uncommon wildcards", now.Uncommons, first.Uncommons),
+            ("Rare wildcards", now.Rares, first.Rares),
+            ("Mythic wildcards", now.Mythics, first.Mythics)
+        })
+        {
+            sb.Append($"""<tr><th scope="row">{label}</th><td>{value:N0}</td>""");
+            if (moved) sb.Append($"<td>{Moved(value - was)}</td>");
+            sb.Append("</tr>");
+        }
+
+        sb.Append("</tbody></table>");
+        if (!moved)
+            sb.Append("""
+                <p class="note">One reading so far. Arena writes these totals into the log
+                but never wrote the old ones anywhere this could reach, so the history
+                starts here rather than with the archive.</p>
+                """);
+        sb.Append("</section>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// A signed change, or an em dash when it did not move.
+    /// </summary>
+    /// <remarks>
+    /// A real minus sign rather than a hyphen. A screen reader says "minus thirteen" for
+    /// one and, depending on the voice, "thirteen" or "dash thirteen" for the other —
+    /// and thirteen wildcards gained is the opposite of thirteen spent.
+    /// </remarks>
+    private static string Moved(int delta) => delta switch
+    {
+        0 => """<span aria-hidden="true">—</span><span class="vh">no change</span>""",
+        > 0 => $"+{delta:N0}",
+        _ => $"−{-delta:N0}"
+    };
+
+    private static string Day(InventorySnapshot s) =>
+        s.FirstSeenUtc.ToLocalTime().ToString("yyyy-MM-dd");
+
     private static string Coach(Nudge? nudge)
     {
         if (nudge is null) return "";
