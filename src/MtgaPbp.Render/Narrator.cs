@@ -35,9 +35,21 @@ public enum Density { Beats, Verbose }
 /// pages emit no <c>h3</c> at all, so the added rule cannot reach them.
 /// </para>
 /// </param>
+/// <param name="Accrues">
+/// The permanent a quantity in this line adds to, on the lines that carry such a
+/// quantity — counters and statline changes. Null everywhere else.
+/// <para>
+/// It exists for one distinction. "Squirrel gets 1 +1/+1 counter ×24" reads as one
+/// Squirrel standing up as a 25/25, and it was twenty-four Squirrels taking one apiece.
+/// The trap is specific to lines whose number a reader would add up: "You attack with
+/// Rabbit ×5" is five Rabbits to anyone, because attacking does not accumulate, and
+/// marking that one would be noise. So this is set only where the misreading is
+/// available.
+/// </para>
+/// </param>
 public sealed record Line(
     int Turn, int Indent, string Text, bool IsTurnHeader, bool IsBoard = false,
-    int Game = 0, string Anchor = "", int Level = 2);
+    int Game = 0, string Anchor = "", int Level = 2, int? Accrues = null);
 
 public static class Narrator
 {
@@ -139,7 +151,8 @@ public static class Narrator
                 e.Kind == EventKind.BoardSnapshot,
                 Game: e.GameNumber,
                 Anchor: header ? (multi ? $"g{game}-t{e.Turn}" : $"t{e.Turn}") : "",
-                Level: under));
+                Level: under,
+                Accrues: Accumulates(e.Kind) ? e.TargetInstanceId ?? e.SourceInstanceId : null));
         }
         return Collapse(lines);
     }
@@ -172,6 +185,20 @@ public static class Narrator
     /// The game headings between them already break every run in practice; the check is
     /// here so that stays true of the fold itself rather than of the layout around it.
     /// </remarks>
+
+    /// <summary>
+    /// Whether a line of this kind reports a quantity that a reader would add up if the
+    /// line repeated.
+    /// </summary>
+    /// <remarks>
+    /// Counters and statline changes do: three of them on one permanent is a bigger
+    /// permanent, so a run marker over them invites the sum. Everything else does not.
+    /// Attacking five times with the same-named creature is five creatures to any
+    /// reader, and a note saying so would be clutter on a line nobody misread.
+    /// </remarks>
+    private static bool Accumulates(EventKind kind) =>
+        kind is EventKind.CounterChanged or EventKind.StatsModified or EventKind.StatsExpired;
+
     private static List<Line> Collapse(List<Line> lines)
     {
         var result = new List<Line>(lines.Count);
@@ -186,7 +213,36 @@ public static class Narrator
                    lines[i + run].Game == line.Game)
                 run++;
 
-            result.Add(run == 1 ? line : line with { Text = $"{line.Text} ×{run}" });
+            if (run == 1)
+            {
+                result.Add(line);
+                i += run;
+                continue;
+            }
+
+            // Two or more distinct permanents means the run is a crowd, not a repetition.
+            // Anything less — no subjects at all, or one subject named over and over —
+            // keeps the plain marker, which is what a line about a player or a spell on
+            // the stack has always had and still needs.
+            var subjects = lines.Skip(i).Take(run)
+                .Select(l => l.Accrues)
+                .Where(id => id is not null)
+                .Distinct()
+                .Count();
+
+            // Where the marker sits is what it means, so nothing has to be explained.
+            // Trailing, it counts the event: "Iron Man's ability triggers ×2" happened
+            // twice. Leading, it counts the subject: "24× Squirrel gets 1 +1/+1 counter"
+            // is twenty-four Squirrels — the same shape a decklist already uses for
+            // "4× Hare Apparent", so the idiom is one a reader of this app has met.
+            //
+            // Before this, both were the trailing form, and the crowd read as the
+            // repetition: one Squirrel standing up as a 25/25 when every one of the
+            // twenty-four was a 2/2, as the attack lines directly below it said.
+            result.Add(line with
+            {
+                Text = subjects > 1 ? $"{run}× {line.Text}" : $"{line.Text} ×{run}"
+            });
             i += run;
         }
         return result;
