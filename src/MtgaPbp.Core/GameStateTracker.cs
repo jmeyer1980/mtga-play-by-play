@@ -820,8 +820,16 @@ public sealed class GameStateTracker(ICardDb cards)
             }
         }
 
-        return $"Card #{o.GrpId}";
+        // Before the id fallback, because 3 is not an id the database is ever going to
+        // answer for. See CardNames.FaceDown.
+        return o.GrpId == FaceDownGrpId ? CardNames.FaceDown : $"Card #{o.GrpId}";
     }
+
+    /// <summary>
+    /// The grpId Arena gives a card whose face it is not showing us. Not a card, and in
+    /// no card database — see <see cref="CardNames.FaceDown"/>.
+    /// </summary>
+    private const int FaceDownGrpId = 3;
 
     /// <summary>
     /// How an object reads when it has to be named through whatever produced it. An

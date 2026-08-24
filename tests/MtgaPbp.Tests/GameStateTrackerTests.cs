@@ -657,4 +657,27 @@ public class GameStateTrackerTests
         Assert.That(t.ZoneTypes[28], Is.EqualTo("ZoneType_Battlefield"));
         Assert.That(t.ZoneTypes[35], Is.EqualTo("ZoneType_Hand"));
     }
+
+    /// <summary>
+    /// grpId 3 is Arena's face-down card — the card back, not a card. It is in no card
+    /// database and never will be, and every one of the archive's 245 sightings carries
+    /// <c>isFacedown: true</c>. Naming it after its id told the reader an internal number
+    /// where the log carried a plain English answer, and because that number read as a
+    /// missing card the readable view dropped the line entirely — hiding a face-down
+    /// creature attacking, blocking and dealing damage (#72).
+    /// </summary>
+    [Test]
+    public void NameOf_calls_arenas_face_down_card_what_it_is()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full", "gameObjects": [
+          { "instanceId": 491, "grpId": 3, "type": "GameObjectType_Card",
+            "ownerSeatId": 1, "controllerSeatId": 1, "isFacedown": true } ] }
+        """));
+
+        Assert.That(t.NameOf(491), Is.EqualTo("Face-down card"));
+        Assert.That(CardNames.IsPlaceholder(t.NameOf(491)), Is.False,
+            "a card known to be face down is a fact, not a failure to resolve it");
+    }
 }

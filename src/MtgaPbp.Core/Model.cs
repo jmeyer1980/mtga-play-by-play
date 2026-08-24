@@ -36,6 +36,27 @@ public static class CardNames
     public const string Unknown = "Unknown card";
 
     /// <summary>
+    /// Arena's face-down card. grpId 3 is the card back rather than a card: it is in no
+    /// card database and never will be, and all 245 of the archive's sightings carry
+    /// <c>isFacedown: true</c>. It covers foretell, manifest and disguise, an Adventure's
+    /// exile, and anything conjured or drafted face down.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not a placeholder. The others mean "the log did not say", and a line
+    /// built on one is worth dropping; this one means "the log said it is face down",
+    /// which is a fact about the game and the whole of what there is to know. Treating it
+    /// as a gap hid a face-down creature attacking, blocking and dealing damage from the
+    /// readable view, leaving life totals that moved with nothing beneath them to say why
+    /// — the same failure as #41, arrived at from the other direction (#72).
+    /// <para>
+    /// Proper-noun shaped for the same reason as <see cref="Unknown"/>: every sentence
+    /// template treats a name as a proper noun, so it needs no article and reads at the
+    /// start of a line as well as in the middle of one.
+    /// </para>
+    /// </remarks>
+    public const string FaceDown = "Face-down card";
+
+    /// <summary>
     /// True for the three fallbacks: <see cref="Unknown"/> when the object was never
     /// seen, "Card #76729" when its grpId is not in the card database, and a bare
     /// "#123" from any caller predating <see cref="Unknown"/>. Checking only the
