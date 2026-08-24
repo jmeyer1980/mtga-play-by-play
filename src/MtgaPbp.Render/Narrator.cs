@@ -395,7 +395,9 @@ public static class Narrator
     /// </remarks>
     private static string? ZoneMove(GameEvent e)
     {
-        if (e.ToZone is null) return $"{e.SourceName} moves ({e.Detail})";
+        var how = Mechanic(e.Detail) is { } named ? $" ({named})" : "";
+
+        if (e.ToZone is null) return $"{e.SourceName} moves{how}";
         if (e.ToZone == e.FromZone) return null;
 
         var where = e.ToZone switch
@@ -408,13 +410,39 @@ public static class Narrator
             "ZoneType_Stack" => "goes on the stack",
             _ => null
         };
-        if (where is null) return $"{e.SourceName} moves ({e.Detail})";
 
-        // "Put" is the engine saying only that something moved, and "nil" is it saying
-        // nothing at all. Neither adds to a sentence that already names the destination.
-        var how = e.Detail is null or "" or "Put" or "nil" ? "" : $" ({e.Detail})";
-        return $"{e.SourceName} {where}{how}";
+        return where is null ? $"{e.SourceName} moves{how}" : $"{e.SourceName} {where}{how}";
     }
+
+    /// <summary>
+    /// The transfer category when it names a mechanic, or null when it is only the engine
+    /// keeping its own books.
+    /// </summary>
+    /// <remarks>
+    /// "Put" is the engine saying only that something moved and "nil" is it saying nothing
+    /// at all; neither adds to a sentence that already names the destination. "Separate"
+    /// is it splitting a revealed pile, and was the largest single parenthetical in the
+    /// archive at 39 lines — "Island is put into hand (Separate)" tells a reader nothing
+    /// the first four words did not. "DestroyNoRegenerate" reports that a permission
+    /// nobody exercised was withheld.
+    /// <para>
+    /// Everything else is kept, which is the point: Warp, Conjure, Seek and Draft each
+    /// name something a player did, and a mechanic printed in some future set should
+    /// surface rather than disappear. ManifestLike is left in for exactly that reason
+    /// rather than because it has been judged — it is the case the rule exists to protect
+    /// (#73).
+    /// </para>
+    /// <para>
+    /// Asked on every path, including the two that have no destination to name. Those two
+    /// used to interpolate the category unconditionally, which is how one "moves (Put)"
+    /// survived into the archive after the reading was supposedly retired, and how a
+    /// category the log omitted would have rendered as an empty pair of brackets.
+    /// </para>
+    /// </remarks>
+    private static string? Mechanic(string? detail) =>
+        detail is null or "" or "Put" or "nil" or "Separate" or "DestroyNoRegenerate"
+            ? null
+            : detail;
 
     /// <summary>
     /// Where a return went, when the log said.
