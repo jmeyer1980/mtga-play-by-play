@@ -17,6 +17,102 @@ public class NarratorTests
     private static GameEvent E(EventKind kind, int seq = 0) =>
         new() { Seq = seq, Kind = kind, Turn = 1, ActiveSeat = 1 };
 
+
+    // ---------- Issue 51 follow-up: a granted ability that runs to a paragraph ----------
+
+    private const string LongRule =
+        "“{T}: Add {U}. Spend this mana only to cast a spell from anywhere other than your hand.”";
+
+    private static string? Granted(string detail, Density density) =>
+        Narrator.Narrate(T(E(EventKind.AbilityGained) with
+        {
+            CauseName = "Mm'menon, the Right Hand",
+            TargetName = "Chromatic Lantern",
+            Detail = detail
+        }), density).Select(l => l.Text).FirstOrDefault(t => t.Contains("gives"));
+
+    /// <summary>
+    /// Verbose is the view that exists to hold everything the log said, so a granted
+    /// ability keeps its whole rules text there however long it runs.
+    /// </summary>
+    [Test]
+    public void Verbose_keeps_the_whole_of_a_granted_ability() =>
+        Assert.That(Granted(LongRule, Density.Verbose), Does.Contain(
+            "Spend this mana only to cast a spell from anywhere other than your hand"));
+
+    /// <summary>
+    /// The readable view does not. Measured over the archive: 438 grant lines carry a
+    /// quoted rule, 99 of them run past 110 characters, and one ran to 212. The head of
+    /// the rule is the part that says what the ability is, so the cut keeps it and lands
+    /// on a word boundary rather than mid-word.
+    /// </summary>
+    [Test]
+    public void Beats_keeps_the_head_of_a_long_granted_ability_and_says_it_stopped()
+    {
+        var line = Granted(LongRule, Density.Beats)!;
+
+        Assert.That(line, Does.StartWith("Mm'menon, the Right Hand gives Chromatic Lantern “{T}: Add {U}."));
+        Assert.That(line, Does.EndWith("…”"), "the reader is told the rule goes on");
+        Assert.That(line, Does.Not.Contain("anywhere other than your hand"));
+        Assert.That(line, Does.Not.Contain(" …"), "the cut lands on a word, not on a space");
+    }
+
+    /// <summary>
+    /// More than half of them are short enough to read in place — the median quoted rule
+    /// is 31 characters — and shortening those would cost information for nothing.
+    /// </summary>
+    [Test]
+    public void Beats_leaves_a_short_granted_ability_whole() =>
+        Assert.That(Granted("“{T}: Add one mana of any color.”", Density.Beats),
+            Does.EndWith("“{T}: Add one mana of any color.”"));
+
+    /// <summary>
+    /// A keyword is not a rules paragraph and never was. It carries no sentence
+    /// punctuation, which is how AbilityText.Clause tells the two apart in the first
+    /// place, and it is already the shortest form of itself.
+    /// </summary>
+    [Test]
+    public void Beats_leaves_a_granted_keyword_alone() =>
+        Assert.That(Granted("first strike", Density.Beats), Does.EndWith("first strike"));
+
+
+    /// <summary>
+    /// Detail is not always one quoted rule. EventExtractor joins a permanent's granted
+    /// clauses with AbilityText.Join, so it can be a keyword and a rule — "haste and
+    /// “When this permanent…”" — or several rules in a row. The archive holds 16 lines
+    /// with two or more quoted clauses and 58 where a keyword list ends in one.
+    /// <para>
+    /// The first cut at this treated Detail as a single quoted rule and stripped its
+    /// outer characters, which left four lines in the archive with an opening quote, a
+    /// closing quote and then a stray second closing quote after the ellipsis. It also
+    /// skipped every list that began with a keyword, so 20 long lines stayed long.
+    /// </para>
+    /// </summary>
+    [TestCase("haste and “When this permanent is put into a graveyard from the battlefield, draw a card.”",
+        Description = "a keyword and a rule")]
+    [TestCase("“You may look at the top card of your library any time.” and “Whenever this creature attacks, surveil 2.”",
+        Description = "two rules")]
+    [TestCase("“Each player discards a card.”, “Target player sacrifices a creature.” and “Draw a card.”",
+        Description = "three rules")]
+    public void Beats_leaves_a_shortened_clause_list_properly_quoted(string detail)
+    {
+        var line = Granted(detail, Density.Beats)!;
+
+        Assert.That(line.Count(c => c == '“'), Is.EqualTo(line.Count(c => c == '”')),
+            $"quotes are unbalanced: {line}");
+        Assert.That(line, Does.Contain("…"), "a shortened list says that it stopped");
+        Assert.That(line, Does.Not.Contain("and…"), "no dangling conjunction before the ellipsis");
+        Assert.That(line, Does.Not.Contain(",…"), "no dangling comma before the ellipsis");
+    }
+
+    /// <summary>
+    /// A list short enough to read is left whole, quotes and conjunction and all.
+    /// </summary>
+    [Test]
+    public void Beats_leaves_a_short_clause_list_whole() =>
+        Assert.That(Granted("flying and “Draw a card.”", Density.Beats),
+            Does.EndWith("flying and “Draw a card.”"));
+
     [Test]
     public void Beats_omits_phase_changes_mana_and_unknown()
     {

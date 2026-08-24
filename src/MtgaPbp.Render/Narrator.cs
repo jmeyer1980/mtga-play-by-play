@@ -119,7 +119,7 @@ public static class Narrator
 
             if (density == Density.Beats && VerboseOnly.Contains(e.Kind)) continue;
             if (density == Density.Beats && IsRoutineDraw(e)) continue;
-            var text = Phrase(e, t);
+            var text = Phrase(e, t, density);
             if (string.IsNullOrWhiteSpace(text)) continue;
 
             // After the phrasing, not before it: what beats refuse to show is a line
@@ -393,6 +393,67 @@ public static class Narrator
     /// in the same zone is a shuffle or a reorder and says nothing worth a line.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// How much of a granted ability's rules text the line carries.
+    /// </summary>
+    /// <remarks>
+    /// A granted keyword is a word or two — "first strike", "menace" — and is left
+    /// alone, which needs no test of length because <see cref="AbilityText.Clause"/> has
+    /// already separated the two: a keyword carries no sentence punctuation and a stated
+    /// rule always does, so only a rule arrives in quotes.
+    /// <para>
+    /// A stated rule can run to a paragraph. Measured over the archive: 438 grant lines
+    /// carry one, the median is 31 characters and reads perfectly well in place, but 99
+    /// of the lines run past 110 characters and the longest rule is 212 — a transcript
+    /// line that is mostly Oracle text. Verbose keeps all of it, because that is the view
+    /// that exists to hold everything the log said. Beats keeps the head, which is the
+    /// part that says what the ability <em>is</em>: "{T}: Add {U}" before the clause
+    /// restricting where the mana may be spent.
+    /// </para>
+    /// <para>
+    /// The limit is derived rather than picked. At 60 characters, 22% of grant lines are
+    /// shortened and 11 over-long lines remain — and those 11 are long because the card
+    /// names are long, which no amount of trimming the ability can fix. Tightening to 50
+    /// shortens 145 lines instead of 95 to save six more, which is paying a third of the
+    /// grants to fix six.
+    /// </para>
+    /// </remarks>
+    private const int AbilityLimit = 60;
+    private const char OpenQuote = '\u201c';
+    private const char CloseQuote = '\u201d';
+
+    private static string Ability(string detail, Density density)
+    {
+        if (density == Density.Verbose || detail.Length <= AbilityLimit) return detail;
+
+        var space = detail.LastIndexOf(' ', Math.Min(AbilityLimit, detail.Length - 1));
+        var head = (space > 0 ? detail[..space] : detail[..AbilityLimit]).TrimEnd();
+
+        // Off whatever the cut left dangling, so the ellipsis follows a word rather than
+        // a conjunction or a comma. Repeated because a list can end ", and".
+        for (var trimming = true; trimming && head.Length > 0;)
+        {
+            var before = head;
+            foreach (var tail in Dangling)
+                if (head.EndsWith(tail, StringComparison.Ordinal))
+                {
+                    head = head[..^tail.Length].TrimEnd();
+                    break;
+                }
+            trimming = head != before;
+        }
+
+        // A cut inside a quoted clause leaves it open. Closing it is not cosmetic: four
+        // lines in the archive ended with a quote that never opened, because the first
+        // version of this stripped Detail's outer characters on the assumption that it
+        // was one quoted rule. It is not — EventExtractor joins a permanent's clauses,
+        // so Detail can be a keyword and a rule, or several rules.
+        var open = head.Count(c => c == OpenQuote) > head.Count(c => c == CloseQuote);
+        return head + "\u2026" + (open ? CloseQuote.ToString() : "");
+    }
+
+    private static readonly string[] Dangling = [" and", " or", ",", ";", ":", "."];
+
     private static string? ZoneMove(GameEvent e)
     {
         var how = Mechanic(e.Detail) is { } named ? $" ({named})" : "";
@@ -464,7 +525,7 @@ public static class Narrator
         _ => ""
     };
 
-    private static string? Phrase(GameEvent e, Transcript t) => e.Kind switch
+    private static string? Phrase(GameEvent e, Transcript t, Density density) => e.Kind switch
     {
         EventKind.TurnStart =>
             $"Turn {e.Turn} — {Who(e.ActorSeat ?? e.ActiveSeat, t)}{LifeScore(e, t)}",
@@ -607,13 +668,13 @@ public static class Narrator
         // grant is invisible and the damage step reads like the parser lost count.
         EventKind.AbilityGained when e.TargetName is not null && e.Detail is not null =>
             e.CauseName is not null
-                ? $"{e.CauseName} gives {e.TargetName} {e.Detail}"
-                : $"{e.TargetName} gains {e.Detail}",
+                ? $"{e.CauseName} gives {e.TargetName} {Ability(e.Detail, density)}"
+                : $"{e.TargetName} gains {Ability(e.Detail, density)}",
 
         // "loses", the same verb counters and life use. No cause: a wear-off has no
         // actor, and the grant line already named who put the ability there.
         EventKind.AbilityExpired when e.TargetName is not null && e.Detail is not null =>
-            $"{e.TargetName} loses {e.Detail}",
+            $"{e.TargetName} loses {Ability(e.Detail, density)}",
 
         // "enters as" rather than "becomes" for the clones that arrived copying
         // something: nothing changed about them, they came that way, and "becomes"
