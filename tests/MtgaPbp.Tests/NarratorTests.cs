@@ -26,7 +26,9 @@ public class NarratorTests
     private static string? Granted(string detail, Density density) =>
         Narrator.Narrate(T(E(EventKind.AbilityGained) with
         {
-            CauseName = "Mm'menon, the Right Hand", TargetName = "Chromatic Lantern", Detail = detail
+            CauseName = "Mm'menon, the Right Hand",
+            TargetName = "Chromatic Lantern",
+            Detail = detail
         }), density).Select(l => l.Text).FirstOrDefault(t => t.Contains("gives"));
 
     /// <summary>
