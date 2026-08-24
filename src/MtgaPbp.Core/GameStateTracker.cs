@@ -706,6 +706,47 @@ public sealed class GameStateTracker(ICardDb cards)
         return cur;
     }
 
+    /// <summary>
+    /// Follows the id-change chain the way <see cref="Resolve"/> does, but stops short of
+    /// a link that also changes which card the object is. Cycle-safe.
+    /// </summary>
+    /// <remarks>
+    /// An Adventure card is one card wearing two faces, and Arena renumbers it as it
+    /// moves between them: the spell is on the stack under one id carrying the Adventure's
+    /// grpId, and lands in exile under another carrying the creature's. That is one chain
+    /// holding two identities, which is not what <see cref="Resolve"/> is for — running it
+    /// to the end folds both faces into one timeline, and since every sample from a single
+    /// message shares a stamp, the face that arrived last then answers every question
+    /// about the message, including what dealt the damage (#75).
+    /// <para>
+    /// <see cref="PermanentLabels"/> is the only caller, because labelling is the only job
+    /// that asks "what was this at that moment". <see cref="Resolve"/> is left alone: the
+    /// other thing the chain is for is deciding that two annotations concern the same
+    /// object, which they do whether the face changed or not, and that is what pairs a
+    /// cast with its resolution.
+    /// </para>
+    /// </remarks>
+    public int ResolveFace(int instanceId)
+    {
+        var seen = new HashSet<int>();
+        var cur = instanceId;
+        while (_alias.TryGetValue(cur, out var next) && seen.Add(cur))
+        {
+            if (ChangesTheCard(cur, next)) return cur;
+            cur = next;
+        }
+        return cur;
+    }
+
+    /// <summary>
+    /// True when both ends of a rename are known and are different cards. A grpId of zero
+    /// is Arena declining to say, which is not a disagreement.
+    /// </summary>
+    private bool ChangesTheCard(int from, int to) =>
+        _objects.TryGetValue(from, out var a) && a.GrpId > 0 &&
+        _objects.TryGetValue(to, out var b) && b.GrpId > 0 &&
+        a.GrpId != b.GrpId;
+
     public TrackedObject? Get(int instanceId)
     {
         var id = Resolve(instanceId);

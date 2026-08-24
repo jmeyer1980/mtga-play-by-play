@@ -99,11 +99,13 @@ public sealed class PermanentLabels
 
         // Samples are recorded under whatever id Arena was using at the time. Fold them
         // onto the id the alias chain ends at, so a card that changed ids keeps one
-        // timeline instead of two half ones.
+        // timeline instead of two half ones — but not across a link that changes which
+        // card it is, because an Adventure's two faces are two identities on one chain
+        // and folding them makes each answer for the other (#75).
         var merged = new Dictionary<int, List<StatSample>>();
         foreach (var (id, samples) in tracker.StatHistory)
         {
-            var canonical = tracker.Resolve(id);
+            var canonical = tracker.ResolveFace(id);
             if (!merged.TryGetValue(canonical, out var list)) merged[canonical] = list = [];
             list.AddRange(samples);
         }
@@ -115,7 +117,7 @@ public sealed class PermanentLabels
         var mergedNames = new Dictionary<int, List<NameSample>>();
         foreach (var (id, samples) in tracker.NameHistory)
         {
-            var canonical = tracker.Resolve(id);
+            var canonical = tracker.ResolveFace(id);
             if (!mergedNames.TryGetValue(canonical, out var list)) mergedNames[canonical] = list = [];
             list.AddRange(samples);
         }
@@ -125,7 +127,11 @@ public sealed class PermanentLabels
         var byName = new Dictionary<string, List<int>>(StringComparer.Ordinal);
         foreach (var id in labels._history.Keys)
         {
-            var name = tracker.NameOf(id);
+            // The keys are face-aware, so the name has to be too. Asking the tracker
+            // would run the chain past a face change and file both faces of a
+            // transforming card under one name, which is the grouping that decides
+            // whether two permanents need telling apart with a letter.
+            var name = labels.NameAt(id, int.MaxValue);
             if (CardNames.IsPlaceholder(name)) continue;
             if (!byName.TryGetValue(name, out var group)) byName[name] = group = [];
             group.Add(id);
@@ -217,7 +223,7 @@ public sealed class PermanentLabels
     /// </remarks>
     public string NameAt(int instanceId, int stamp)
     {
-        var id = _tracker.Resolve(instanceId);
+        var id = _tracker.ResolveFace(instanceId);
         if (_names.TryGetValue(id, out var samples))
         {
             int? loc = null;
@@ -273,7 +279,7 @@ public sealed class PermanentLabels
         var name = NameAt(instanceId, castStamp);
         if (CardNames.IsPlaceholder(name)) return name;
 
-        var id = _tracker.Resolve(instanceId);
+        var id = _tracker.ResolveFace(instanceId);
         if (SampleAt(id, castStamp) is { } before && SampleAt(id, settledStamp) is { } after &&
             (before.Power != after.Power || before.Toughness != after.Toughness))
         {
@@ -289,7 +295,7 @@ public sealed class PermanentLabels
     /// </summary>
     private string? Statline(int instanceId, int stamp)
     {
-        var id = _tracker.Resolve(instanceId);
+        var id = _tracker.ResolveFace(instanceId);
         return SampleAt(id, stamp) is { } sample ? Rendered(id, sample) : null;
     }
 
@@ -310,7 +316,7 @@ public sealed class PermanentLabels
         var name = NameAt(instanceId, stamp);
         if (CardNames.IsPlaceholder(name)) return name;
 
-        var id = _tracker.Resolve(instanceId);
+        var id = _tracker.ResolveFace(instanceId);
         var statline = SampleBefore(id, stamp) is { } sample ? Rendered(id, sample) : null;
         return statline is null ? name : $"{name}{Letter(id)} {statline}";
     }
@@ -332,7 +338,7 @@ public sealed class PermanentLabels
     }
 
     private string Letter(int instanceId) =>
-        _letters.TryGetValue(_tracker.Resolve(instanceId), out var letter) ? " " + letter : "";
+        _letters.TryGetValue(_tracker.ResolveFace(instanceId), out var letter) ? " " + letter : "";
 
     /// <summary>
     /// The statline the permanent had in play at or before <paramref name="stamp"/>.
