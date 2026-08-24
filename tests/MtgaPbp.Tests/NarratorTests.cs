@@ -807,10 +807,36 @@ public class NarratorTests
     public void A_move_through_a_zone_the_log_never_described_still_reports_something()
     {
         // Worse to read than the phrased form and still true, which beats staying silent
-        // about a card that moved.
-        Assert.That(Moved("ZoneType_Library", null, "Put"), Is.EqualTo("Plains moves (Put)"));
+        // about a card that moved. The category is dropped here for the same reason it is
+        // dropped everywhere else — these two paths used to be the one place it was not
+        // consulted, which is how a single "moves (Put)" survived into the archive (#73).
+        Assert.That(Moved("ZoneType_Library", null, "Put"), Is.EqualTo("Plains moves"));
         Assert.That(Moved(null, "ZoneType_Sideboard", "Put"),
-            Is.EqualTo("Plains moves (Put)"), "and the same for a zone with no phrasing");
+            Is.EqualTo("Plains moves"), "and the same for a zone with no phrasing");
+    }
+
+    /// <summary>
+    /// A category that names a mechanic is kept on every path, including the two that
+    /// have no destination to name.
+    /// </summary>
+    [Test]
+    public void A_mechanic_survives_a_move_through_a_zone_the_log_never_described() =>
+        Assert.That(Moved("ZoneType_Battlefield", null, "Warp"),
+            Is.EqualTo("Plains moves (Warp)"));
+
+    /// <summary>
+    /// Bookkeeping the engine keeps for itself. "Separate" is it splitting a revealed
+    /// pile, and is the largest single parenthetical in the archive at 39 lines;
+    /// "DestroyNoRegenerate" says a permission nobody exercised was withheld. Neither
+    /// adds to a sentence that already names where the card went (#73).
+    /// </summary>
+    [TestCase("Separate")]
+    [TestCase("DestroyNoRegenerate")]
+    public void A_category_that_is_only_bookkeeping_does_not_reach_the_reader(string category)
+    {
+        Assert.That(Moved("ZoneType_Library", "ZoneType_Hand", category),
+            Is.EqualTo("Plains is put into hand"));
+        Assert.That(Moved("ZoneType_Library", null, category), Is.EqualTo("Plains moves"));
     }
 
     // ---------- Issue 41: hidden for a name the line never prints ----------
