@@ -224,11 +224,15 @@ public static class Narrator
             // Anything less — no subjects at all, or one subject named over and over —
             // keeps the plain marker, which is what a line about a player or a spell on
             // the stack has always had and still needs.
-            var subjects = lines.Skip(i).Take(run)
-                .Select(l => l.Accrues)
-                .Where(id => id is not null)
-                .Distinct()
-                .Count();
+            //
+            // Counted by index rather than with Skip: the outer loop advances by the run
+            // length, so the runs partition the list and the whole scan is one pass, but
+            // only if reaching a run's start is free. Skip(i) would make that cost depend
+            // on i, which on a transcript of thousands of short runs is the difference
+            // between linear and quadratic.
+            var subjects = new HashSet<int>();
+            for (var j = i; j < i + run; j++)
+                if (lines[j].Accrues is { } id) subjects.Add(id);
 
             // Where the marker sits is what it means, so nothing has to be explained.
             // Trailing, it counts the event: "Iron Man's ability triggers ×2" happened
@@ -241,7 +245,7 @@ public static class Narrator
             // twenty-four was a 2/2, as the attack lines directly below it said.
             result.Add(line with
             {
-                Text = subjects > 1 ? $"{run}× {line.Text}" : $"{line.Text} ×{run}"
+                Text = subjects.Count > 1 ? $"{run}× {line.Text}" : $"{line.Text} ×{run}"
             });
             i += run;
         }

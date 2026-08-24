@@ -1125,8 +1125,14 @@ public class NarratorTests
     /// <summary>
     /// A statline change adds up the same way a counter does.
     /// </summary>
+    /// <remarks>
+    /// The detail is the modifier alone — the renderer supplies the verb. This test
+    /// first passed "gets +2/+1" and so built "Soldier 1/1 gets gets +2/+1", which a
+    /// prefix-only assertion was perfectly happy to accept. Asserting the whole line is
+    /// what makes that impossible to miss again.
+    /// </remarks>
     [Test]
-    public void A_pump_on_different_creatures_says_one_each()
+    public void A_pump_on_different_creatures_counts_the_creatures()
     {
         var lines = Narrator.Narrate(T(
             Enumerable.Range(0, 3).Select(i =>
@@ -1134,9 +1140,9 @@ public class NarratorTests
                 {
                     TargetInstanceId = 300 + i,
                     TargetName = "Soldier 1/1",
-                    Detail = "gets +2/+1"
+                    Detail = "+2/+1"
                 }).ToArray()), Density.Beats);
 
-        Assert.That(lines.Single().Text, Does.StartWith("3× "));
+        Assert.That(lines.Single().Text, Is.EqualTo("3× Soldier 1/1 gets +2/+1"));
     }
 }
