@@ -1348,9 +1348,13 @@ public sealed class EventExtractor(ICardDb cards)
             else if (type == "AnnotationType_AbilityInstanceCreated")
             {
                 // The ability object resolves to "<source card>'s ability" through its
-                // objectSourceGrpId. Only worth a line when we can name the source.
+                // objectSourceGrpId. Only worth a line when we can name the source, and
+                // only when the id is describing an ability rather than still describing
+                // whatever held it last.
                 var abilityId = FirstAffected(a);
-                var abilityName = abilityId is { } aid ? tracker.NameOf(aid) : null;
+                var abilityName = abilityId is { } aid && IsAnAbility(tracker, aid)
+                    ? tracker.NameOf(aid)
+                    : null;
                 if (CardNames.IsPlaceholder(abilityName)) continue;
 
                 var (causeId, causeName) =
@@ -1871,6 +1875,36 @@ public sealed class EventExtractor(ICardDb cards)
     /// toughness of its own to report.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Whether the object an <c>AbilityInstanceCreated</c> points at is really the ability
+    /// it announces, or an id Arena has handed out twice.
+    /// </summary>
+    /// <remarks>
+    /// Arena gives an ability instance an id that already belonged to something else and
+    /// then never describes it again, so the tracker keeps answering with the old thing's
+    /// name. Of the archive's 46,500-odd ability instances, 15,260 arrive at an id already
+    /// described as an ability and 31,250 at an id never described at all — but 49 land on
+    /// a card, a token, an Adventure or a revealed card, and those printed 10 trigger
+    /// lines under the name of something that did not trigger (#77).
+    /// <para>
+    /// The give-away in the output is the missing possessive. A named ability reads
+    /// "Long Lake Nuisance's ability triggers", built from its <c>objectSourceGrpId</c>;
+    /// a stale one reads "Gone Fishing triggers", because it is answering with a card's
+    /// own name. Every one traced so far is a land's mana ability wearing the name of the
+    /// Adventure object whose id it inherited, and beats density does not narrate mana at
+    /// all — so refusing the name and letting the existing placeholder check drop the line
+    /// is both the honest answer and the one the reader wanted.
+    /// </para>
+    /// <para>
+    /// An id with no object behind it is left alone: that is the ordinary case, already
+    /// answers "Unknown card", and is already dropped by the same check.
+    /// </para>
+    /// </remarks>
+    private static bool IsAnAbility(GameStateTracker tracker, int instanceId) =>
+        tracker.Get(instanceId) is not { } o
+        || o.Type.Length == 0
+        || o.Type == "GameObjectType_Ability";
+
     private static void NameResolutions(GameStateTracker tracker, Emit st, GameRun g)
     {
         // Canonical spell id -> what the cast called it, for casts not yet resolved.
