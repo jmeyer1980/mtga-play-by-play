@@ -141,22 +141,37 @@ public class ScoreboardTests
     /// broken in exactly the case it exists for. The earlier test missed it by passing
     /// no results at all.
     /// </summary>
-    [TestCase(16)]
-    [TestCase(20)]
-    [TestCase(24)]
-    [TestCase(30)]
-    [TestCase(50)]
-    public void The_block_never_takes_more_than_half_the_window(int height)
+    /// <summary>
+    /// Half the window, or the smallest block that can be drawn at all — whichever is
+    /// larger. Below its own floor there is nothing left to trim, and an honest overrun
+    /// beats a budget no amount of trimming can meet.
+    /// </summary>
+    /// <remarks>
+    /// Every combination, because the misses here have all been unexercised ones. The
+    /// first version of this test passed no results and so never met the case that
+    /// overran; the second passed no recommendation, which is the line that later broke
+    /// the arithmetic. Both were caught in review rather than by the assertion that was
+    /// supposed to cover them.
+    /// </remarks>
+    [TestCase(12, true), TestCase(12, false)]
+    [TestCase(16, true), TestCase(16, false)]
+    [TestCase(20, true), TestCase(20, false)]
+    [TestCase(24, true), TestCase(24, false)]
+    [TestCase(30, true), TestCase(30, false)]
+    [TestCase(50, true), TestCase(50, false)]
+    public void The_block_stays_inside_half_the_window_or_its_own_floor(int height, bool nextUp)
     {
         var decks = Enumerable.Range(0, 8)
             .Select(i => new SessionDeck($"Deck {i}", i, i)).ToArray();
         var beats = Enumerable.Range(0, Scoreboard.Recent)
             .Select(i => new Beat($"16:{i:00}", "Elspeth", "Won 1-0")).ToList();
 
-        var lines = Board(Session(decks: decks), beats, height: height);
+        var lines = Board(Session(decks: decks), beats, height: height,
+            nextUp: nextUp ? "Kitsa, Otterball Elite" : null);
 
-        Assert.That(lines.Count, Is.LessThanOrEqualTo(height / 2),
-            $"the block claimed {lines.Count} of a {height}-row window");
+        Assert.That(lines.Count, Is.LessThanOrEqualTo(
+                Math.Max(Scoreboard.Floor(decks.Length, nextUp), height / 2)),
+            $"the block claimed {lines.Count} of a {height}-row window (nextUp: {nextUp})");
     }
 
     [Test]
