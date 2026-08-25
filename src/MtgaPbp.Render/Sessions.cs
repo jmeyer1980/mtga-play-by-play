@@ -10,7 +10,18 @@ namespace MtgaPbp.Render;
 /// question a scoreboard answers is "how is this going tonight" — a deck at 57% lifetime
 /// can be 0-4 this evening, and the lifetime number is no comfort at all in that moment.
 /// </remarks>
-public sealed record SessionDeck(string Name, int Won, int Lost)
+/// <param name="Streak">
+/// Losses in a row with this deck, counting back from its most recent game of the
+/// sitting. Zero the moment it wins.
+/// <para>
+/// Carried so a board can show where a deck stands against the rotation rule rather than
+/// only shouting when it crosses it. The rule fired twice in one evening, hours apart,
+/// into a terminal window that a rebuild later destroyed — and the only way to know
+/// where you stood was to have been watching at the instant it spoke. A number that is
+/// simply there can be looked at.
+/// </para>
+/// </param>
+public sealed record SessionDeck(string Name, int Won, int Lost, int Streak = 0)
 {
     public int Played => Won + Lost;
 }
@@ -172,10 +183,22 @@ public static class Sessions
                          .OrderByDescending(g => g.Count())
                          .ThenBy(g => g.Key, StringComparer.Ordinal))
             {
+                // Counted back from this deck's own last game of the sitting, so games
+                // played with something else in between neither break the run nor extend
+                // it. Unfinished games are neither a win nor a loss and stop the count
+                // without resetting it, which is what they do everywhere else here.
+                var streak = 0;
+                foreach (var g in group.Reverse())
+                {
+                    if (Outcome(g) != 'L') break;
+                    streak++;
+                }
+
                 decks.Add(new SessionDeck(
                     labelOf?.GetValueOrDefault(group.Key) ?? group.Key,
                     Won: group.Count(g => Outcome(g) == 'W'),
-                    Lost: group.Count(g => Outcome(g) == 'L')));
+                    Lost: group.Count(g => Outcome(g) == 'L'),
+                    Streak: streak));
             }
         }
 

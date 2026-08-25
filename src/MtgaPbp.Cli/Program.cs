@@ -323,8 +323,13 @@ public static class Program
             if (nudge is not null && said.Add(nudge.Text))
                 board.Say($"[{DateTime.Now:HH:mm:ss}] ** {nudge.Text}");
 
+            // The same recommendation the nudge would make, standing rather than said
+            // once: the answer to "which one next" has to be there when the question is
+            // asked, not only at the moment a rule happened to trip.
+            var slug = newest is null ? null : st.DeckOf.GetValueOrDefault(newest.MatchId);
             board.Draw(Scoreboard.Lines(
-                tonight, beats, playing, server.Url, DateTime.Now, board.Width, board.Height));
+                tonight, beats, playing, SessionCoach.NextUp(st, slug),
+                server.Url, DateTime.Now, board.Width, board.Height));
         }
 
         // Read from the session's own deck list rather than from the by-deck records,
