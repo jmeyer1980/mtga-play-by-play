@@ -35,6 +35,13 @@ public static class Scoreboard
     /// <param name="session">The sitting in progress, or null before the first match.</param>
     /// <param name="beats">Finished matches, newest first. Only the first few are shown.</param>
     /// <param name="playing">The deck the newest match was played with, marked in the list.</param>
+    /// <param name="nextUp">
+    /// The deck worth switching to, or null when nothing has enough games behind it to
+    /// recommend. Shown as a standing line rather than only inside a nudge: a suggestion
+    /// that appears once, in a terminal window a rebuild later destroys, cannot be
+    /// consulted — and consulting it is the whole point when the question is "which one
+    /// do I pick next".
+    /// </param>
     /// <param name="url">Where the live report is served.</param>
     /// <param name="updated">When the last match landed.</param>
     /// <param name="width">The terminal's width. Narrow terminals clip rather than wrap.</param>
@@ -47,12 +54,13 @@ public static class Scoreboard
         SessionRow? session,
         IReadOnlyList<Beat> beats,
         string? playing,
+        string? nextUp,
         string url,
         DateTime updated,
         int width = 80,
         int height = 24)
     {
-        var fit = Fit(session?.Decks.Count ?? 0, beats.Count, height);
+        var fit = Fit(session?.Decks.Count ?? 0, beats.Count, height, nextUp is not null);
         var lines = new List<string> { new('-', Math.Clamp(width - 1, 10, 100)) };
 
         if (session is null)
@@ -79,8 +87,14 @@ public static class Scoreboard
             foreach (var d in decks)
             {
                 var name = Clip(d.Name, room).PadRight(room);
-                var here = string.Equals(d.Name, playing, StringComparison.Ordinal) ? "  <- playing" : "";
-                lines.Add($"    {name}  {d.Won}-{d.Lost}{here}");
+
+                // The streak is rule state, shown from two rather than three. Seeing it
+                // build is the difference between being able to decide and being told
+                // afterwards — and being told afterwards was the complaint.
+                var note = string.Equals(d.Name, playing, StringComparison.Ordinal)
+                    ? "  <- playing"
+                    : d.Streak >= 2 ? $"  {d.Streak} losses in a row" : "";
+                lines.Add($"    {name}  {d.Won}-{d.Lost}{note}");
             }
             if (decks.Count < session.Decks.Count)
                 lines.Add($"    +{session.Decks.Count - decks.Count} more");
@@ -91,6 +105,7 @@ public static class Scoreboard
             lines.Add($"  {b.At}  {Clip(b.Deck, 24).PadRight(24)}  {b.Result}");
 
         lines.Add("");
+        if (nextUp is not null) lines.Add($"  next up if you switch: {Clip(nextUp, Math.Max(10, width - 28))}");
         lines.Add($"  updated {updated:HH:mm:ss} · live at {url} · Ctrl+C to stop");
 
         return lines.Select(l => Clip(l, Math.Max(10, width - 1))).ToList();
@@ -100,11 +115,36 @@ public static class Scoreboard
     /// As many decks as fit in half the window, most-played first.
     /// </summary>
     /// <summary>
-    /// Everything in the block that is not a deck line or a result line: the rule, the
-    /// header, the blank under it, the blank under the deck list, the blank above the
-    /// footer and the footer itself.
+    /// Everything in the block that is neither a deck line nor a result line: the rule,
+    /// the header, the blank under it, the blank under the deck list, the blank above
+    /// the footer, and the footer itself — plus the standing recommendation when there
+    /// is one.
     /// </summary>
-    private const int Furniture = 6;
+    /// <remarks>
+    /// The recommendation belongs in this count and not as a subtraction from the budget.
+    /// Taken off the budget it could push the target below the smallest block that can
+    /// be drawn at all, which no amount of trimming then satisfies: the loops give up
+    /// and return a layout that overruns anyway. Counted here, the floor below moves
+    /// with it and the arithmetic stays solvable by construction.
+    /// </remarks>
+    private static int Furniture(bool nextUp) => 6 + (nextUp ? 1 : 0);
+
+    /// <summary>
+    /// The smallest block that can be drawn: the furniture, one deck, and — when there
+    /// were other decks to drop — the line that says how many were dropped.
+    /// </summary>
+    /// <remarks>
+    /// Computed rather than assumed, twice over now. A budget below this is one no amount
+    /// of trimming can meet, so the loops give up and the block overruns anyway; and the
+    /// "+N more" line is easy to forget, being the one row that appears *because* of
+    /// trimming rather than in spite of it.
+    /// <para>
+    /// Public because the test for the half-window rule needs the same number, and two
+    /// copies of this arithmetic would drift apart exactly where nobody was looking.
+    /// </para>
+    /// </remarks>
+    public static int Floor(int deckCount, bool nextUp) =>
+        Furniture(nextUp) + 1 + (deckCount > 1 ? 1 : 0);
 
     /// <summary>
     /// How many decks and how many results fit in half the window.
@@ -121,14 +161,15 @@ public static class Scoreboard
     /// one thing this whole design exists to preserve.
     /// </para>
     /// </remarks>
-    private static (int Decks, int Beats) Fit(int deckCount, int beatCount, int height)
+    private static (int Decks, int Beats) Fit(int deckCount, int beatCount, int height, bool nextUp)
     {
-        var budget = Math.Max(Furniture + 1, height / 2);
+        var furniture = Furniture(nextUp);
+        var budget = Math.Max(Floor(deckCount, nextUp), height / 2);
         var decks = deckCount;
         var beats = Math.Min(beatCount, Recent);
 
         // A "+N more" line costs one of its own whenever the deck list is cut.
-        int Total() => Furniture + decks + beats + (decks < deckCount ? 1 : 0);
+        int Total() => furniture + decks + beats + (decks < deckCount ? 1 : 0);
 
         while (Total() > budget && beats > 0) beats--;
         while (Total() > budget && decks > 1) decks--;

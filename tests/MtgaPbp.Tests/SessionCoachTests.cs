@@ -314,4 +314,33 @@ public class SessionCoachTests
         Assert.That(stats.Sessions[0].Decks.Single().Name,
             Is.EqualTo(stats.LabelOf[slug]), "and the session uses it");
     }
+
+    /// <summary>
+    /// A deck can be the best in the collection over two hundred games and be 0-3 this
+    /// evening. Sending somebody from one losing streak straight into another is the
+    /// same mistake as recommending nothing, so tonight outranks the archive.
+    /// </summary>
+    [Test]
+    public void A_deck_already_losing_tonight_is_not_the_one_recommended()
+    {
+        var rows = new List<MatchSummary>();
+        // Beta is the better deck lifetime, but arrives at tonight on a losing run.
+        for (var i = 0; i < SessionCoach.LearningWindow; i++)
+            rows.Add(At(-9000 + i, i % 5 == 0 ? "Lost 0-1" : "Won 1-0", Beta));    // 80%
+        for (var i = 0; i < SessionCoach.LearningWindow; i++)
+            rows.Add(At(-7000 + i, i % 3 == 0 ? "Lost 0-1" : "Won 1-0", Gamma));   // 67%
+
+        rows.Add(At(0, "Lost 0-1", Beta));
+        rows.Add(At(10, "Lost 0-1", Beta));
+        rows.Add(At(20, "Lost 0-1", Beta));
+        rows.AddRange(Run(Alpha, "Lost 0-1", "Lost 0-1", "Lost 0-1"));
+
+        var stats = IndexStats.From(rows);
+        var slug = stats.DeckOf[rows[^1].MatchId];
+        var next = SessionCoach.NextUp(stats, slug);
+
+        var beta = stats.Sessions[0].Decks.First(d => d.Streak >= 2).Name;
+        Assert.That(next, Is.Not.EqualTo(beta), "it is 0-3 tonight whatever its record");
+        Assert.That(next, Is.Not.Null, "and something is still recommended");
+    }
 }

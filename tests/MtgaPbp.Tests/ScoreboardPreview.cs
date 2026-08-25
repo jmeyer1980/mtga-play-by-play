@@ -11,24 +11,25 @@ public class ScoreboardPreview
     public void Show()
     {
         var session = new SessionRow(
-            0, "2026-08-22 10:36", Games: 22, Won: 9, Lost: 13, Drawn: 0,
+            0, "2026-08-24 13:38", Games: 26, Won: 10, Lost: 16, Drawn: 0,
             Decks:
             [
-                new SessionDeck("Elspeth, Storm Slayer", 8, 6),
-                new SessionDeck("Hulk, Gamma Goliath", 1, 4),
-                new SessionDeck("Lathliss, Dragon Queen", 0, 3)
+                new SessionDeck("The Unbeatable Squirrel Girl", 6, 5, Streak: 3),
+                new SessionDeck("The Notary Hobbits", 3, 5, Streak: 1),
+                new SessionDeck("Kitsa, Otterball Elite", 1, 6, Streak: 4)
             ],
             MatchIds: ["m1"]);
 
         var beats = new List<Beat>
         {
-            new("16:52", "Elspeth, Storm Slayer", "Won 1-0"),
-            new("16:50", "Elspeth, Storm Slayer", "Lost 0-1"),
-            new("16:42", "Elspeth, Storm Slayer", "Won 1-0")
+            new("20:57", "The Notary Hobbits", "Lost 0-1"),
+            new("20:42", "The Notary Hobbits", "Won 1-0"),
+            new("20:37", "The Notary Hobbits", "Lost 0-1")
         };
 
-        foreach (var l in Scoreboard.Lines(session, beats, "Elspeth, Storm Slayer",
-                     "http://127.0.0.1:8787/", new DateTime(2026, 8, 22, 16, 52, 14), 78, 30))
+        foreach (var l in Scoreboard.Lines(session, beats, "The Notary Hobbits",
+                     "The Unbeatable Squirrel Girl",
+                     "http://127.0.0.1:8787/", new DateTime(2026, 8, 24, 21, 8, 46), 78, 30))
             TestContext.Out.WriteLine(l);
     }
 }

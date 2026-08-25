@@ -27,8 +27,8 @@ public class ScoreboardTests
 
     private static IReadOnlyList<string> Board(
         SessionRow? session = null, IReadOnlyList<Beat>? beats = null,
-        string? playing = null, int width = 78, int height = 30) =>
-        Scoreboard.Lines(session ?? Session(), beats ?? [], playing,
+        string? playing = null, int width = 78, int height = 30, string? nextUp = null) =>
+        Scoreboard.Lines(session ?? Session(), beats ?? [], playing, nextUp,
             "http://127.0.0.1:8787/", Updated, width, height);
 
     private static string Text(IEnumerable<string> lines) => string.Join("\n", lines);
@@ -85,7 +85,7 @@ public class ScoreboardTests
     {
         // Called directly: the helper above substitutes a session for null, which is
         // convenient everywhere else and exactly wrong here.
-        var lines = Scoreboard.Lines(null, [], null, "http://127.0.0.1:8787/", Updated);
+        var lines = Scoreboard.Lines(null, [], null, null, "http://127.0.0.1:8787/", Updated);
         Assert.That(Text(lines), Does.Contain("no matches yet this session"));
     }
 
@@ -104,7 +104,7 @@ public class ScoreboardTests
             var beats = new[] { new Beat("16:52", new string('D', 60), "Won 1-0") };
             var lines = Scoreboard.Lines(
                 Session(decks: [new SessionDeck(new string('X', 80), 3, 1)]),
-                beats, new string('X', 80), "http://127.0.0.1:8787/", Updated, width, 30);
+                beats, new string('X', 80), new string('N', 80), "http://127.0.0.1:8787/", Updated, width, 30);
 
             Assert.That(lines.Select(l => l.Length), Has.All.LessThan(width),
                 $"a line wrapped at width {width}");
@@ -141,22 +141,37 @@ public class ScoreboardTests
     /// broken in exactly the case it exists for. The earlier test missed it by passing
     /// no results at all.
     /// </summary>
-    [TestCase(16)]
-    [TestCase(20)]
-    [TestCase(24)]
-    [TestCase(30)]
-    [TestCase(50)]
-    public void The_block_never_takes_more_than_half_the_window(int height)
+    /// <summary>
+    /// Half the window, or the smallest block that can be drawn at all — whichever is
+    /// larger. Below its own floor there is nothing left to trim, and an honest overrun
+    /// beats a budget no amount of trimming can meet.
+    /// </summary>
+    /// <remarks>
+    /// Every combination, because the misses here have all been unexercised ones. The
+    /// first version of this test passed no results and so never met the case that
+    /// overran; the second passed no recommendation, which is the line that later broke
+    /// the arithmetic. Both were caught in review rather than by the assertion that was
+    /// supposed to cover them.
+    /// </remarks>
+    [TestCase(12, true), TestCase(12, false)]
+    [TestCase(16, true), TestCase(16, false)]
+    [TestCase(20, true), TestCase(20, false)]
+    [TestCase(24, true), TestCase(24, false)]
+    [TestCase(30, true), TestCase(30, false)]
+    [TestCase(50, true), TestCase(50, false)]
+    public void The_block_stays_inside_half_the_window_or_its_own_floor(int height, bool nextUp)
     {
         var decks = Enumerable.Range(0, 8)
             .Select(i => new SessionDeck($"Deck {i}", i, i)).ToArray();
         var beats = Enumerable.Range(0, Scoreboard.Recent)
             .Select(i => new Beat($"16:{i:00}", "Elspeth", "Won 1-0")).ToList();
 
-        var lines = Board(Session(decks: decks), beats, height: height);
+        var lines = Board(Session(decks: decks), beats, height: height,
+            nextUp: nextUp ? "Kitsa, Otterball Elite" : null);
 
-        Assert.That(lines.Count, Is.LessThanOrEqualTo(height / 2),
-            $"the block claimed {lines.Count} of a {height}-row window");
+        Assert.That(lines.Count, Is.LessThanOrEqualTo(
+                Math.Max(Scoreboard.Floor(decks.Length, nextUp), height / 2)),
+            $"the block claimed {lines.Count} of a {height}-row window (nextUp: {nextUp})");
     }
 
     [Test]
@@ -166,5 +181,66 @@ public class ScoreboardTests
         Assert.That(text, Does.Contain("updated 16:52:14"));
         Assert.That(text, Does.Contain("http://127.0.0.1:8787/"));
         Assert.That(text, Does.Contain("Ctrl+C"));
+    }
+
+    // ---------- rule state, not only rule events ----------
+
+    /// <summary>
+    /// The rotation rule fired twice in one evening, hours apart, into a terminal window
+    /// a later rebuild destroyed — and the only way to have known where a deck stood was
+    /// to have been watching at the instant it spoke. A number that is simply there can
+    /// be looked at.
+    /// </summary>
+    [Test]
+    public void A_deck_on_a_losing_run_says_so_on_the_board()
+    {
+        var text = Text(Board(Session(decks:
+        [
+            new SessionDeck("Kitsa, Otterball Elite", 1, 6, Streak: 4),
+            new SessionDeck("The Notary Hobbits", 3, 5, Streak: 1)
+        ])));
+
+        Assert.That(text, Does.Contain("4 losses in a row"));
+        Assert.That(text, Does.Not.Contain("1 loss"), "one loss is not a run");
+    }
+
+    /// <summary>
+    /// Shown from two rather than three, so the run is visible while it is building
+    /// rather than only once it has tripped the rule.
+    /// </summary>
+    [Test]
+    public void A_run_shows_before_it_reaches_the_rotation_threshold()
+    {
+        var text = Text(Board(Session(decks: [new SessionDeck("Kitsa", 1, 2, Streak: 2)])));
+        Assert.That(text, Does.Contain("2 losses in a row"));
+    }
+
+    [Test]
+    public void The_deck_being_played_is_marked_rather_than_counted()
+    {
+        var lines = Board(
+            Session(decks: [new SessionDeck("Kitsa", 1, 6, Streak: 4)]),
+            playing: "Kitsa");
+
+        Assert.That(lines.Single(l => l.Contains("Kitsa")), Does.Contain("<- playing"));
+        Assert.That(lines.Single(l => l.Contains("Kitsa")), Does.Not.Contain("in a row"),
+            "the deck in hand needs no advice about itself");
+    }
+
+    /// <summary>
+    /// A standing line, because the answer to "which one next" has to be there when the
+    /// question is asked rather than only at the moment a rule happened to trip.
+    /// </summary>
+    [Test]
+    public void The_board_names_what_to_switch_to()
+    {
+        Assert.That(Text(Board(nextUp: "The Unbeatable Squirrel Girl")),
+            Does.Contain("next up if you switch: The Unbeatable Squirrel Girl"));
+    }
+
+    [Test]
+    public void With_nothing_worth_recommending_the_board_stays_quiet_about_it()
+    {
+        Assert.That(Text(Board()), Does.Not.Contain("next up"));
     }
 }

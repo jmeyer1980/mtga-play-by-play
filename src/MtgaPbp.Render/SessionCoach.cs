@@ -154,21 +154,42 @@ public static class SessionCoach
     }
 
     /// <summary>
-    /// The deck to suggest instead: the best-performing one that has finished its
-    /// learning window, excluding the deck being rotated away from.
+    /// The deck worth switching to, or null when nothing has enough games behind it to
+    /// recommend one.
     /// </summary>
     /// <remarks>
-    /// Deliberately not "the least recently played". Rotation exists here to get somebody
-    /// off a deck that is going badly right now, and pointing them at another struggling
-    /// one would make the suggestion worse than silence. Null when nothing qualifies,
-    /// which is the honest answer early on — and the nudge drops the clause rather than
-    /// naming a deck it cannot stand behind.
+    /// Deliberately not "the least recently played". Rotation exists to get somebody off
+    /// a deck that is going badly right now, so the candidate is ranked by how it has
+    /// actually done — and among decks that have played enough for the number to mean
+    /// anything.
+    /// <para>
+    /// Tonight beats the archive on the first question asked. A deck can be the best in
+    /// the collection over two hundred games and be 0-3 this evening, and recommending it
+    /// in that state is the same mistake as not recommending anything: it sends somebody
+    /// from one losing streak to another. So a deck currently on a streak sorts last,
+    /// whatever its record — and is still named if nothing else qualifies, because on a
+    /// bad night the question is being asked precisely when every answer is imperfect.
+    /// </para>
+    /// <para>
+    /// This only became visible when the suggestion moved onto the board as a standing
+    /// line. Inside a nudge it was seen once, about one deck, at a moment chosen by the
+    /// rule; on the board it sat there recommending a deck that had just lost three in a
+    /// row, next to the line saying so.
+    /// </para>
     /// </remarks>
-    private static string? NextUp(IndexStats stats, string exclude) =>
-        stats.ByDeck
+    public static string? NextUp(IndexStats stats, string? exclude)
+    {
+        var struggling = (stats.Sessions.FirstOrDefault()?.Decks ?? [])
+            .Where(d => d.Streak >= 2)
+            .Select(d => d.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return stats.ByDeck
             .Where(d => d.Slug is not null && d.Slug != exclude)
             .Where(d => d.Played >= LearningWindow && d.WinRate is not null)
-            .OrderByDescending(d => d.WinRate)
+            .OrderBy(d => struggling.Contains(d.Name))
+            .ThenByDescending(d => d.WinRate)
             .Select(d => d.Name)
             .FirstOrDefault();
+    }
 }

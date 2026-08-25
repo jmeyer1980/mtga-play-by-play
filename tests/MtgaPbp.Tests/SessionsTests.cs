@@ -144,7 +144,8 @@ public class SessionsTests
 
         // Each deck carries its own share of the night, not the archive-wide record: a
         // deck at 57% lifetime can be 0-2 this evening, and tonight is the question.
-        Assert.That(s[0].Decks[0], Is.EqualTo(new SessionDeck("Hare Apparent", Won: 1, Lost: 1)));
+        Assert.That(s[0].Decks[0], Is.EqualTo(new SessionDeck("Hare Apparent", Won: 1, Lost: 1, Streak: 1)),
+            "its last game was the loss, so the streak stands at one");
         Assert.That(s[0].Decks[1], Is.EqualTo(new SessionDeck("Gix", Won: 1, Lost: 0)));
     }
 
