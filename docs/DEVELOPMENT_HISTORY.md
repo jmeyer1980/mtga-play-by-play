@@ -2,9 +2,12 @@
 
 This document is two things at once: a history of how MTGA Play-by-Play was built, and a
 demonstration of *where that history came from*. Nothing below was reconstructed from git
-archaeology alone — it was retrieved from the `neurodivergent-memory` MCP server, a
-persistent memory graph that every agent session on this machine reads at clock-in and
-writes at clock-out. The git log confirms the story; the memory tells it.
+archaeology alone — it was retrieved from `neurodivergent-memory`, an MCP memory server
+that is **not part of this repository**: an external tool, private to the machine this
+project is developed on, that every agent session there reads at clock-in and writes at
+clock-out. Nothing in the parser builds against it or needs it; it is the authoring
+workflow behind this document, not part of the toolchain. The git log confirms the
+story; the memory tells it.
 
 Written 2026-08-25 by a Claude session demonstrating the retrieval workflow end to end.
 
@@ -59,7 +62,7 @@ search_memories(query="current state architecture handoff",
    [0.813] memory_2258  HANDOFF 2026-08-11 (v0.2.0, superseded)
    [0.561] memory_2253  ARCHITECTURE — mtga_play-by        ← the anchor
    [0.567] memory_2255  GOTCHAS — mtga_play-by
-   [0.390] memory_2351  DIRECTION 2026-08-20 (Jerry's own)
+   [0.390] memory_2351  DIRECTION 2026-08-20 (the maintainer's own)
    ... 40 more
 ```
 
@@ -169,17 +172,17 @@ auto-closes any PR stacked on it.**
 
 ### Era 4 — direction, not a task (2026-08-20)
 
-Memory_2351 (creative_synthesis, epistemic status *draft*) records Jerry's own fork in
-the road, explicitly marked **NOT DECIDED — do not treat as a task**: either fork at
+Memory_2351 (creative_synthesis, epistemic status *draft*) records the maintainer's own
+fork in the road, explicitly marked **NOT DECIDED — do not treat as a task**: either fork at
 1.0.0 into a GUI app that reads the collection cache the way Arena Tutor does, or add a
 tray-service mode to the existing tool. The memory preserves the analysis — option B is
 a weekend, option A is a second project resting on an unverified assumption about how
 Arena Tutor even obtains collection data — and ends with an instruction to future
-agents: *"Do not act on any of this unless Jerry asks."* A memory system that can hold
+agents: *"Do not act on any of this unless [the maintainer] asks."* A memory system that can hold
 "here is a considered idea we are deliberately not doing" prevents every future session
 from either re-deriving it or accidentally starting it. It also cites the earlier
 research memories (2275, 2293) that already settled what the collection is *not* —
-Jerry's note when the analysis started to repeat itself: "as you can see, we went
+the maintainer's note when the analysis started to repeat itself: "as you can see, we went
 through this exhaustively."
 
 ### Era 5 — identity and versioning (2026-08-21 → 08-22)
@@ -218,6 +221,10 @@ knows of (#65, #1) needs a human driving a screen reader.
 ---
 
 ## Part 3 — Reproducing this
+
+The calls below go to the same external `neurodivergent-memory` server described in
+Part 1 — this repository provides no memory CLI or server. Read them as a checklist for
+an agent session on a machine that runs that tool, not as commands anyone can type here.
 
 To load this project's context in a fresh session:
 
