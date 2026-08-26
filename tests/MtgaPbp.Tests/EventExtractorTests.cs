@@ -210,6 +210,133 @@ public class EventExtractorTests
         Assert.That(sbas[1].ToZone, Is.EqualTo("ZoneType_Command"));
     }
 
+    // ---------- stat mods and the battlefield (issue #97) ----------
+
+    /// <summary>
+    /// The 188-mod class that once went entirely unreported — landfall doublings,
+    /// shrink-to-death — must keep narrating. This is the guard against the fix for
+    /// #97 overshooting.
+    /// </summary>
+    [Test]
+    public void A_stat_mod_on_a_permanent_on_the_battlefield_is_narrated()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+          "gameObjects": [ { "instanceId": 430, "grpId": 5, "name": 1001,
+                             "type": "GameObjectType_Card", "controllerSeatId": 2,
+                             "zoneId": 28 } ],
+          "annotations": [ { "id": 1, "affectorId": 500, "affectedIds": [ 430 ],
+            "type": [ "AnnotationType_PowerToughnessModCreated" ], "details": [
+              { "key": "power", "valueInt32": [ 1 ] },
+              { "key": "toughness", "valueInt32": [ 1 ] } ] } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.StatsModified);
+        Assert.That(e.TargetName, Is.EqualTo("Llanowar Elves"));
+        Assert.That(e.Detail, Is.EqualTo("+1/+1"));
+    }
+
+    /// <summary>
+    /// Issue #97: Arena applies pump effects to objects wherever they sit, and in
+    /// Brawl that includes the opponent's commander still in the command zone — which
+    /// is how "Mendicant Core, Guidelight gets +1/+1" came to be narrated four turns
+    /// before Mendicant Core was cast. A statline is only a claim worth making about
+    /// a permanent on the battlefield.
+    /// </summary>
+    [Test]
+    public void A_stat_mod_on_a_commander_still_in_the_command_zone_is_not_narrated()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" },
+                     { "zoneId": 26, "type": "ZoneType_Command", "ownerSeatId": 2 } ],
+          "gameObjects": [ { "instanceId": 239, "grpId": 5, "name": 1001,
+                             "type": "GameObjectType_Card", "controllerSeatId": 2,
+                             "zoneId": 26 } ],
+          "annotations": [ { "id": 1, "affectorId": 500, "affectedIds": [ 239 ],
+            "type": [ "AnnotationType_PowerToughnessModCreated" ], "details": [
+              { "key": "power", "valueInt32": [ 1 ] },
+              { "key": "toughness", "valueInt32": [ 1 ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Where(x => x.Kind == EventKind.StatsModified), Is.Empty,
+            "the pump is real, but nothing the player can see happened");
+    }
+
+    /// <summary>
+    /// The same rule for a card in a hand — the Ultron case from issue #97, where the
+    /// pre-cast pumps also leaked a name the player had not been shown yet.
+    /// </summary>
+    [Test]
+    public void A_stat_mod_on_a_card_in_a_hand_is_not_narrated()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" },
+                     { "zoneId": 31, "type": "ZoneType_Hand", "ownerSeatId": 2 } ],
+          "gameObjects": [ { "instanceId": 244, "grpId": 5, "name": 1001,
+                             "type": "GameObjectType_Card", "controllerSeatId": 2,
+                             "zoneId": 31 } ],
+          "annotations": [ { "id": 1, "affectorId": 500, "affectedIds": [ 244 ],
+            "type": [ "AnnotationType_PowerToughnessModCreated" ], "details": [
+              { "key": "power", "valueInt32": [ 1 ] },
+              { "key": "toughness", "valueInt32": [ 1 ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Where(x => x.Kind == EventKind.StatsModified), Is.Empty);
+    }
+
+    /// <summary>
+    /// The shrink that kills a creature and the death it causes arrive in one message,
+    /// and the tracker has already buried the creature by the time the mod is read.
+    /// The mod landed while it stood on the battlefield — and is why it left — so it
+    /// must still narrate, or a creature dies with no stated cause. Caught by the
+    /// archive diff for #97: Dark Deed's -4/-4 vanished on the first cut of the fix.
+    /// </summary>
+    [Test]
+    public void A_shrink_that_kills_in_the_same_message_still_narrates_the_shrink()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" },
+                     { "zoneId": 33, "type": "ZoneType_Graveyard", "ownerSeatId": 2 } ],
+          "gameObjects": [ { "instanceId": 430, "grpId": 5, "name": 1001,
+                             "type": "GameObjectType_Card", "controllerSeatId": 2,
+                             "zoneId": 33 } ],
+          "annotations": [
+            { "id": 1, "affectedIds": [ 430 ],
+              "type": [ "AnnotationType_PowerToughnessModCreated" ], "details": [
+                { "key": "power", "valueInt32": [ -4 ] },
+                { "key": "toughness", "valueInt32": [ -4 ] } ] },
+            { "id": 2, "affectedIds": [ 430 ], "type": [ "AnnotationType_ZoneTransfer" ],
+              "details": [ { "key": "zone_src",  "valueInt32": [ 28 ] },
+                           { "key": "zone_dest", "valueInt32": [ 33 ] },
+                           { "key": "category", "valueString": [ "SBA_Damage" ] } ] } ] }
+        """));
+
+        var e = t.Events.Single(x => x.Kind == EventKind.StatsModified);
+        Assert.That(e.Detail, Is.EqualTo("-4/-4"));
+    }
+
+    /// <summary>
+    /// An object the log never described has no zone, and a statline claim about it
+    /// cannot be placed anywhere the player was looking.
+    /// </summary>
+    [Test]
+    public void A_stat_mod_on_an_object_the_log_never_described_is_not_narrated()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "annotations": [ { "id": 1, "affectedIds": [ 9999 ],
+            "type": [ "AnnotationType_PowerToughnessModCreated" ], "details": [
+              { "key": "power", "valueInt32": [ 1 ] },
+              { "key": "toughness", "valueInt32": [ 1 ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Where(x => x.Kind == EventKind.StatsModified), Is.Empty);
+    }
+
     [Test]
     public void Extract_emits_damage_with_source_and_amount()
     {

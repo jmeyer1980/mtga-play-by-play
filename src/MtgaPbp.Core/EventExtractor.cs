@@ -638,6 +638,22 @@ public sealed class EventExtractor(ICardDb cards)
                                              "AnnotationType_CounterRemoved"))
                         if (FirstAffected(a) is { } hit) countered.Add(hit);
 
+                // Which objects this message moved OFF the battlefield. A statline mod
+                // arriving beside such a move happened while the permanent still stood
+                // there — the shrink that kills a creature and the death it causes come
+                // in one message, and tracker.Apply has already buried the creature by
+                // the time the mod is read. Judged on the tracker's state alone, Dark
+                // Deed's -4/-4 vanished and its victim was "put into the graveyard"
+                // with no stated cause — the silence the 188-mod fix exists to prevent.
+                var leftPlay = new HashSet<int>();
+                foreach (var a in Json.Array(gsm, "annotations"))
+                    if (Json.Array(a, "type").Any(t => t.ValueKind == JsonValueKind.String &&
+                            t.GetString() == "AnnotationType_ZoneTransfer") &&
+                        GameStateTracker.DetailInt(a, "zone_src") is { } src &&
+                        tracker.ZoneTypes.GetValueOrDefault(src) == "ZoneType_Battlefield" &&
+                        FirstAffected(a) is { } moved)
+                        leftPlay.Add(tracker.Get(moved)?.InstanceId ?? moved);
+
                 // Every permanent any annotation in this message speaks about. A statline
                 // that moved while its object was named by something is already explained
                 // by whatever that something was.
@@ -681,7 +697,7 @@ public sealed class EventExtractor(ICardDb cards)
                 {
                     var told = game.AlreadyTold(a);
                     if (resync && told) continue;
-                    EmitFor(a, tracker, ts, st, countered);
+                    EmitFor(a, tracker, ts, st, countered, leftPlay);
                 }
 
                 // After the streamed annotations, not before: the grant and the spell
@@ -1206,7 +1222,7 @@ public sealed class EventExtractor(ICardDb cards)
     }
 
     private void EmitFor(JsonElement a, GameStateTracker tracker, long ts, Emit st,
-                         IReadOnlySet<int> countered)
+                         IReadOnlySet<int> countered, IReadOnlySet<int> leftPlay)
     {
         foreach (var typeEl in Json.Array(a, "type"))
         {
@@ -1267,6 +1283,19 @@ public sealed class EventExtractor(ICardDb cards)
                 var dp = GameStateTracker.DetailInt(a, "power") ?? 0;
                 var dt = GameStateTracker.DetailInt(a, "toughness") ?? 0;
                 if (dp == 0 && dt == 0) continue;
+
+                // Only for a permanent the player could see standing on the battlefield
+                // — the same claim StatSample makes about statlines generally. Arena
+                // applies these mods to objects wherever they sit: a commander waiting
+                // in the command zone, a card in a hand, a spell still on the stack
+                // (issue #97 traced all of these in one match). Narrating those tells
+                // the reader about a pump nobody could see, on a card nobody had
+                // necessarily seen — "Mendicant Core, Guidelight gets +1/+1" four turns
+                // before it was cast. The tracker holds this message's END state, so a
+                // permanent the same message moved off the battlefield still counts:
+                // its mod landed while it stood there, and is usually why it left.
+                if (!tracker.OnBattlefield(pt) &&
+                    !leftPlay.Contains(tracker.Get(pt)?.InstanceId ?? pt)) continue;
 
                 var mod = Base(tracker, ts, EventKind.StatsModified) with
                 {
