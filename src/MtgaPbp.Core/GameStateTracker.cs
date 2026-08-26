@@ -677,6 +677,13 @@ public sealed class GameStateTracker(ICardDb cards)
         _zoneTypes.TryGetValue(obj.ZoneId, out var zone) && zone == "ZoneType_Battlefield";
 
     /// <summary>
+    /// Whether this instance is on the battlefield, as far as the log has said. False
+    /// for an object in any other zone and for one the log never described — either
+    /// way, nothing the player was looking at is standing there.
+    /// </summary>
+    public bool OnBattlefield(int instanceId) => Get(instanceId) is { } o && InPlay(o);
+
+    /// <summary>
     /// power/toughness, which arrive either as a number or as <c>{ "value": n }</c>.
     /// </summary>
     /// <remarks>
