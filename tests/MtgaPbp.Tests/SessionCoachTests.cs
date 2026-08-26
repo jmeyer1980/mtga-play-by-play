@@ -135,12 +135,96 @@ public class SessionCoachTests
             rows.Add(At(-5000 + i, i % 4 == 0 ? "Lost 0-1" : "Won 1-0", Beta));      // 75%
         for (var i = 0; i < SessionCoach.LearningWindow; i++)
             rows.Add(At(-3000 + i, i % 2 == 0 ? "Lost 0-1" : "Won 1-0", Gamma));     // 50%
+        // Beta has looped through the sitting in progress too, so tonight has a
+        // pattern to read and Beta is the one it names.
+        rows.Add(At(-20, "Won 1-0", Beta));
+        rows.Add(At(-10, "Won 1-0", Beta));
         rows.AddRange(Run(Alpha, "Lost 0-1", "Lost 0-1", "Lost 0-1"));
 
         var n = Coach(rows);
         Assert.That(n, Is.Not.Null);
         Assert.That(n!.NextUp, Is.Not.Null);
         Assert.That(n.Text, Does.Contain(n.NextUp!));
+    }
+
+    /// <summary>
+    /// The whole complaint about the standing line: it recommended whatever led the
+    /// archive, before a single game of the evening had said anything. A lifetime record
+    /// is an answer to a different question, and until the rotation has looped this
+    /// sitting the honest recommendation is none at all.
+    /// </summary>
+    [Test]
+    public void A_deck_unplayed_this_sitting_is_not_recommended_however_good_its_record()
+    {
+        var rows = new List<MatchSummary>();
+        for (var i = 0; i < SessionCoach.LearningWindow; i++)
+            rows.Add(At(-5000 + i, i % 4 == 0 ? "Lost 0-1" : "Won 1-0", Beta));      // 75%
+        for (var i = 0; i < SessionCoach.LearningWindow; i++)
+            rows.Add(At(-3000 + i, i % 2 == 0 ? "Lost 0-1" : "Won 1-0", Gamma));     // 50%
+        rows.AddRange(Run(Alpha, "Lost 0-1", "Lost 0-1", "Lost 0-1"));
+
+        var stats = IndexStats.From(rows);
+        var next = SessionCoach.NextUp(stats, stats.DeckOf[rows[^1].MatchId]);
+        Assert.That(next, Is.Null, "neither Beta nor Gamma has played tonight");
+    }
+
+    /// <summary>One game is a coin flip. A pattern needs at least two observations.</summary>
+    [Test]
+    public void One_game_this_sitting_is_not_yet_a_pattern()
+    {
+        var rows = new List<MatchSummary>();
+        for (var i = 0; i < SessionCoach.LearningWindow; i++)
+            rows.Add(At(-5000 + i, i % 4 == 0 ? "Lost 0-1" : "Won 1-0", Beta));      // 75%
+        rows.Add(At(-10, "Won 1-0", Beta));
+        rows.AddRange(Run(Alpha, "Lost 0-1", "Lost 0-1", "Lost 0-1"));
+
+        var stats = IndexStats.From(rows);
+        var next = SessionCoach.NextUp(stats, stats.DeckOf[rows[^1].MatchId]);
+        Assert.That(next, Is.Null, "Beta is 1-0 tonight, one game short of a pattern");
+    }
+
+    /// <summary>
+    /// Tonight's pattern is what ranks the candidates. The deck leading the archive can
+    /// be trailing the evening, and the evening is the question being asked.
+    /// </summary>
+    [Test]
+    public void The_best_deck_tonight_outranks_the_best_deck_lifetime()
+    {
+        var rows = new List<MatchSummary>();
+        for (var i = 0; i < SessionCoach.LearningWindow; i++)
+            rows.Add(At(-5000 + i, i % 5 == 0 ? "Lost 0-1" : "Won 1-0", Beta));      // 80%
+        for (var i = 0; i < SessionCoach.LearningWindow; i++)
+            rows.Add(At(-3000 + i, i % 2 == 0 ? "Lost 0-1" : "Won 1-0", Gamma));     // 50%
+        rows.Add(At(-50, "Won 1-0", Beta));
+        rows.Add(At(-40, "Lost 0-1", Beta));                                          // 1-1 tonight
+        rows.Add(At(-30, "Won 1-0", Gamma));
+        rows.Add(At(-20, "Won 1-0", Gamma));                                          // 2-0 tonight
+        rows.AddRange(Run(Alpha, "Lost 0-1", "Lost 0-1", "Lost 0-1"));
+
+        var stats = IndexStats.From(rows);
+        var next = SessionCoach.NextUp(stats, stats.DeckOf[rows[^1].MatchId]);
+        var gamma = stats.DeckOf[rows[^4].MatchId];
+        Assert.That(next, Is.EqualTo(stats.ByDeck.First(d => d.Slug == gamma).Name),
+            "Gamma is 2-0 on the evening; Beta's 80% belongs to other nights");
+    }
+
+    /// <summary>
+    /// An unfinished game said nothing about the deck, so it cannot count toward the
+    /// games a pattern is read from.
+    /// </summary>
+    [Test]
+    public void An_unfinished_game_does_not_count_toward_the_loop()
+    {
+        var rows = new List<MatchSummary>();
+        for (var i = 0; i < SessionCoach.LearningWindow; i++)
+            rows.Add(At(-5000 + i, i % 4 == 0 ? "Lost 0-1" : "Won 1-0", Beta));      // 75%
+        rows.Add(At(-20, "Won 1-0", Beta));
+        rows.Add(At(-10, "Won 1-0", Beta, incomplete: true));
+        rows.AddRange(Run(Alpha, "Lost 0-1", "Lost 0-1", "Lost 0-1"));
+
+        var stats = IndexStats.From(rows);
+        var next = SessionCoach.NextUp(stats, stats.DeckOf[rows[^1].MatchId]);
+        Assert.That(next, Is.Null, "one decided game and one that never finished");
     }
 
     /// <summary>
@@ -317,8 +401,10 @@ public class SessionCoachTests
 
     /// <summary>
     /// A deck can be the best in the collection over two hundred games and be 0-3 this
-    /// evening. Sending somebody from one losing streak straight into another is the
-    /// same mistake as recommending nothing, so tonight outranks the archive.
+    /// evening. Sending somebody from one losing streak straight into another is worse
+    /// than silence — and silence is what a night with no good answer gets. The rule
+    /// used to name the least-bad deck anyway; that is precisely the recommendation
+    /// nobody asked to hear.
     /// </summary>
     [Test]
     public void A_deck_already_losing_tonight_is_not_the_one_recommended()
@@ -339,8 +425,7 @@ public class SessionCoachTests
         var slug = stats.DeckOf[rows[^1].MatchId];
         var next = SessionCoach.NextUp(stats, slug);
 
-        var beta = stats.Sessions[0].Decks.First(d => d.Streak >= 2).Name;
-        Assert.That(next, Is.Not.EqualTo(beta), "it is 0-3 tonight whatever its record");
-        Assert.That(next, Is.Not.Null, "and something is still recommended");
+        Assert.That(next, Is.Null,
+            "Beta is 0-3 tonight whatever its record, Gamma has not played, and silence beats naming either");
     }
 }
