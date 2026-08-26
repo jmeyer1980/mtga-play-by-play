@@ -36,8 +36,9 @@ public static class Scoreboard
     /// <param name="beats">Finished matches, newest first. Only the first few are shown.</param>
     /// <param name="playing">The deck the newest match was played with, marked in the list.</param>
     /// <param name="nextUp">
-    /// The deck worth switching to, or null when nothing has enough games behind it to
-    /// recommend. Shown as a standing line rather than only inside a nudge: a suggestion
+    /// The deck worth switching to, or null until tonight has said which one that is —
+    /// a deck is only named once it has looped through the sitting in progress. Shown
+    /// as a standing line rather than only inside a nudge: a suggestion
     /// that appears once, in a terminal window a rebuild later destroys, cannot be
     /// consulted — and consulting it is the whole point when the question is "which one
     /// do I pick next".

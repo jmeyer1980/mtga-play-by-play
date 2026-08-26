@@ -64,6 +64,14 @@ public static class SessionCoach
     public const int RotateAfter = 3;
 
     /// <summary>
+    /// Decided games a deck needs in the sitting in progress before it can be the one
+    /// recommended. Two, because one game is a coin flip and a pattern needs at least
+    /// two observations — "not until I have looped once or twice and the pattern has
+    /// been identified", and this is that sentence as a number.
+    /// </summary>
+    public const int LoopedAt = 2;
+
+    /// <summary>
     /// What to say now, or null. Call it once per finished match.
     /// </summary>
     /// <param name="rows">Every match in the archive, in any order.</param>
@@ -154,40 +162,45 @@ public static class SessionCoach
     }
 
     /// <summary>
-    /// The deck worth switching to, or null when nothing has enough games behind it to
-    /// recommend one.
+    /// The deck worth switching to, or null when tonight has not yet said which one
+    /// that is.
     /// </summary>
     /// <remarks>
-    /// Deliberately not "the least recently played". Rotation exists to get somebody off
-    /// a deck that is going badly right now, so the candidate is ranked by how it has
-    /// actually done — and among decks that have played enough for the number to mean
-    /// anything.
+    /// The question is about the sitting in progress, so the sitting in progress is what
+    /// answers it. A candidate must have <see cref="LoopedAt"/> decided games tonight —
+    /// until the rotation has looped, there is no pattern to read and nothing is named —
+    /// and the candidates are ranked by how tonight has gone, with the lifetime rate
+    /// only breaking ties. The <see cref="LearningWindow"/> filter stays: a deck still
+    /// being learned is not judged, in either direction.
     /// <para>
-    /// Tonight beats the archive on the first question asked. A deck can be the best in
-    /// the collection over two hundred games and be 0-3 this evening, and recommending it
-    /// in that state is the same mistake as not recommending anything: it sends somebody
-    /// from one losing streak to another. So a deck currently on a streak sorts last,
-    /// whatever its record — and is still named if nothing else qualifies, because on a
-    /// bad night the question is being asked precisely when every answer is imperfect.
+    /// This used to rank by lifetime win rate, with tonight entering only as a demotion.
+    /// On the board as a standing line, that meant recommending whatever led the archive
+    /// — the same deck every night, sight unseen, and with a stable whose bench sits
+    /// below 50% lifetime, a standing suggestion to switch to a losing deck. A lifetime
+    /// record answers "which deck is good", and the line is asking "which deck is good
+    /// <em>tonight</em>".
     /// </para>
     /// <para>
-    /// This only became visible when the suggestion moved onto the board as a standing
-    /// line. Inside a nudge it was seen once, about one deck, at a moment chosen by the
-    /// rule; on the board it sat there recommending a deck that had just lost three in a
-    /// row, next to the line saying so.
+    /// A deck on a losing run tonight is excluded outright, not demoted and named
+    /// anyway. The old rule kept it as a last resort, reasoning that on a bad night
+    /// every answer is imperfect; the player's actual complaint was the imperfect
+    /// answers. Silence beats naming a deck the numbers cannot stand behind.
     /// </para>
     /// </remarks>
     public static string? NextUp(IndexStats stats, string? exclude)
     {
-        var struggling = (stats.Sessions.FirstOrDefault()?.Decks ?? [])
-            .Where(d => d.Streak >= 2)
-            .Select(d => d.Name)
-            .ToHashSet(StringComparer.Ordinal);
+        // Tonight's pattern, per deck. Most-played first, so if two clusters ever share
+        // a label the one with more of the evening behind it is the one read.
+        var tonight = new Dictionary<string, SessionDeck>(StringComparer.Ordinal);
+        foreach (var d in stats.Sessions.FirstOrDefault()?.Decks ?? [])
+            if (d.Played >= LoopedAt && d.Streak < 2)
+                tonight.TryAdd(d.Name, d);
 
         return stats.ByDeck
             .Where(d => d.Slug is not null && d.Slug != exclude)
             .Where(d => d.Played >= LearningWindow && d.WinRate is not null)
-            .OrderBy(d => struggling.Contains(d.Name))
+            .Where(d => tonight.ContainsKey(d.Name))
+            .OrderByDescending(d => (double)tonight[d.Name].Won / tonight[d.Name].Played)
             .ThenByDescending(d => d.WinRate)
             .Select(d => d.Name)
             .FirstOrDefault();
