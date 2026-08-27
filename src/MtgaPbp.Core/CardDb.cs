@@ -9,6 +9,7 @@ public sealed class CardDb : ICardDb, IDisposable
     private readonly Dictionary<int, CardInfo?> _cardCache = new();
     private readonly Dictionary<(string Type, int Value), string?> _enumCache = new();
     private readonly Dictionary<int, string?> _abilityCache = new();
+    private readonly Dictionary<string, CardFace?> _faceCache = new(StringComparer.Ordinal);
 
     public CardDb(string dbPath)
     {
@@ -108,6 +109,70 @@ public sealed class CardDb : ICardDb, IDisposable
         }
         _cardCache[grpId] = info;
         return info;
+    }
+
+    /// <summary>
+    /// The face the decklist peek shows (#99), looked up by exact title. Null when no
+    /// real card carries the name — token-only names and the extractor's "Card #123"
+    /// fallbacks land there, and the caller simply shows no peek.
+    /// </summary>
+    /// <remarks>
+    /// Non-token rows only, primary printing first: a card reprinted across sets has a
+    /// row each, and any of them answers, but the primary one is the least likely to
+    /// carry a promo oddity. Rules text comes from <c>AbilityIds</c>, whose entries are
+    /// <c>abilityId:textLocId</c> pairs — the second half resolves through the same
+    /// localization table as everything else, no join through Abilities needed.
+    /// </remarks>
+    public CardFace? FaceForName(string name)
+    {
+        if (_faceCache.TryGetValue(name, out var hit)) return hit;
+        using var cmd = _con.CreateCommand();
+        cmd.CommandText = """
+            SELECT c.OldSchoolManaText, c.TypeTextId, c.SubtypeTextId, c.AbilityIds,
+                   c.Power, c.Toughness
+            FROM Cards c
+            JOIN Localizations_enUS l ON l.LocId = c.TitleId
+            WHERE l.Loc = $name AND c.IsToken = 0
+            ORDER BY c.IsPrimaryCard DESC, c.GrpId
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("$name", name);
+        using var r = cmd.ExecuteReader();
+        CardFace? face = null;
+        if (r.Read())
+        {
+            var type = r.IsDBNull(1) ? null : NameForLocId(r.GetInt32(1));
+            var subtype = r.IsDBNull(2) ? null : NameForLocId(r.GetInt32(2));
+            var typeLine = string.IsNullOrWhiteSpace(subtype)
+                ? type ?? ""
+                : $"{type} — {subtype}";
+
+            var rules = new List<string>();
+            foreach (var pair in (r.IsDBNull(3) ? "" : r.GetString(3))
+                         .Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var colon = pair.IndexOf(':');
+                if (colon < 0 || !int.TryParse(pair[(colon + 1)..], out var textLocId))
+                    continue;
+                // Through the same cleaner every ability text on the page goes
+                // through — the raw rows carry Arena's renderer markup and o-packed
+                // symbol runs. CARDNAME is resolved to the card's own name first: a
+                // face, unlike a grant, knows exactly whose text it is showing.
+                if (NameForLocId(textLocId) is { } text && !string.IsNullOrWhiteSpace(text))
+                    rules.Add(Core.AbilityText.Plain(
+                        text.Replace("CARDNAME", name, StringComparison.Ordinal)));
+            }
+
+            face = new CardFace(
+                name,
+                CardFace.DecodeMana(r.IsDBNull(0) ? null : r.GetString(0)),
+                typeLine,
+                rules,
+                r.IsDBNull(4) ? null : r.GetString(4),
+                r.IsDBNull(5) ? null : r.GetString(5));
+        }
+        _faceCache[name] = face;
+        return face;
     }
 
     public string? AbilityText(int abilityGrpId)

@@ -48,6 +48,54 @@ public class CardDbIntegrationTests
         Assert.That(db.NameForLocId(648), Is.EqualTo("Plains"));
     }
 
+    /// <summary>
+    /// The face the decklist peek shows (#99), read from the real database: cost from
+    /// <c>OldSchoolManaText</c>, type line from <c>TypeTextId</c>/<c>SubtypeTextId</c>,
+    /// rules text from the <c>AbilityIds</c> pairs' text loc ids.
+    /// </summary>
+    [Test]
+    public void Real_database_builds_a_card_face_by_name()
+    {
+        using var db = Open();
+        var face = db.FaceForName("Hare Apparent");
+
+        Assert.That(face, Is.Not.Null);
+        Assert.That(face!.ManaCost, Is.EqualTo("{1}{W}"));
+        Assert.That(face.TypeLine, Is.EqualTo("Creature — Rabbit Noble"));
+        Assert.That(face.RulesText, Is.Not.Empty);
+        Assert.That(face.Power, Is.EqualTo("2"));
+        Assert.That(face.Toughness, Is.EqualTo("2"));
+    }
+
+    /// <summary>
+    /// Rules text goes through the same cleaner as every ability text on the page:
+    /// the raw rows pack symbols as o-runs, and "{oT}: Add {oC}" must reach the face
+    /// as "{T}: Add {C}".
+    /// </summary>
+    [Test]
+    public void Face_rules_text_is_cleaned_of_arena_markup()
+    {
+        using var db = Open();
+        var birds = db.FaceForName("Birds of Paradise");
+
+        Assert.That(birds, Is.Not.Null);
+        Assert.That(birds!.RulesText, Has.Some.Contains("{T}"));
+        Assert.That(birds.RulesText, Has.None.Contains("{oT}"));
+        Assert.That(birds.RulesText, Has.None.Contains("CARDNAME"));
+    }
+
+    [Test]
+    public void A_land_face_has_no_mana_cost_and_an_unknown_name_has_no_face()
+    {
+        using var db = Open();
+        var plains = db.FaceForName("Plains");
+
+        Assert.That(plains, Is.Not.Null);
+        Assert.That(plains!.ManaCost, Is.Empty);
+        Assert.That(plains.TypeLine, Does.Contain("Land"));
+        Assert.That(db.FaceForName("Definitely Not A Card Name"), Is.Null);
+    }
+
     [Test]
     public void Real_database_resolves_phase_and_step_labels()
     {
