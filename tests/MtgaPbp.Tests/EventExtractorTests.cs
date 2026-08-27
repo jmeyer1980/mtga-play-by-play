@@ -210,6 +210,62 @@ public class EventExtractorTests
         Assert.That(sbas[1].ToZone, Is.EqualTo("ZoneType_Command"));
     }
 
+    // ---------- what the opponent was seen to have (issue #101) ----------
+
+    /// <summary>
+    /// The list holds the distinct real cards the log could name that the opponent
+    /// owned — and nothing else. Your own cards belong to the decklist, a token is
+    /// not a card from their deck, and an object the log never named was not seen.
+    /// </summary>
+    [Test]
+    public void Opponent_cards_collects_named_opponent_cards_and_nothing_else()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+          "gameObjects": [
+            { "instanceId": 501, "grpId": 5, "name": 1001, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 28 },
+            { "instanceId": 502, "grpId": 7, "name": 1002, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 28 },
+            { "instanceId": 503, "grpId": 6, "name": 1000, "type": "GameObjectType_Card",
+              "ownerSeatId": 1, "controllerSeatId": 1, "zoneId": 28 },
+            { "instanceId": 504, "grpId": 8, "name": 1001, "type": "GameObjectType_Token",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 28 },
+            { "instanceId": 505, "grpId": 0, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 28 } ] }
+        """));
+
+        Assert.That(t.OpponentCards,
+            Is.EqualTo(new[] { "Elspeth, Storm Slayer", "Llanowar Elves" }),
+            "sorted, named, opponent-owned real cards only");
+    }
+
+    /// <summary>
+    /// The local player's seat is seat 1 here, so "the opponent" flips with it — the
+    /// list must follow the seat, not assume seat 2.
+    /// </summary>
+    [Test]
+    public void Opponent_cards_follows_the_resolved_local_seat()
+    {
+        var actions = """
+        { "timestamp": "1001", "greToClientEvent": { "greToClientMessages": [
+          { "type": "GREMessageType_ActionsAvailableReq", "systemSeatIds": [ 2 ] } ] } }
+        """;
+        var t = Run(RoomLine, actions, Gre("""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+          "gameObjects": [
+            { "instanceId": 501, "grpId": 5, "name": 1001, "type": "GameObjectType_Card",
+              "ownerSeatId": 1, "controllerSeatId": 1, "zoneId": 28 },
+            { "instanceId": 502, "grpId": 6, "name": 1000, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 28 } ] }
+        """));
+
+        Assert.That(t.OpponentCards, Is.EqualTo(new[] { "Llanowar Elves" }),
+            "the local player is seat 2, so seat 1 is the opponent");
+    }
+
     // ---------- stat mods and the battlefield (issue #97) ----------
 
     /// <summary>

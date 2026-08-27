@@ -26,6 +26,19 @@
 
 *A card marked "not seen" stayed in your library all match.*
 
+## Seen from the opponent (8 cards)
+
+- Ajani's Pridemate
+- Crowd of True Believers
+- Dusk Rose Reliquary
+- Hinterland Sanctifier
+- Hop to It
+- Leonin Vanguard
+- Plains
+- Temple of Plenty
+
+*Only what was revealed during the match — the rest of their deck never appears in the log.*
+
 ## Opening
 - Opponent wins the die roll 19 to 11 and plays first
 - Both players keep seven

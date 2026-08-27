@@ -120,6 +120,15 @@ public sealed record Transcript(
     public bool Drawn { get; init; }
 
     /// <summary>
+    /// The distinct real cards the log could name that <see cref="Opponent"/> owned,
+    /// sorted by name. What was revealed during the match — never their whole deck,
+    /// which appears nowhere in the log. Tokens are left out (a token is not a card
+    /// from their deck), and so is anything the log never named: a face-down card or
+    /// a fog-of-war object was not seen, and listing it would claim it was.
+    /// </summary>
+    public IReadOnlyList<string> OpponentCards { get; init; } = [];
+
+    /// <summary>
     /// Types found in <c>gameStateMessage.persistentAnnotations</c> that nothing reads
     /// and nobody has ruled out, counted once per distinct fact. Diagnostic only: none
     /// of it reaches the transcript.
@@ -778,8 +787,35 @@ public sealed class EventExtractor(ICardDb cards)
             Drawn = drawn,
             Commanders = commanders,
             DeckColors = colors,
-            UnknownPersistentAnnotations = st.UnknownPersistent
+            UnknownPersistentAnnotations = st.UnknownPersistent,
+            OpponentCards = OpponentCardsOf(games, opp)
         };
+    }
+
+    /// <summary>
+    /// The names behind <see cref="Transcript.OpponentCards"/>, harvested from every
+    /// game's tracker once the whole log has been read — the point at which a card
+    /// revealed in game three has the same standing as one revealed on turn one.
+    /// </summary>
+    /// <remarks>
+    /// Owner rather than controller: a card of theirs you stole is still a card seen
+    /// from the opponent's deck, and that is the question the list answers. Objects
+    /// fold by name, so a card that changed instance ids across zones — which is all
+    /// of them — appears once.
+    /// </remarks>
+    private static IReadOnlyList<string> OpponentCardsOf(List<GameRun> games, PlayerInfo? opp)
+    {
+        if (opp is null) return [];
+        var names = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var g in games)
+            foreach (var (id, o) in g.Tracker.Objects)
+            {
+                if (o.OwnerSeat != opp.Seat || o.Type != "GameObjectType_Card") continue;
+                var name = g.Tracker.NameOf(id);
+                if (!CardNames.IsPlaceholder(name) && name != CardNames.FaceDown)
+                    names.Add(name);
+            }
+        return names.ToList();
     }
 
     /// <summary>
