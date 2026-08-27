@@ -122,6 +122,22 @@ public class CardPeekTests
     }
 
     /// <summary>
+    /// The clipboard and the markdown export are meant to be the same document, and
+    /// textContent reads straight through a closed details — so the copy script must
+    /// drop the face subtree the same way it drops the spoken twins. Caught by
+    /// review on the first cut: a copied decklist carried every face and its
+    /// Scryfall link.
+    /// </summary>
+    [Test]
+    public void The_copy_script_drops_faces_along_with_the_spoken_twins()
+    {
+        var t = RendererTests.Sample(deck: [new DeckEntry("Hare Apparent", 26, true)]);
+        var html = GamePageRenderer.Render(t, faces: Faces(Hare));
+
+        Assert.That(html, Does.Contain("querySelectorAll('.vh, .face')"));
+    }
+
+    /// <summary>
     /// No face, no feature: an entry the dictionary cannot answer for renders exactly
     /// the line it always did, and a page with no dictionary at all — a CI runner, a
     /// golden fixture, a machine without Arena — is byte-identical to before.

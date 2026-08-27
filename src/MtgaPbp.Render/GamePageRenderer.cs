@@ -565,12 +565,15 @@ public static partial class GamePageRenderer
           }
 
           // Spelled-out repeat counts exist for screen readers; the clipboard keeps the
-          // "×3" the glyph shows, so pasted text matches the markdown export.
+          // "×3" the glyph shows, so pasted text matches the markdown export. Card
+          // faces are dropped the same way: textContent reads through a closed
+          // details, so without this a copied decklist carried every face and its
+          // Scryfall link — text the markdown export has never contained.
           function textOf(node) {
             var clone = node.cloneNode(true);
-            var spoken = clone.querySelectorAll('.vh');
-            for (var i = 0; i < spoken.length; i++) {
-              spoken[i].parentNode.removeChild(spoken[i]);
+            var hidden = clone.querySelectorAll('.vh, .face');
+            for (var i = 0; i < hidden.length; i++) {
+              hidden[i].parentNode.removeChild(hidden[i]);
             }
             return clone.textContent.trim();
           }
