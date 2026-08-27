@@ -1966,10 +1966,11 @@ public class RendererTests
     [Test]
     public void GamePage_copy_leaves_the_screen_reader_only_text_out_of_the_clipboard()
     {
-        // The spelled-out repeat count exists for speech, not for paste; the pasted
-        // transcript should match what the markdown export produces.
+        // The spelled-out repeat count exists for speech, not for paste, and a card
+        // face exists behind its disclosure; the pasted transcript should match what
+        // the markdown export produces, which carries neither.
         var html = GamePageRenderer.Render(Repeating());
-        Assert.That(html, Does.Contain("clone.querySelectorAll('.vh')"));
+        Assert.That(html, Does.Contain("clone.querySelectorAll('.vh, .face')"));
         Assert.That(html, Does.Contain("h2, h3, li.beat, li.board"));
     }
 

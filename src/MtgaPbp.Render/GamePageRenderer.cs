@@ -8,7 +8,8 @@ namespace MtgaPbp.Render;
 
 public static partial class GamePageRenderer
 {
-    public static string Render(Transcript t, Neighbours? nav = null)
+    public static string Render(Transcript t, Neighbours? nav = null,
+        IReadOnlyDictionary<string, CardFace>? faces = null)
     {
         var sb = new StringBuilder();
         sb.Append($"""
@@ -52,7 +53,7 @@ public static partial class GamePageRenderer
         if (TranscriptSummary.TimingNote(t) is { } timing)
             sb.Append($"""<p class="note" id="timing-note">{E(timing)}</p>""");
 
-        AppendDeck(sb, t);
+        AppendDeck(sb, t, faces);
         AppendSection(sb, t, Density.Beats);
         AppendSection(sb, t, Density.Verbose);
 
@@ -78,7 +79,8 @@ public static partial class GamePageRenderer
     /// quick keys. <c>list-style:none</c> costs the role in Safari, so the role is
     /// stated, exactly as the turn lists do.
     /// </remarks>
-    private static void AppendDeck(StringBuilder sb, Transcript t)
+    private static void AppendDeck(StringBuilder sb, Transcript t,
+        IReadOnlyDictionary<string, CardFace>? faces)
     {
         if (t.Deck.Count == 0) return;
 
@@ -89,9 +91,26 @@ public static partial class GamePageRenderer
 
         // A paragraph above the list, never a row in it: the list is the library, and
         // a screen reader entering it announces how many distinct cards it holds — the
-        // commander is not one of them and could never be drawn from it.
+        // commander is not one of them and could never be drawn from it. With a face
+        // to show, the paragraph becomes the summary of a peek — same words, same
+        // place, one disclosure deeper.
         if (TranscriptSummary.CommanderLine(t) is { } commander)
-            sb.Append($"""<p class="commander">{E(commander)}</p>""");
+        {
+            var commanderFaces = t.Commanders
+                .Select(n => faces?.GetValueOrDefault(n))
+                .OfType<CardFace>()
+                .ToList();
+            if (commanderFaces.Count > 0)
+            {
+                sb.Append($"""<details class="peek"><summary><span class="commander">{E(commander)}</span></summary>""");
+                foreach (var f in commanderFaces) AppendFace(sb, f);
+                sb.Append("</details>");
+            }
+            else
+            {
+                sb.Append($"""<p class="commander">{E(commander)}</p>""");
+            }
+        }
 
         sb.Append("""<ul class="cards" role="list">""");
 
@@ -104,7 +123,22 @@ public static partial class GamePageRenderer
             // the markup would land in the pasted markdown as one.
             var copies = card.Count == 1 ? "copy" : "copies";
             var seen = card.Seen ? "" : $"""{Spoken(" · ", ", ")}not seen""";
-            sb.Append($"""<li class="{(card.Seen ? "seen" : "unseen")}"><span aria-hidden="true">{card.Count}×</span><span class="vh">{card.Count} {copies} of</span> {E(card.Name)}{seen}</li>""");
+            var entry = $"""<span aria-hidden="true">{card.Count}×</span><span class="vh">{card.Count} {copies} of</span> {E(card.Name)}{seen}""";
+
+            // The entry line is the summary, so a closed peek reads — and drag-copies
+            // — exactly as the plain list item did; the face only exists once opened.
+            // No face, no peek: the line renders as it always has, which is also what
+            // keeps a build without a card database byte-identical to before.
+            if (faces?.GetValueOrDefault(card.Name) is { } face)
+            {
+                sb.Append($"""<li class="{(card.Seen ? "seen" : "unseen")}"><details class="peek"><summary>{entry}</summary>""");
+                AppendFace(sb, face);
+                sb.Append("</details></li>");
+            }
+            else
+            {
+                sb.Append($"""<li class="{(card.Seen ? "seen" : "unseen")}">{entry}</li>""");
+            }
         }
 
         sb.Append($"""
@@ -112,6 +146,34 @@ public static partial class GamePageRenderer
             <p class="note">{E(TranscriptSummary.DeckNote)}</p>
             </details>
             """);
+    }
+
+    /// <summary>
+    /// The card itself, as text: cost, type line, rules, statline — everything the
+    /// database knows, and nothing it does not. A planeswalker shows no statline
+    /// rather than an invented one.
+    /// </summary>
+    /// <remarks>
+    /// The one external link on the page lives here, behind two disclosures and a
+    /// click: Scryfall by exact name, because the Alchemy "A-" rebalances make any
+    /// id-based mapping lie occasionally, and a name search never does. The page
+    /// itself still makes no request — the link is the reader's to follow.
+    /// </remarks>
+    private static void AppendFace(StringBuilder sb, CardFace f)
+    {
+        sb.Append("""<div class="face">""");
+        var cost = f.ManaCost.Length > 0
+            ? $""" <span class="face-cost">{E(f.ManaCost)}</span>"""
+            : "";
+        sb.Append($"""<p class="face-title"><b>{E(f.Name)}</b>{cost}</p>""");
+        if (f.TypeLine.Length > 0)
+            sb.Append($"""<p class="face-type">{E(f.TypeLine)}</p>""");
+        foreach (var line in f.RulesText)
+            sb.Append($"""<p class="face-text">{E(line)}</p>""");
+        if (f.Power is not null && f.Toughness is not null)
+            sb.Append($"""<p class="face-pt">{E(f.Power)}/{E(f.Toughness)}</p>""");
+        sb.Append($"""<p class="face-link"><a href="https://scryfall.com/search?q={Uri.EscapeDataString($"!\"{f.Name}\"")}" target="_blank" rel="noopener">Scryfall<span class="vh">, opens in a new tab</span> <span aria-hidden="true">&#8599;</span></a></p>""");
+        sb.Append("</div>");
     }
 
     /// <summary>
@@ -410,6 +472,17 @@ public static partial class GamePageRenderer
         .deck .cards{list-style:none;margin:.4rem 0;padding:0 0 0 1.5rem}
         .deck .cards li{margin:.1rem 0}
         .deck .unseen{opacity:.65}
+        .peek summary{cursor:pointer}
+        .face{margin:.4rem 0 .6rem 1.1rem;padding:.5rem .7rem;max-width:24rem;
+              border:1px solid rgba(128,128,128,.45);border-radius:.4rem;
+              background:rgba(128,128,128,.08)}
+        .face p{margin:.25rem 0}
+        .face-title{display:flex;justify-content:space-between;gap:.6rem}
+        .face-cost{white-space:nowrap}
+        .face-type{font-style:italic;font-size:.92em;opacity:.85}
+        .face-text{font-size:.92em}
+        .face-pt{text-align:right;font-weight:600}
+        .face-link{font-size:.85em}
         .note{font-size:.9rem;opacity:.75;margin:.4rem 0 0 1.5rem}
         .build{margin-top:2rem;padding-top:.8rem;font-size:.8rem;opacity:.55;
                border-top:1px solid currentColor}
@@ -492,12 +565,15 @@ public static partial class GamePageRenderer
           }
 
           // Spelled-out repeat counts exist for screen readers; the clipboard keeps the
-          // "×3" the glyph shows, so pasted text matches the markdown export.
+          // "×3" the glyph shows, so pasted text matches the markdown export. Card
+          // faces are dropped the same way: textContent reads through a closed
+          // details, so without this a copied decklist carried every face and its
+          // Scryfall link — text the markdown export has never contained.
           function textOf(node) {
             var clone = node.cloneNode(true);
-            var spoken = clone.querySelectorAll('.vh');
-            for (var i = 0; i < spoken.length; i++) {
-              spoken[i].parentNode.removeChild(spoken[i]);
+            var hidden = clone.querySelectorAll('.vh, .face');
+            for (var i = 0; i < hidden.length; i++) {
+              hidden[i].parentNode.removeChild(hidden[i]);
             }
             return clone.textContent.trim();
           }

@@ -21,6 +21,35 @@ public sealed record CardInfo(
     public string? ColorIdentity { get; init; }
 }
 
+/// <summary>
+/// One card's face as the decklist peek shows it: everything a reader needs to know
+/// what the card does, resolved entirely from Arena's own database. No image, no
+/// network — the text is the card.
+/// </summary>
+/// <param name="Name">The card's title, exactly as the decklist prints it.</param>
+/// <param name="ManaCost">Decoded to curly notation ("{1}{W}"), empty for a land.</param>
+/// <param name="TypeLine">"Creature — Rabbit Noble", em dash and all.</param>
+/// <param name="RulesText">One entry per ability paragraph, in printed order.</param>
+public sealed record CardFace(
+    string Name, string ManaCost, string TypeLine,
+    IReadOnlyList<string> RulesText, string? Power, string? Toughness)
+{
+    /// <summary>
+    /// Arena's <c>OldSchoolManaText</c> in curly notation: "o1oW" is "{1}{W}",
+    /// "o1o(R/G)" is "{1}{R/G}", "oXoB" is "{X}{B}", and null or empty — a land —
+    /// stays empty. Every symbol is an "o"-prefixed segment; hybrids keep their
+    /// slash and lose their parentheses, which curly braces already provide.
+    /// </summary>
+    public static string DecodeMana(string? oldSchool)
+    {
+        if (string.IsNullOrEmpty(oldSchool)) return "";
+        var sb = new System.Text.StringBuilder();
+        foreach (var symbol in oldSchool.Split('o', StringSplitOptions.RemoveEmptyEntries))
+            sb.Append('{').Append(symbol.Trim('(', ')')).Append('}');
+        return sb.ToString();
+    }
+}
+
 /// <summary>Names <see cref="GameStateTracker.NameOf"/> falls back to when it cannot resolve.</summary>
 public static class CardNames
 {

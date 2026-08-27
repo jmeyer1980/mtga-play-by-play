@@ -57,11 +57,12 @@ jobs:
           $skipped = $total - $passed - $failed
           Write-Host "total=$total passed=$passed failed=$failed skipped=$skipped"
 
-          # 4 CardDbIntegrationTests needing Arena's card database, the Explicit
-          # fixture generator, and the documented targeting-limitation warning.
+          # 7 CardDbIntegrationTests needing Arena's card database (the card-face
+          # lookups for #99 added three), the Explicit fixture generator, and the
+          # documented targeting-limitation warning.
           # The golden-file tests are NOT in here — they run on a checked-in name
           # fixture, so the end-to-end check runs on CI too.
-          $expected = 6
+          $expected = 9
           if ($skipped -gt $expected) {
             throw "$skipped tests did not run; at most $expected are expected to skip on CI. Something stopped running rather than started failing."
           }

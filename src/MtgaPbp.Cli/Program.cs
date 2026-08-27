@@ -538,8 +538,17 @@ public static class Program
             if (lines.Count == 0) continue;
 
             var transcript = extractor.Extract(matchId, lines);
+
+            // Every name the deck section will print, resolved to a face where the
+            // database has one. Per transcript for the renderer's sake, but the
+            // lookups are cached in CardDb, so a name costs one query per build.
+            var faces = new Dictionary<string, CardFace>(StringComparer.Ordinal);
+            foreach (var name in transcript.Deck.Select(d => d.Name).Concat(transcript.Commanders))
+                if (!faces.ContainsKey(name) && cards.FaceForName(name) is { } face)
+                    faces[name] = face;
+
             File.WriteAllText(gamePath,
-                GamePageRenderer.Render(transcript, NeighboursOf(matchId)));
+                GamePageRenderer.Render(transcript, NeighboursOf(matchId), faces));
             File.WriteAllText(Path.Combine(textDir, $"{matchId}.md"),
                 MarkdownRenderer.Render(transcript));
             summaries.Add(IndexRenderer.Summarize(transcript) with
