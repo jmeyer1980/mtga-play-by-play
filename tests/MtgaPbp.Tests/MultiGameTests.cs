@@ -497,10 +497,15 @@ public class MultiGameTests
         var games = At("##");
         Assert.That(games.Count(h => h == "Game 1"), Is.EqualTo(1));
         Assert.That(games.Count(h => h == "Game 2"), Is.EqualTo(1));
-        // The decklist is preamble and belongs beside the games rather than inside one,
-        // so it is the one other thing allowed at this rank. Turns and openings are not.
+        // The card lists are preamble and belong beside the games rather than inside
+        // one, so they are the only other things allowed at this rank. Turns and
+        // openings are not.
         Assert.That(games.Where(h => !h.StartsWith("Game ", StringComparison.Ordinal)),
-            Is.EqualTo(new[] { TranscriptSummary.DeckHeading(Bo3()) }));
+            Is.EqualTo(new[]
+            {
+                TranscriptSummary.DeckHeading(Bo3()),
+                TranscriptSummary.OpponentHeading(Bo3())
+            }));
 
         var inner = At("###");
         Assert.That(inner.Count(h => h == "Opening"), Is.EqualTo(2));

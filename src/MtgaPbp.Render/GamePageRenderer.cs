@@ -54,6 +54,7 @@ public static partial class GamePageRenderer
             sb.Append($"""<p class="note" id="timing-note">{E(timing)}</p>""");
 
         AppendDeck(sb, t, faces);
+        AppendOpponentCards(sb, t, faces);
         AppendSection(sb, t, Density.Beats);
         AppendSection(sb, t, Density.Verbose);
 
@@ -124,21 +125,8 @@ public static partial class GamePageRenderer
             var copies = card.Count == 1 ? "copy" : "copies";
             var seen = card.Seen ? "" : $"""{Spoken(" · ", ", ")}not seen""";
             var entry = $"""<span aria-hidden="true">{card.Count}×</span><span class="vh">{card.Count} {copies} of</span> {E(card.Name)}{seen}""";
-
-            // The entry line is the summary, so a closed peek reads — and drag-copies
-            // — exactly as the plain list item did; the face only exists once opened.
-            // No face, no peek: the line renders as it always has, which is also what
-            // keeps a build without a card database byte-identical to before.
-            if (faces?.GetValueOrDefault(card.Name) is { } face)
-            {
-                sb.Append($"""<li class="{(card.Seen ? "seen" : "unseen")}"><details class="peek"><summary>{entry}</summary>""");
-                AppendFace(sb, face);
-                sb.Append("</details></li>");
-            }
-            else
-            {
-                sb.Append($"""<li class="{(card.Seen ? "seen" : "unseen")}">{entry}</li>""");
-            }
+            AppendCardLi(sb, card.Seen ? "seen" : "unseen",
+                entry, faces?.GetValueOrDefault(card.Name));
         }
 
         sb.Append($"""
@@ -146,6 +134,53 @@ public static partial class GamePageRenderer
             <p class="note">{E(TranscriptSummary.DeckNote)}</p>
             </details>
             """);
+    }
+
+    /// <summary>
+    /// What the opponent was seen to have (#101), in the deck section's shape: the
+    /// same disclosure, the same list, the same peeks — a reader who has used one
+    /// has used the other. Absent entirely when the log named nothing of theirs,
+    /// which keeps a transcript built by hand byte-identical to before.
+    /// </summary>
+    private static void AppendOpponentCards(StringBuilder sb, Transcript t,
+        IReadOnlyDictionary<string, CardFace>? faces)
+    {
+        if (t.OpponentCards.Count == 0) return;
+
+        sb.Append($"""
+            <details class="deck" id="their-cards">
+            <summary>{E(TranscriptSummary.OpponentHeading(t))}</summary>
+            """);
+        sb.Append("""<ul class="cards" role="list">""");
+        foreach (var name in t.OpponentCards)
+            AppendCardLi(sb, null, E(name), faces?.GetValueOrDefault(name));
+        sb.Append($"""
+            </ul>
+            <p class="note">{E(TranscriptSummary.OpponentNote)}</p>
+            </details>
+            """);
+    }
+
+    /// <summary>
+    /// One card row, with its peek when a face is known. The entry line is the
+    /// summary, so a closed peek reads — and drag-copies — exactly as the plain list
+    /// item does; the face only exists once opened. No face, no peek: the line
+    /// renders as it always has, which is also what keeps a build without a card
+    /// database byte-identical to before.
+    /// </summary>
+    private static void AppendCardLi(StringBuilder sb, string? cls, string entry, CardFace? face)
+    {
+        var open = cls is null ? "<li>" : $"""<li class="{cls}">""";
+        if (face is { } f)
+        {
+            sb.Append($"""{open}<details class="peek"><summary>{entry}</summary>""");
+            AppendFace(sb, f);
+            sb.Append("</details></li>");
+        }
+        else
+        {
+            sb.Append($"{open}{entry}</li>");
+        }
     }
 
     /// <summary>
@@ -619,6 +654,17 @@ public static partial class GamePageRenderer
               var cards = deck.querySelectorAll('li');
               for (var c = 0; c < cards.length; c++) out.push('- ' + textOf(cards[c]));
               out.push('', '*' + textOf(deck.querySelector('.note')) + '*', '');
+            }
+
+            // The opponent's section travels the same way the deck does, because the
+            // page, the export and the clipboard are one document — the peek faces
+            // stay behind, exactly as they do for the deck above.
+            var theirs = document.getElementById('their-cards');
+            if (theirs) {
+              out.push('## ' + textOf(theirs.querySelector('summary')), '');
+              var seen = theirs.querySelectorAll('li');
+              for (var s = 0; s < seen.length; s++) out.push('- ' + textOf(seen[s]));
+              out.push('', '*' + textOf(theirs.querySelector('.note')) + '*', '');
             }
 
             // h3 as well as h2. A multi-game page puts its games at h2 and demotes the

@@ -121,6 +121,52 @@ public class CardPeekTests
         Assert.That(html, Does.Contain("&lt;Gadget&gt;"));
     }
 
+    // ---------- seen from the opponent (issue #101) ----------
+
+    [Test]
+    public void The_opponent_section_lists_their_cards_with_peeks()
+    {
+        var t = RendererTests.Sample(deck: [new DeckEntry("Plains", 33, true)])
+            with
+        { OpponentCards = ["Hare Apparent", "Mountain"] };
+        var html = GamePageRenderer.Render(t, faces: Faces(Hare));
+
+        Assert.That(html, Does.Contain("id=\"their-cards\""));
+        Assert.That(html, Does.Contain("Seen from the opponent (2 cards)"));
+        Assert.That(html, Does.Contain("Creature — Rabbit Noble"), "Hare gets its peek");
+        Assert.That(html, Does.Contain("Mountain"), "no face is still a listed card");
+    }
+
+    [Test]
+    public void No_opponent_cards_means_no_section()
+    {
+        // The copy script always knows the section's id; the element itself is what
+        // must not exist when the log named nothing of theirs.
+        var t = RendererTests.Sample(deck: [new DeckEntry("Plains", 33, true)]);
+        Assert.That(GamePageRenderer.Render(t), Does.Not.Contain("id=\"their-cards\""));
+    }
+
+    /// <summary>
+    /// The page, the markdown export and the clipboard are one document — the #100
+    /// review caught the clipboard drifting, so all three are asserted together.
+    /// </summary>
+    [Test]
+    public void The_opponent_section_reaches_the_markdown_and_the_copy_script()
+    {
+        var t = RendererTests.Sample(deck: [new DeckEntry("Plains", 33, true)])
+            with
+        { OpponentCards = ["Hare Apparent"] };
+
+        var md = MarkdownRenderer.Render(t);
+        Assert.That(md, Does.Contain("## Seen from the opponent (1 card)"));
+        Assert.That(md, Does.Contain("- Hare Apparent"));
+        Assert.That(md, Does.Contain(TranscriptSummary.OpponentNote));
+
+        var html = GamePageRenderer.Render(t, faces: Faces(Hare));
+        Assert.That(html, Does.Contain("getElementById('their-cards')"),
+            "the copy script mirrors the section into pasted markdown");
+    }
+
     /// <summary>
     /// The clipboard and the markdown export are meant to be the same document, and
     /// textContent reads straight through a closed details — so the copy script must

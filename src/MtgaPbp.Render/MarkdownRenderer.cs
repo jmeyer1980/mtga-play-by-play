@@ -35,6 +35,18 @@ public static class MarkdownRenderer
             sb.AppendLine().AppendLine($"*{TranscriptSummary.DeckNote}*");
         }
 
+        // Independent of the deck block on purpose: matches archived before deck
+        // capture still saw the opponent's cards, and the one list this log CAN
+        // build for them should not vanish with the one it cannot.
+        if (t.OpponentCards.Count > 0)
+        {
+            if (t.Deck.Count > 0) sb.AppendLine();
+            sb.AppendLine($"## {TranscriptSummary.OpponentHeading(t)}").AppendLine();
+            foreach (var name in t.OpponentCards)
+                sb.AppendLine($"- {name}");
+            sb.AppendLine().AppendLine($"*{TranscriptSummary.OpponentNote}*");
+        }
+
         foreach (var line in Narrator.Narrate(t, Density.Beats))
         {
             if (line.IsTurnHeader)
@@ -118,6 +130,21 @@ public static class TranscriptSummary
     /// read it as "not played".
     /// </summary>
     public const string DeckNote = "A card marked \"not seen\" stayed in your library all match.";
+
+    /// <summary>
+    /// The opponent-cards heading (#101). Counts what it lists, in the decklist
+    /// heading's shape — but these are only the cards the log could name, so the
+    /// number describes what was revealed, never the size of their deck.
+    /// </summary>
+    public static string OpponentHeading(Transcript t) =>
+        $"Seen from the opponent ({t.OpponentCards.Count} card{(t.OpponentCards.Count == 1 ? "" : "s")})";
+
+    /// <summary>
+    /// What the opponent list is and is not. Worth a sentence for the same reason
+    /// <see cref="DeckNote"/> is: without it, a short list reads as a small deck.
+    /// </summary>
+    public const string OpponentNote =
+        "Only what was revealed during the match — the rest of their deck never appears in the log.";
 
     /// <summary>
     /// What to tell a reader when the log did not account for part of the match, or

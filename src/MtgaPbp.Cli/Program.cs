@@ -543,7 +543,9 @@ public static class Program
             // database has one. Per transcript for the renderer's sake, but the
             // lookups are cached in CardDb, so a name costs one query per build.
             var faces = new Dictionary<string, CardFace>(StringComparer.Ordinal);
-            foreach (var name in transcript.Deck.Select(d => d.Name).Concat(transcript.Commanders))
+            foreach (var name in transcript.Deck.Select(d => d.Name)
+                         .Concat(transcript.Commanders)
+                         .Concat(transcript.OpponentCards))
                 if (!faces.ContainsKey(name) && cards.FaceForName(name) is { } face)
                     faces[name] = face;
 
