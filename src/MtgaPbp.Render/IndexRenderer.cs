@@ -183,7 +183,7 @@ public static class IndexRenderer
                         aria-label="Copy game ID"
                         ><span aria-hidden="true">⧉</span></button></td>
                     <td{Key(r.EventName)}>{E(r.EventName)}</td><td class="deck"{Key(r.Colors)}>{Colors(r)}</td>
-                    <td{Key(r.Opponent)}>{E(r.Opponent)}</td>
+                    <td class="opp"{Key(r.Opponent)}>{E(r.Opponent)}</td>
                     <td class="{cls}"{Key(r.Result)}>{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
                     <td{Key(r.Turns)}>{r.Turns}</td>
                     <td{Key(r.Length?.TotalSeconds)}>{Length(r)}</td></tr>
@@ -849,6 +849,14 @@ public static class IndexRenderer
             clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;
             -webkit-user-select:none;user-select:none}
         label{display:block;font-size:.85rem;margin-bottom:.25rem}
+        /* Script-made, like the deck filters, so it is styled here but never rendered
+           by the build. Pressed shows as a background swap rather than an opacity
+           shift, the same feedback the deck filter gives and for the same reason. */
+        #names-toggle{display:block;font:inherit;padding:.35rem .7rem;min-height:1.75rem;
+                      margin:0 0 1rem;border:1px solid currentColor;border-radius:.3rem;
+                      background:transparent;color:inherit;cursor:pointer}
+        #names-toggle:hover{background:rgba(128,128,128,.15)}
+        #names-toggle[aria-pressed=true]{background:rgba(128,128,128,.25)}
         #q{width:100%;font:inherit;padding:.55rem .7rem;margin-bottom:1rem;
            border:1px solid currentColor;border-radius:.4rem;background:transparent;color:inherit}
         table{width:100%;border-collapse:collapse}
@@ -955,6 +963,7 @@ public static class IndexRenderer
           .star.on{color:Highlight}
           caption{opacity:1}
           button.deck-name.on{background:Highlight;color:HighlightText}
+          #names-toggle[aria-pressed=true]{background:Highlight;color:HighlightText}
           .copyid{color:ButtonText;opacity:1}
         }
         """;
@@ -1082,6 +1091,66 @@ public static class IndexRenderer
             });
           }
           wireDeckNames();
+
+          // Whether the table says who was played. A display toggle rather than a
+          // rebuild option: the index is shared as a screenshot or as visible text,
+          // and either carries exactly what the page shows (#103). The transcript's
+          // own "Copy without names" button set the pattern — the tool knows the
+          // names are in there, so the tool takes them out.
+          //
+          // The originals ride on the cell in data-name, because turning the toggle
+          // off has to restore them without a reload; the attribute is added and
+          // removed in step so a shown table carries no second copy of anything.
+          // The masking word is "Opponent" — the same word the build writes when a
+          // log never named anybody, so a hidden index reads exactly like an archive
+          // of matches whose players the log never learned, rather than inventing a
+          // redaction style of its own.
+          var namesHidden = false;
+          try { namesHidden = localStorage.getItem('hide-names') === '1'; } catch (e) {}
+
+          function applyNames() {
+            rows.forEach(function (tr) {
+              var cell = tr.querySelector('td.opp');
+              if (!cell) return;
+              if (namesHidden) {
+                if (!cell.hasAttribute('data-name')) cell.setAttribute('data-name', cell.textContent);
+                cell.textContent = 'Opponent';
+              } else if (cell.hasAttribute('data-name')) {
+                cell.textContent = cell.getAttribute('data-name');
+                cell.removeAttribute('data-name');
+              }
+            });
+          }
+
+          // A toggle, so the state rides on aria-pressed and the name stays put —
+          // the same rule the star and the deck filters follow. Created here rather
+          // than rendered, because without script it could do nothing, and this page
+          // does not ship controls that do nothing. The choice is remembered in
+          // localStorage rather than sessionStorage: hiding names is a preference
+          // about what this report shows, not a dismissal, and the safe direction
+          // to keep is hidden.
+          function wireNames() {
+            var label = document.querySelector('label[for="q"]');
+            if (!label || document.getElementById('names-toggle')) return;
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.id = 'names-toggle';
+            button.textContent = 'Hide player names';
+            button.setAttribute('aria-pressed', namesHidden ? 'true' : 'false');
+            button.addEventListener('click', function () {
+              namesHidden = !namesHidden;
+              try { localStorage.setItem('hide-names', namesHidden ? '1' : '0'); } catch (e) {}
+              button.setAttribute('aria-pressed', namesHidden ? 'true' : 'false');
+              applyNames();
+              // Said through the live region the filter and sorts already use, so a
+              // screen reader hears the state change without the name of the control
+              // itself changing under them.
+              announce(namesHidden ? 'Player names hidden.' : 'Player names shown.');
+            });
+            label.parentNode.insertBefore(button, label);
+          }
+          wireNames();
+          applyNames();
 
           // Sorting. One implementation for every table on the page rather than one per
           // table: the match list and the two breakdowns differ only in which columns
@@ -1319,6 +1388,10 @@ public static class IndexRenderer
                 rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
                 wireStars();
                 apply();
+                // The fresh rows arrive naming everybody, because the build always
+                // writes the names; hiding them is this page's job and has to be
+                // done again to rows that were not here when it was done first.
+                applyNames();
                 // The rows arrive in the order the build wrote them, and the panel's
                 // tables are new nodes entirely, so both need putting back the way the
                 // reader had them. Quietly: they did not just ask for this.
