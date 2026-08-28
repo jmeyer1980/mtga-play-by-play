@@ -106,8 +106,7 @@ public class AnonymizedIndexTests
         // The refresh path itself reapplies, not just first load: everything between
         // the function and the event source that calls it is the swap the fresh rows
         // arrive through.
-        var refresh = page[page.IndexOf("function refresh()", StringComparison.Ordinal)
-            ..page.IndexOf("new EventSource", StringComparison.Ordinal)];
+        var refresh = page[page.IndexOf("function refresh()", StringComparison.Ordinal)..page.IndexOf("new EventSource", StringComparison.Ordinal)];
         Assert.That(refresh, Does.Contain("applyNames();"));
     }
 }
