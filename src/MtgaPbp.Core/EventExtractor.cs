@@ -606,6 +606,15 @@ public sealed class EventExtractor(ICardDb cards)
                     // so the game gets a tracker of its own rather than inheriting one.
                     if (Json.Int(gameInfo, "gameNumber") is { } number && number != game.Number)
                     {
+                        // The game that just closed will never see another turn boundary,
+                        // so its last board is taken now, while its own tracker still
+                        // holds it — the next line of this method hands the ids to a new
+                        // game. Skipped when the game emitted nothing: an empty game has
+                        // no ending to record, and is about to be removed anyway.
+                        if (st.Seq != game.FirstSeq)
+                            EmitBoardSnapshots(game.Tracker, ts, game.Tracker.Turn, st,
+                                               final: true);
+
                         game.EndSeq = st.Seq;
                         // A log that opens mid-match announces game two before game one
                         // ever emits anything. An empty game is not a game.
@@ -719,6 +728,14 @@ public sealed class EventExtractor(ICardDb cards)
                 EmitStatExpiry(game, tracker, ts, st, explained);
             }
         }
+
+        // The final turn of the last game, for the same reason as the inner boundary
+        // above: no later turn will ever snapshot it. Only when the match actually
+        // ended — a "final" board for a log that merely stops would dress a truncated
+        // log up as a finished game, the opposite of what its incomplete warning says.
+        if (sawFinal && st.Seq != games[^1].FirstSeq)
+            EmitBoardSnapshots(games[^1].Tracker, ended, games[^1].Tracker.Turn, st,
+                               final: true);
 
         games[^1].EndSeq = st.Seq;
 
@@ -1204,9 +1221,11 @@ public sealed class EventExtractor(ICardDb cards)
     /// One board line per player, describing what they control at the end of a turn.
     /// The line text is built here rather than in the renderer because only this layer
     /// has the tracker; the renderer still decides how to present it and which player
-    /// label to use.
+    /// label to use. A <paramref name="final"/> call is a game's ending — the one
+    /// boundary that will never come round again — and is never suppressed as a repeat.
     /// </summary>
-    private static void EmitBoardSnapshots(GameStateTracker tracker, long ts, int turn, Emit st)
+    private static void EmitBoardSnapshots(
+        GameStateTracker tracker, long ts, int turn, Emit st, bool final = false)
     {
         foreach (var seat in new[] { 1, 2 })
         {
@@ -1240,7 +1259,12 @@ public sealed class EventExtractor(ICardDb cards)
             // about the board.
             var shape = detail.Replace(" (tapped)", "", StringComparison.Ordinal)
                               .Replace(", tapped)", ")", StringComparison.Ordinal);
-            if (st.LastBoard.TryGetValue(seat, out var previous) && previous == shape) continue;
+            // Except at the ending, where an unchanged board is still news: the reader
+            // is owed what the match closed on, and a side that sat still for four
+            // turns used to simply vanish from the record (a winner's two Rabbits were
+            // last mentioned on turn 9 of a 13-turn game).
+            if (!final &&
+                st.LastBoard.TryGetValue(seat, out var previous) && previous == shape) continue;
             st.LastBoard[seat] = shape;
 
             var seq = st.Seq;

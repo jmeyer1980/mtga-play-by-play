@@ -165,6 +165,8 @@
 - Opponent gains 1 life
 - Ajani's Pridemate's ability triggers
 - Ajani's Pridemate 5/5 gets 1 +1/+1 counter
+  *You control: Rabbit 1/1*
+  *Opponent controls: Ajani's Pridemate 6/6, Rabbit 1/1, Rabbit 1/1, Leonin Vanguard 2/2, Crowd of True Believers 1/2*
 - You concede — opponent wins the match
 
 ---

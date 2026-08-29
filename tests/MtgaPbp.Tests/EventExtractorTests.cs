@@ -784,6 +784,112 @@ public class EventExtractorTests
         }), "an unchanged board should stay quiet until it actually moves");
     }
 
+    /// <summary>
+    /// A game's last turn has no later turn boundary to snapshot it, so the ending
+    /// board went entirely unrecorded — a transcript could close on a concede without
+    /// saying what either player controlled, and a side that had sat still since turn
+    /// 9 was last mentioned four turns before the match ended. The ending is the one
+    /// place an unchanged board is still news, so both sides are stated there.
+    /// </summary>
+    [Test]
+    public void The_match_ending_snapshots_both_boards_even_when_unchanged()
+    {
+        const string zones = """
+            "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+            "gameObjects": [
+              { "instanceId": 50, "grpId": 1, "name": 1001, "controllerSeatId": 2,
+                "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
+                "power": 2, "toughness": 2 },
+              { "instanceId": 51, "grpId": 2, "name": 1002, "controllerSeatId": 1,
+                "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
+                "power": 4, "toughness": 4 } ],
+            """;
+        string NewTurn(int n, int seat) => Gre($$"""
+            { "type": "GameStateType_Full",
+              {{zones}}
+              "turnInfo": { "turnNumber": {{n}}, "activePlayer": {{seat}} },
+              "annotations": [ { "id": {{n}}, "affectorId": {{seat}}, "affectedIds": [ {{seat}} ],
+                "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+            """);
+        const string final = """
+        { "timestamp": "2000", "matchGameRoomStateChangedEvent": { "gameRoomInfo": {
+            "gameRoomConfig": { "matchId": "m1" },
+            "finalMatchResult": { "matchId": "m1", "resultList": [
+              { "scope": "MatchScope_Match", "winningTeamId": 1,
+                "reason": "ResultReason_Concede" } ] } } } }
+        """;
+
+        var t = Run(RoomLine, MulliganLine, NewTurn(1, 1), NewTurn(2, 2), final);
+
+        var last = t.Events.Where(x => x.Kind == EventKind.BoardSnapshot && x.Turn == 2).ToList();
+        Assert.That(last.Select(b => b.ActorSeat), Is.EquivalentTo(new int?[] { 1, 2 }),
+            "the match ended on turn 2, and both boards should be stated there");
+        Assert.That(last.Single(b => b.ActorSeat == 2).Detail, Is.EqualTo("Llanowar Elves 2/2"));
+        Assert.That(last.Single(b => b.ActorSeat == 1).Detail,
+            Is.EqualTo("Elspeth, Storm Slayer 4/4"));
+
+        var end = t.Events.Single(x => x.Kind == EventKind.GameEnd);
+        Assert.That(last.Max(b => b.Seq), Is.LessThan(end.Seq),
+            "the ending board belongs to the game, before the line that says it ended");
+    }
+
+    /// <summary>
+    /// The same gap at a Bo3's inner boundary: when game two is announced, game one's
+    /// last board has had no turn boundary to record it, and game two's tracker knows
+    /// nothing about it. It has to be taken while game one's tracker still holds it.
+    /// </summary>
+    [Test]
+    public void A_games_last_board_is_snapshot_when_the_next_game_starts()
+    {
+        string Turn(int n, int seat) => Gre($$"""
+            { "type": "GameStateType_Full",
+              "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "gameObjects": [ { "instanceId": 50, "grpId": 1, "name": 1001,
+                "controllerSeatId": 2, "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
+                "power": 2, "toughness": 2 } ],
+              "turnInfo": { "turnNumber": {{n}}, "activePlayer": {{seat}} },
+              "annotations": [ { "id": {{n}}, "affectorId": {{seat}}, "affectedIds": [ {{seat}} ],
+                "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+            """);
+        var nextGame = Gre("""
+            { "type": "GameStateType_Full", "gameInfo": { "gameNumber": 2 } }
+            """);
+
+        var t = Run(RoomLine, MulliganLine, Turn(1, 1), Turn(2, 2), nextGame);
+
+        var final = t.Events.SingleOrDefault(x =>
+            x.Kind == EventKind.BoardSnapshot && x.GameNumber == 1 && x.Turn == 2);
+        Assert.That(final, Is.Not.Null,
+            "game one ended on turn 2, and no later turn boundary will ever record it");
+        Assert.That(final!.Detail, Is.EqualTo("Llanowar Elves 2/2"));
+    }
+
+    /// <summary>
+    /// A log that simply stops has no ending to record. Printing a "final" board for a
+    /// match whose result never arrived would dress a truncated log up as a finished
+    /// game — the incomplete warning says the opposite.
+    /// </summary>
+    [Test]
+    public void A_log_that_stops_without_a_result_gets_no_final_board()
+    {
+        string Turn(int n, int seat) => Gre($$"""
+            { "type": "GameStateType_Full",
+              "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "gameObjects": [ { "instanceId": 50, "grpId": 1, "name": 1001,
+                "controllerSeatId": 2, "zoneId": 28, "cardTypes": [ "CardType_Creature" ],
+                "power": 2, "toughness": 2 } ],
+              "turnInfo": { "turnNumber": {{n}}, "activePlayer": {{seat}} },
+              "annotations": [ { "id": {{n}}, "affectorId": {{seat}}, "affectedIds": [ {{seat}} ],
+                "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+            """);
+
+        var t = Run(RoomLine, MulliganLine, Turn(1, 1), Turn(2, 2));
+
+        Assert.That(t.Incomplete, Is.True, "this fixture is the truncated-log case");
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.BoardSnapshot && x.Turn == 2),
+            Is.False, "a missing ending is not an ending");
+    }
+
     [Test]
     public void Turn_start_carries_the_life_totals_entering_the_turn()
     {
