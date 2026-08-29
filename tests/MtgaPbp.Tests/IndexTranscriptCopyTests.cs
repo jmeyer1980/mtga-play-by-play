@@ -124,6 +124,21 @@ public class IndexTranscriptCopyTests
     }
 
     /// <summary>
+    /// A refresh puts the reader back on this control the way it does for the star
+    /// and the id copy: the row swap destroys the node that had focus, and losing
+    /// your place because a match finished is the failure that block exists to
+    /// prevent — this button has to be one of the kinds it recognises.
+    /// </summary>
+    [Test]
+    public void A_refresh_puts_focus_back_on_it()
+    {
+        var page = Page();
+        var refresh = page[page.IndexOf("function refresh()", StringComparison.Ordinal)..page.IndexOf("new EventSource", StringComparison.Ordinal)];
+
+        Assert.That(refresh, Does.Contain("active.classList.contains('copymd') ? 'copymd'"));
+    }
+
+    /// <summary>
     /// One fallback copier serves every copy on the page, told what to announce —
     /// the shape the game page already uses — so this button could not grow a
     /// second clipboard path, and the game-ID button still says what it did.

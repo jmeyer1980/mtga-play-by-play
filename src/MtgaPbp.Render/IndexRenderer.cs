@@ -1400,7 +1400,8 @@ public static class IndexRenderer
             var active = document.activeElement;
             var kind = active && active.classList
               ? (active.classList.contains('star') ? 'star'
-                : active.classList.contains('copyid') ? 'copyid' : null)
+                : active.classList.contains('copyid') ? 'copyid'
+                : active.classList.contains('copymd') ? 'copymd' : null)
               : null;
             var focused = kind ? active.dataset.id : null;
 
