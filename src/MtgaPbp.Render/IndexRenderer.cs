@@ -171,6 +171,14 @@ public static class IndexRenderer
                 // 582 rows that holds 582 keep buttons whatever they are called. Nobody
                 // finds a match that way; they reach the row and then act. That cost is
                 // theoretical, and the one it was paying fell on every row.
+                //
+                // The transcript copy sits in the same cell as the id copy, so a row's
+                // copy actions are one place to look, no new column widens a table that
+                // already scrolls sideways on a phone, and no action lands between two
+                // data columns (#109). It ships disabled the way the star does and for
+                // the star's reason: the transcript lives beside this page, not in it,
+                // and file:// blocks the fetch that would get it — so from disk this is
+                // honestly inert, and the server wakes it.
                 body.Append($"""
                     <tr data-search="{E(haystack)}">
                     <td{Key(r.Favorite ? 1 : 0)}><button class="star{(r.Favorite ? " on" : "")}" type="button" disabled="disabled"
@@ -181,7 +189,10 @@ public static class IndexRenderer
                     <th scope="row"{Key(r.SortKey)}><a href="games/{E(Uri.EscapeDataString(r.MatchId))}.html">{E(r.Date)}</a></th>
                     <td><button class="copyid" type="button" data-id="{E(r.MatchId)}"
                         aria-label="Copy game ID"
-                        ><span aria-hidden="true">⧉</span></button></td>
+                        ><span aria-hidden="true">⧉</span></button><button class="copymd" type="button" disabled="disabled"
+                        data-id="{E(r.MatchId)}" aria-describedby="copymd-note"
+                        aria-label="Copy transcript without names"
+                        ><span aria-hidden="true">¶</span></button></td>
                     <td{Key(r.EventName)}>{E(r.EventName)}</td><td class="deck"{Key(r.Colors)}>{Colors(r)}</td>
                     <td class="opp"{Key(r.Opponent)}>{E(r.Opponent)}</td>
                     <td class="{cls}"{Key(r.Result)}>{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
@@ -214,6 +225,10 @@ public static class IndexRenderer
                 <p class="note" id="keep-note">Keeping a match protects it from pruning.
                 It works while the report is served by <code>mtga-pbp watch</code>; opened
                 from a file this page is read-only, so the Keep buttons are disabled.</p>
+                <p class="note" id="copymd-note">Copying a transcript from the index fetches
+                text that lives beside this page, which works while the report is served by
+                <code>mtga-pbp watch</code>; opened from a file those buttons are disabled —
+                each game page's own copy buttons work from anywhere.</p>
                 <p id="status" class="vh" role="status"></p>
                 """);
         }
@@ -893,6 +908,7 @@ public static class IndexRenderer
                       background:transparent;color:inherit;cursor:pointer}
         .coach button:hover{background:rgba(128,128,128,.15)}
         body.live #keep-note{display:none}
+        body.live #copymd-note{display:none}
         .star{background:none;border:0;cursor:default;font-size:1rem;padding:0;color:#666666;
               display:inline-flex;align-items:center;justify-content:center;
               min-width:1.75rem;min-height:1.75rem;border-radius:.3rem}
@@ -944,6 +960,15 @@ public static class IndexRenderer
                 justify-content:center;min-width:1.75rem;min-height:1.75rem;
                 border-radius:.3rem}
         .copyid:hover{background:rgba(128,128,128,.2);opacity:1}
+        /* The id copy's sibling, but shipped disabled — see the note it points at —
+           and greyed the way the disabled star is, with stated per-scheme colours
+           rather than an opacity that fails contrast on white, so an inert control
+           does not dress as a working one. */
+        .copymd{background:none;border:0;font-size:1rem;padding:0;color:#666666;
+                display:inline-flex;align-items:center;justify-content:center;
+                min-width:1.75rem;min-height:1.75rem;border-radius:.3rem;cursor:default}
+        .copymd:enabled{cursor:pointer;color:inherit;opacity:.6}
+        .copymd:enabled:hover{background:rgba(128,128,128,.2);opacity:1}
         :focus-visible{outline:2px solid currentColor;outline-offset:2px}
         #live{display:none;font-size:.8rem;opacity:.6}
         body.live #live{display:inline}
@@ -956,6 +981,7 @@ public static class IndexRenderer
           .win{color:#4ade80}
           .star{color:#9a9a9a}
           .star.on{color:#f2c14a}
+          .copymd{color:#9a9a9a}
         }
         @media (forced-colors:active){
           .sub,.loss,.draw,.empty,.note,th,#live,.build{opacity:1}
@@ -965,6 +991,8 @@ public static class IndexRenderer
           button.deck-name.on{background:Highlight;color:HighlightText}
           #names-toggle[aria-pressed=true]{background:Highlight;color:HighlightText}
           .copyid{color:ButtonText;opacity:1}
+          .copymd{color:GrayText;opacity:1}
+          .copymd:enabled{color:ButtonText}
         }
         """;
 
@@ -1263,8 +1291,10 @@ public static class IndexRenderer
 
           // navigator.clipboard needs a secure context and file:// does not qualify in
           // every browser, so fall back rather than fail silently. The twin of this
-          // lives in the game page's script.
-          function legacyCopy(text, button) {
+          // lives in the game page's script, and it is told what to announce for the
+          // same reason that one is: two copies now share it, and "Game ID copied."
+          // after a transcript would be the page reporting something it did not do.
+          function legacyCopy(text, button, copied) {
             var area = document.createElement('textarea');
             area.value = text;
             area.setAttribute('readonly', '');
@@ -1276,7 +1306,7 @@ public static class IndexRenderer
             try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
             document.body.removeChild(area);
             button.focus();
-            announce(ok ? 'Game ID copied.' : 'Copy failed.');
+            announce(ok ? copied : 'Copy failed.');
           }
 
           // Delegated, because there is one of these per row and an archive runs to
@@ -1289,9 +1319,9 @@ public static class IndexRenderer
             if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(id).then(
                 function () { announce('Game ID copied.'); },
-                function () { legacyCopy(id, button); });
+                function () { legacyCopy(id, button, 'Game ID copied.'); });
             } else {
-              legacyCopy(id, button);
+              legacyCopy(id, button, 'Game ID copied.');
             }
           });
 
@@ -1324,6 +1354,45 @@ public static class IndexRenderer
             });
           }
           wireStars();
+
+          // The transcript copies wake beside the stars, and for the star's reason:
+          // rendered disabled because from a file they could not work, enabled here
+          // because now they can. What one copies is the markdown export the build
+          // already writes for the match — the same document the game page's copy
+          // assembles — with its title swapped for the words the sanitized copy
+          // uses, because the title is the one line of a transcript that names
+          // either player (#109).
+          function wireCopies() {
+            tbody.querySelectorAll('.copymd').forEach(function (b) {
+              b.disabled = false;
+              b.removeAttribute('aria-describedby');
+            });
+          }
+          wireCopies();
+
+          // Delegated like the id copy above, so it survives the row swaps a live
+          // page goes through; a disabled button never dispatches the click, which
+          // is what keeps this inert from disk without a second guard anywhere.
+          tbody.addEventListener('click', function (e) {
+            var button = e.target.closest ? e.target.closest('.copymd') : null;
+            if (!button || button.disabled) return;
+            fetch('text/' + encodeURIComponent(button.dataset.id) + '.md', { cache: 'no-store' })
+              .then(function (r) {
+                if (!r.ok) throw new Error('' + r.status);
+                return r.text();
+              })
+              .then(function (text) {
+                var sanitized = text.replace(/^# .*/, '# You vs Opponent');
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(sanitized).then(
+                    function () { announce('Transcript copied without names.'); },
+                    function () { legacyCopy(sanitized, button, 'Transcript copied without names.'); });
+                } else {
+                  legacyCopy(sanitized, button, 'Transcript copied without names.');
+                }
+              })
+              .catch(function () { announce('Copy failed.'); });
+          });
 
           // Re-read the freshly written index and swap in its rows, so the search box
           // and scroll position survive what would otherwise be a reload.
@@ -1387,6 +1456,7 @@ public static class IndexRenderer
                 }
                 rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
                 wireStars();
+                wireCopies();
                 apply();
                 // The fresh rows arrive naming everybody, because the build always
                 // writes the names; hiding them is this page's job and has to be
