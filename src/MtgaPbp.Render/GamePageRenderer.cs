@@ -523,6 +523,9 @@ public static partial class GamePageRenderer
                border-top:1px solid currentColor}
         .controls{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.4rem 0 0}
         button{font:inherit;padding:.3rem .8rem;cursor:pointer;min-height:1.75rem}
+        /* Pressed shows as a background swap, the same feedback the index toggle
+           gives — the state has to be visible, not only announced. */
+        #names-toggle[aria-pressed=true]{background:rgba(128,128,128,.25)}
         .status{font-size:.85rem;opacity:.75}
         :focus-visible{outline:2px solid currentColor;outline-offset:2px}
         /* Room for the pager, plus the strip iOS Safari reserves for its own chrome —
@@ -554,6 +557,7 @@ public static partial class GamePageRenderer
         @media (prefers-color-scheme:dark){.warn{border-left-color:#e0a33a}}
         @media (forced-colors:active){
           .sub,.board,.warn,.status,.back a,h2,h3,.note,.deck .unseen,.build,.pager .top{opacity:1}
+          #names-toggle[aria-pressed=true]{background:Highlight;color:HighlightText}
         }
         """;
 
@@ -585,6 +589,59 @@ public static partial class GamePageRenderer
               toggle.textContent = showVerbose ? 'Show readable beats' : 'Show verbose detail';
               say(showVerbose ? 'Verbose transcript shown.' : 'Readable transcript shown.');
             });
+          }
+
+          // Whether the page says who was playing. The copy buttons already have a
+          // nameless form; this is the same fact for the screen, because a game page
+          // is shared as a screenshot too, and a screenshot carries the heading and
+          // the tab (#106). The masking words come from the data-title the server
+          // wrote for the sanitized copy — one fact, not a second literal kept in
+          // step — and the choice lives under the index toggle's own key, so hiding
+          // names anywhere hides them everywhere, and paging between matches keeps
+          // it: each page reads the key on load.
+          var anon = document.getElementById('copy-anon');
+          var heading = document.querySelector('header h1');
+          if (anon && heading) {
+            var namesHidden = false;
+            try { namesHidden = localStorage.getItem('hide-names') === '1'; } catch (e) {}
+
+            // The originals, kept once. Nothing on this page replaces the heading —
+            // there is no live refresh here — so two variables do what the index
+            // needed an attribute on every swapped-in cell for.
+            var realHeading = heading.textContent;
+            var realTitle = document.title;
+
+            var applyNames = function () {
+              heading.textContent = namesHidden ? anon.dataset.title : realHeading;
+              document.title = namesHidden ? anon.dataset.title : realTitle;
+            };
+
+            // Keep copy behavior unchanged: "Copy transcript" should still use the
+            // original heading text even when the on-screen heading is masked.
+            var originalAsMarkdown = asMarkdown;
+            asMarkdown = function (headingOverride) {
+              return originalAsMarkdown(arguments.length ? headingOverride : realHeading);
+            };
+            // A toggle, so the state rides on aria-pressed and the name stays put —
+            // the rule the index toggle and the star follow. The density button above
+            // does the opposite on ARIA's own guidance: one or the other, never both.
+            // Created here rather than rendered, because without script it could do
+            // nothing, and this page does not ship controls that do nothing.
+            var names = document.createElement('button');
+            names.type = 'button';
+            names.id = 'names-toggle';
+            names.textContent = 'Hide player names';
+            names.setAttribute('aria-pressed', namesHidden ? 'true' : 'false');
+            names.addEventListener('click', function () {
+              namesHidden = !namesHidden;
+              try { localStorage.setItem('hide-names', namesHidden ? '1' : '0'); } catch (e) {}
+              names.setAttribute('aria-pressed', namesHidden ? 'true' : 'false');
+              applyNames();
+              say(namesHidden ? 'Player names hidden.' : 'Player names shown.');
+            });
+            // Into the controls row, before the status region that reports for it.
+            anon.parentNode.insertBefore(names, status);
+            applyNames();
           }
 
           var copy = document.getElementById('copy-button');
