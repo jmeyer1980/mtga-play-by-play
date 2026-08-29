@@ -616,6 +616,12 @@ public static partial class GamePageRenderer
               document.title = namesHidden ? anon.dataset.title : realTitle;
             };
 
+            // Keep copy behavior unchanged: "Copy transcript" should still use the
+            // original heading text even when the on-screen heading is masked.
+            var originalAsMarkdown = asMarkdown;
+            asMarkdown = function (headingOverride) {
+              return originalAsMarkdown(arguments.length ? headingOverride : realHeading);
+            };
             // A toggle, so the state rides on aria-pressed and the name stays put —
             // the rule the index toggle and the star follow. The density button above
             // does the opposite on ARIA's own guidance: one or the other, never both.
