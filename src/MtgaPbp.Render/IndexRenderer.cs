@@ -41,7 +41,15 @@ public sealed record MatchSummary(
     /// which is every match archived before the slicer kept <c>ConnectResp</c>. Null is
     /// not "on the draw", so anything counting this needs its own denominator.
     /// </summary>
-    bool? OnThePlay = null);
+    bool? OnThePlay = null,
+
+    /// <summary>
+    /// Your own screen name, or null when the log never carried it. The index never
+    /// needed this before #108 — every column is about the match, and every match is
+    /// yours — but a copied record has to be able to say whose it is, and the
+    /// opponent was the only player who travelled this far.
+    /// </summary>
+    string? You = null);
 
 public static class IndexRenderer
 {
@@ -65,7 +73,8 @@ public static class IndexRenderer
         // having been on the draw.
         OnThePlay: t.Opening?.FirstPlayerSeat is { } first && t.You?.Seat is { } mine
             ? first == mine
-            : null);
+            : null,
+        You: t.You?.ScreenName);
 
     /// <summary>
     /// Rows are rendered statically rather than built by script: the page then works
@@ -100,8 +109,14 @@ public static class IndexRenderer
             // Worked out once: the panel reports the records, and every row carries the
             // deck it was played with so one click in the panel can filter to it.
             var stats = IndexStats.From(ordered);
+            // The newest name the archive knows, because an account renames forward:
+            // the record belongs to whoever the player is now, not to whoever they
+            // were when the archive began. Null when no log ever said, which is what
+            // makes the named copy button disappear rather than promise a name it
+            // does not have.
+            var you = ordered.Select(r => r.You).FirstOrDefault(n => n is not null);
             body.Append(Coach(nudge));
-            body.Append(Panel(stats));
+            body.Append(Panel(stats, you));
             body.Append(Vault(inventory ?? []));
 
             // The counter is server-rendered rather than filled in by script: it is a
@@ -376,7 +391,7 @@ public static class IndexRenderer
     /// file already refuses to do for the pager and the star.
     /// </para>
     /// </remarks>
-    private static string Panel(IndexStats s)
+    private static string Panel(IndexStats s, string? you)
     {
         // Nothing with a result yet is itself worth a sentence. Returning nothing here
         // would leave an archive of unfinished matches with no record and no reason
@@ -418,6 +433,24 @@ public static class IndexRenderer
                       "left out of every record — an unfinished match has no result.");
         foreach (var note in notes)
             sb.Append($"""<p class="note">{E(note)}</p>""");
+
+        // An anchor the script fills with two copy buttons — made by script like
+        // every other control in this panel, because a copy needs script to do
+        // anything and this section ships no control that does nothing (the rule
+        // A_deck_name_is_not_a_control_until_script_makes_it_one holds).
+        //
+        // Two buttons rather than a toggle on one — the game page's own reasoning
+        // for its pair of copies: a button that says what it does says it every
+        // time. Nameless is the default the rest of the report already keeps; the
+        // named one is the opposite case #108 exists for — on a record shared on
+        // purpose the player's own handle is attribution, not a leak. The heading
+        // it pastes is composed here, one fact the script never spells for itself,
+        // and the attribute is omitted entirely when no log ever named the player,
+        // which is what makes that button never exist rather than promise a name
+        // nobody has.
+        sb.Append(you is null
+            ? """<div class="statcopy"></div>"""
+            : $"""<div class="statcopy" data-title="{E($"{you}'s record")}"></div>""");
 
         sb.Append(Breakdowns(s));
         sb.Append("</section>");
@@ -917,6 +950,13 @@ public static class IndexRenderer
         .star:enabled:hover{background:rgba(128,128,128,.2)}
         #stats{margin:0 0 1.5rem}
         #stats h2{font-size:1.1rem;margin:0 0 .6rem}
+        /* The coach button's shape, for the same kind of control: bordered text
+           buttons that survive forced colours through currentColor. */
+        .statcopy{display:flex;gap:.5rem;flex-wrap:wrap;margin:0 0 1rem}
+        .statcopy button{font:inherit;padding:.35rem .7rem;min-height:1.75rem;
+                         border:1px solid currentColor;border-radius:.3rem;
+                         background:transparent;color:inherit;cursor:pointer}
+        .statcopy button:hover{background:rgba(128,128,128,.15)}
         /* Sized and hit-targeted like the other controls on this page rather than left
            at the browser's bare marker, which is a few pixels tall on a touch screen. */
         #breakdowns>summary{cursor:pointer;padding:.4rem 0;min-height:1.75rem;
@@ -1120,6 +1160,31 @@ public static class IndexRenderer
           }
           wireDeckNames();
 
+          // The panel's copy buttons, made here for the deck filters' reason: they
+          // do nothing without script, so without script they are nothing. The
+          // named one exists only when the build composed a heading for it, and the
+          // heading rides along onto the button so the click handler needs no way
+          // back to the anchor it came from.
+          function wireRecordCopies() {
+            var holder = document.querySelector('#stats .statcopy');
+            if (!holder || holder.querySelector('button')) return;
+            function make(id, label) {
+              var b = document.createElement('button');
+              b.type = 'button';
+              b.id = id;
+              b.className = 'copyrec';
+              b.textContent = label;
+              holder.appendChild(b);
+              return b;
+            }
+            make('copy-stats', 'Copy record');
+            if (holder.dataset.title) {
+              make('copy-stats-named', 'Copy record with my name')
+                .dataset.title = holder.dataset.title;
+            }
+          }
+          wireRecordCopies();
+
           // Whether the table says who was played. A display toggle rather than a
           // rebuild option: the index is shared as a screenshot or as visible text,
           // and either carries exactly what the page shows (#103). The transcript's
@@ -1309,6 +1374,81 @@ public static class IndexRenderer
             announce(ok ? copied : 'Copy failed.');
           }
 
+          // What a cell or heading shows, with the speech-only spans and the sort
+          // arrows taken out — the clipboard gets what the eye gets, the same rule
+          // the game page's copy follows. Whitespace collapses to single spaces
+          // because the source wraps its sentences and a raw newline inside a
+          // table cell would break the pipe row it lands in.
+          function textOf(node) {
+            var clone = node.cloneNode(true);
+            clone.querySelectorAll('.vh, .mark').forEach(function (n) {
+              n.parentNode.removeChild(n);
+            });
+            return clone.textContent.replace(/\s+/g, ' ').trim();
+          }
+
+          // The record as markdown, assembled from the panel the reader is looking
+          // at so the page and the clipboard are one document — sorted how they
+          // sorted it, missing what the page says is missing. It walks #stats and
+          // nothing else, which is the whole privacy guarantee: the panel names no
+          // opponent anywhere, so neither can a copy of it (#108). Captions hidden
+          // from sight stay out, the note that only explains the deck filter stays
+          // out, and the stamp every report ends with goes in.
+          function asRecord(heading) {
+            var stats = document.getElementById('stats');
+            if (!stats) return '';
+            var out = ['# ' + heading, ''];
+            stats.querySelectorAll('table.stats, p.note').forEach(function (node) {
+              if (node.id === 'deck-filter-note') return;
+              if (node.tagName === 'P') { out.push('*' + textOf(node) + '*', ''); return; }
+              var caption = node.querySelector('caption');
+              if (caption && !caption.classList.contains('vh')) {
+                out.push('## ' + textOf(caption), '');
+              }
+              var head = node.tHead && node.tHead.rows[0];
+              if (head) {
+                var labels = Array.prototype.map.call(head.cells, textOf);
+                out.push('| ' + labels.join(' | ') + ' |');
+                out.push('|' + labels.map(function () { return ' --- '; }).join('|') + '|');
+              }
+              var body = node.tBodies[0];
+              if (body) {
+                Array.prototype.forEach.call(body.rows, function (row) {
+                  out.push('| ' + Array.prototype.map.call(row.cells, textOf).join(' | ') + ' |');
+                });
+              }
+              out.push('');
+            });
+            var build = document.querySelector('footer.build');
+            if (build) out.push('---', '', '*' + textOf(build) + '*');
+            return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
+          }
+
+          // Delegated on the panel element, which survives the innerHTML swap a
+          // live refresh performs where the buttons themselves do not. Above the
+          // served-only line for the id copy's reason: copying needs no server,
+          // and the report is meant to work opened straight off disk.
+          var statsPanel = document.getElementById('stats');
+          if (statsPanel) {
+            statsPanel.addEventListener('click', function (e) {
+              var button = e.target.closest ? e.target.closest('.copyrec') : null;
+              if (!button) return;
+              var named = !!button.dataset.title;
+              var heading = named
+                ? button.dataset.title
+                : textOf(document.getElementById('stats-heading'));
+              var text = asRecord(heading);
+              var done = named ? 'Record copied with your name.' : 'Record copied.';
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(
+                  function () { announce(done); },
+                  function () { legacyCopy(text, button, done); });
+              } else {
+                legacyCopy(text, button, done);
+              }
+            });
+          }
+
           // Delegated, because there is one of these per row and an archive runs to
           // hundreds. Wired here rather than below the served-only line: copying needs
           // no server, and the report is meant to work opened straight off disk.
@@ -1420,6 +1560,11 @@ public static class IndexRenderer
                   index: Array.prototype.indexOf.call(head.parentElement.cells, head) }
               : null;
 
+            // A record copy in the panel is destroyed by the same swap; its id
+            // survives the rebuild, which is all putting the reader back needs.
+            var onRec = active && active.classList && active.classList.contains('copyrec')
+              ? active.id : null;
+
             fetch('/', { cache: 'no-store' })
               .then(function (r) { return r.text(); })
               .then(function (html) {
@@ -1454,6 +1599,11 @@ public static class IndexRenderer
                     }
                   }
                   wireDeckNames();
+                  wireRecordCopies();
+                  if (onRec) {
+                    var rec = document.getElementById(onRec);
+                    if (rec) rec.focus();
+                  }
                 }
                 rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
                 wireStars();
