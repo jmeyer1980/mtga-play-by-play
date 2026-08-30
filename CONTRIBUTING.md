@@ -74,10 +74,14 @@ was checked and against what.
 
 The same applies to numbers tuned against the archive, and they need re-checking as it
 grows. `DeckIdentity.SameDeck` was set to 0.60 because at 426 matches the similarity
-distribution had a hole there; at 1,122 the hole had closed and the comment was still
-claiming it. **A measurement written into a comment is a claim with a date on it** — when
-you rely on one, re-run it, and if it no longer holds say so in place rather than quietly
-leaving the old number's justification standing.
+distribution had a hole there. Nobody re-ran it until the archive reached 1,122, by which
+point the hole had closed — and there is no way to say when it closed, only that the
+comment had been wrong for some unknown stretch of the way. It now says what the archive
+says, and at what size it was asked.
+
+**A measurement written into a comment is a claim with a date on it**: when you rely on
+one, re-run it, and if it no longer holds, say so in place rather than quietly leaving the
+old justification standing.
 
 ## Regenerating the checked-in fixtures
 
