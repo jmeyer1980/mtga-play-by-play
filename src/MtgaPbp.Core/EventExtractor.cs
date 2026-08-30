@@ -129,8 +129,10 @@ public sealed record Transcript(
     public IReadOnlyList<string> OpponentCards { get; init; } = [];
 
     /// <summary>
-    /// The opponent's commanders, by name, in the order the command zone revealed
-    /// them. The command zone is public from before the first turn, so unlike
+    /// The opponent's commanders, by name, sorted — the order the zone happened to
+    /// reveal a partner pair is an accident of message timing, and the joined names
+    /// are a grouping key downstream, so the same deck has to read identically in
+    /// every match. The command zone is public from before the first turn, so unlike
     /// <see cref="OpponentCards"/> this does not wait for a card to be played —
     /// naming the deck you are up against is the point. Empty when none was
     /// recorded: every non-Brawl format, and a match whose log never described the
@@ -861,7 +863,12 @@ public sealed class EventExtractor(ICardDb cards)
             foreach (var grpId in g.Tracker.CommandZoneCards(opp.Seat))
                 if (!grpIds.Contains(grpId))
                     grpIds.Add(grpId);
-        return DeckList.CommanderNames(grpIds, cards);
+        // Sorted, unlike the player's own commanders: their registration order is a
+        // choice the deck's owner made once, while the zone's reveal order is an
+        // accident of message timing — and these names are a grouping key downstream.
+        return DeckList.CommanderNames(grpIds, cards)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>

@@ -504,9 +504,9 @@ public static class IndexRenderer
     /// </remarks>
     private static string Breakdowns(IndexStats s)
     {
-        var format = Breakdown("By format", "Format", s.ByFormat, decks: false);
-        var deck = Breakdown("By deck", "Deck", s.ByDeck, decks: true);
-        var against = Breakdown("Against", "Their deck", s.ByOpponentDeck, decks: false);
+        var format = Breakdown("By format", "Format", s.ByFormat, decks: false, id: "by-format");
+        var deck = Breakdown("By deck", "Deck", s.ByDeck, decks: true, id: "by-deck");
+        var against = Breakdown("Against", "Their deck", s.ByOpponentDeck, decks: false, id: "against");
         if (format.Length == 0 && deck.Length == 0 && against.Length == 0) return "";
 
         var sb = new StringBuilder();
@@ -725,13 +725,13 @@ public static class IndexRenderer
 
     private static string Count(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
 
-    private static string Breakdown(string title, string what, IReadOnlyList<StatRow> rows, bool decks)
+    private static string Breakdown(string title, string what, IReadOnlyList<StatRow> rows, bool decks, string id)
     {
         if (rows.Count == 0) return "";
 
         var sb = new StringBuilder();
         sb.Append($"""
-            <div class="scroller"><table class="stats" id="{(decks ? "by-deck" : "by-format")}"><caption>{E(title)}</caption>
+            <div class="scroller"><table class="stats" id="{id}"><caption>{E(title)}</caption>
             <thead><tr>{Col(what, Text)}{Col("Played", Num)}
             {Col("Record", Num)}{Col("Win rate", Num)}
             """);

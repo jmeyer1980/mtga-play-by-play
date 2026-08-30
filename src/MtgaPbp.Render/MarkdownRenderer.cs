@@ -112,6 +112,13 @@ public static class TranscriptSummary
     /// rather than a decklist row: a decklist row implies a card that could be
     /// drawn, and the commander sits in the command zone from the first shuffle.
     /// </summary>
+    public static string? CommanderLine(Transcript t) => t.Commanders.Count switch
+    {
+        0 => null,
+        1 => $"Commander: {t.Commanders[0]}",
+        _ => $"Commanders: {string.Join(" and ", t.Commanders)}"
+    };
+
     /// <summary>
     /// The opponent's commander line (#118), or null when none was recorded — shaped
     /// like <see cref="CommanderLine"/> so the two sides of the page read alike. The
@@ -123,13 +130,6 @@ public static class TranscriptSummary
         0 => null,
         1 => $"Commander: {t.OpponentCommanders[0]}",
         _ => $"Commanders: {string.Join(" and ", t.OpponentCommanders)}"
-    };
-
-    public static string? CommanderLine(Transcript t) => t.Commanders.Count switch
-    {
-        0 => null,
-        1 => $"Commander: {t.Commanders[0]}",
-        _ => $"Commanders: {string.Join(" and ", t.Commanders)}"
     };
 
     /// <summary>

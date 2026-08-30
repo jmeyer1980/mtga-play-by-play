@@ -95,6 +95,19 @@ public class FindInPageTests
     }
 
     [Test]
+    public void The_against_table_carries_its_own_id()
+    {
+        // Breakdown used to derive the id from a two-way flag, so the third table
+        // reused "by-format" — two elements with one id is invalid HTML and whichever
+        // selector relied on it found only the first.
+        var html = IndexRenderer.Render(
+            [Row() with { OpponentCommanders = ["Kinnan, Bonder Prodigy"] }]);
+
+        Assert.That(html.Split("id=\"against\"").Length - 1, Is.EqualTo(1));
+        Assert.That(html.Split("id=\"by-format\"").Length - 1, Is.EqualTo(1));
+    }
+
+    [Test]
     public void A_match_with_no_commander_recorded_shows_an_empty_deck_cell()
     {
         var html = IndexRenderer.Render([Row()]);

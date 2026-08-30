@@ -177,6 +177,24 @@ public class EventExtractorTests
     }
 
     [Test]
+    public void Partner_commanders_read_the_same_whichever_was_revealed_first()
+    {
+        // The joined names are a grouping key downstream — reveal order is an
+        // accident of message timing and must not split one deck into two rows.
+        var gsm = Gre("""
+        { "zones": [ { "zoneId": 26, "type": "ZoneType_Command" } ],
+          "gameObjects": [
+            { "instanceId": 241, "grpId": 45, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 26 },
+            { "instanceId": 240, "grpId": 43, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 26 } ] }
+        """);
+        var t = Run(RoomLine, MulliganLine, gsm);
+        Assert.That(t.OpponentCommanders, Is.EqualTo(
+            new[] { "Shuri, Wakandan Inventor", "Taskmaster, Mercenary Mimic" }));
+    }
+
+    [Test]
     public void The_commander_is_remembered_after_it_leaves_the_command_zone()
     {
         // The zone is only described while the object sits in it: measured across
