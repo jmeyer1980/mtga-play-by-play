@@ -148,10 +148,12 @@ dotnet publish src/MtgaPbp.Cli -c Release -r win-x64 --self-contained `
 Start-Process dist/mtga-pbp.exe watch
 ```
 
-Give it **30–45 seconds** before expecting the report to be served. `watch` runs a full
-capture and build before it binds its port, so checking sooner shows a refused connection
-that looks like a crash and is not. `dist/` is gitignored and local; the released zip is
-built by CI from the tag, not from whatever is in your working copy.
+The port answers immediately, serving the previous run's report; the page refreshes
+itself once the startup capture and build finish, which at a large archive can take
+half a minute. (`watch` used to bind only after that build, and the refused connection
+in the gap was mistaken for a crash more than once — that is why this sentence exists.)
+`dist/` is gitignored and local; the released zip is built by CI from the tag, not from
+whatever is in your working copy.
 
 ## Things deliberately not done
 

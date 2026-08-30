@@ -259,20 +259,14 @@ public static class Program
         var interval = TimeSpan.FromSeconds(3);
 
         Directory.CreateDirectory(cfg.OutputDir);
-        Capture(cfg);
 
-        // The first build's state is kept rather than discarded: without it the board
-        // could not be drawn until a match finished, so `watch` started on an existing
-        // archive showed the plain build text and nothing else — sometimes for hours.
-        IReadOnlyList<MatchSummary> firstRows = [];
-        IndexStats? firstStats = null;
-        Nudge? firstNudge = null;
-        var code = Build(cfg, open: false, observed: (rows, st, nudge) =>
-        {
-            firstRows = rows; firstStats = st; firstNudge = nudge;
-        });
-        if (code != 0) return code;
-
+        // The server comes up before the first capture ever runs: the previous run's
+        // report is already sitting in the output directory, and a port that answers
+        // immediately beats half a minute of connection-refused that SUPPORT.md had
+        // to explain away as not-a-crash (#123). The page refreshes itself over the
+        // change stream once the fresh build lands, so nobody reads stale rows for
+        // longer than the build takes — which is exactly what happens on every later
+        // capture too.
         using var server = new LiveServer(cfg.OutputDir, port);
         var rebuilds = new RebuildGate();
         server.OnFavorite = (id, on) =>
@@ -313,6 +307,26 @@ public static class Program
 
         Console.WriteLine($"watching {cfg.LogPaths.FirstOrDefault()}");
         OpenInBrowser(server.Url);
+
+        Capture(cfg);
+
+        // The first build's state is kept rather than discarded: without it the board
+        // could not be drawn until a match finished, so `watch` started on an existing
+        // archive showed the plain build text and nothing else — sometimes for hours.
+        IReadOnlyList<MatchSummary> firstRows = [];
+        IndexStats? firstStats = null;
+        Nudge? firstNudge = null;
+        var code = 0;
+        // Behind the gate: the server is already answering, so a star clicked during
+        // startup queues its rebuild behind this one instead of racing it.
+        rebuilds.Run(() => code = Build(cfg, open: false, observed: (rows, st, nudge) =>
+        {
+            firstRows = rows; firstStats = st; firstNudge = nudge;
+        }));
+        if (code != 0) return code;
+
+        // Any page that connected during the build gets the fresh rows now.
+        server.NotifyChanged();
 
         // The standing state is drawn once and repainted; only the notable lines scroll.
         // See LiveBoard for why that split exists — 41 lines an evening saying "report
