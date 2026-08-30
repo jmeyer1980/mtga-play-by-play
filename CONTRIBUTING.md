@@ -72,6 +72,17 @@ JSON inside gzip and takes about ten lines of Python to walk. Two real examples:
 If a comment or a test says the log lacks something, it should say how many times that
 was checked and against what.
 
+The same applies to numbers tuned against the archive, and they need re-checking as it
+grows. `DeckIdentity.SameDeck` was set to 0.60 because at 426 matches the similarity
+distribution had a hole there. Nobody re-ran it until the archive reached 1,122, by which
+point the hole had closed — and there is no way to say when it closed, only that the
+comment had been wrong for some unknown stretch of the way. It now says what the archive
+says, and at what size it was asked.
+
+**A measurement written into a comment is a claim with a date on it**: when you rely on
+one, re-run it, and if it no longer holds, say so in place rather than quietly leaving the
+old justification standing.
+
 ## Regenerating the checked-in fixtures
 
 The end-to-end tests run against a small card-name fixture rather than Arena's 237 MB
