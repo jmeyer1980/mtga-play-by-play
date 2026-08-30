@@ -111,6 +111,59 @@ public class RawArchiveTests
         Assert.That(a.Prunable(keep: 3), Does.Not.Contain("m1"));
     }
 
+    /// <summary>
+    /// The lost update behind #146: a star set while a capture is in flight used to be
+    /// reverted the moment that capture wrote back the ledger it had loaded before the
+    /// click. The ledger is read once and written whole, so last writer wins — #140's
+    /// atomic write stops torn files, not lost updates.
+    /// </summary>
+    /// <remarks>
+    /// Asserted against a ledger re-read from disk, not against the in-memory copy: the
+    /// in-memory one is the thing under test, and asking it whether it remembered would
+    /// be asking the witness to alibi itself.
+    /// </remarks>
+    [Test]
+    public void A_star_survives_a_capture_running_beside_it()
+    {
+        var a = new RawArchive(_root);
+        for (var i = 1; i <= 20; i++) a.Write(At($"m{i}", i * 1000));
+
+        // One instance, two writers — the shape `watch` runs: a poll loop archiving
+        // matches while a web request toggles a star.
+        Parallel.Invoke(
+            () => { for (var i = 21; i <= 60; i++) a.Write(At($"m{i}", i * 1000)); },
+            () => { for (var i = 1; i <= 20; i++) a.SetFavorite($"m{i}", true); });
+
+        var reloaded = new RawArchive(_root);
+        for (var i = 1; i <= 20; i++)
+            Assert.That(reloaded.Meta($"m{i}")?.Favorite, Is.True, $"m{i} lost its star");
+
+        // And the captures that ran beside the stars are all there.
+        Assert.That(reloaded.MatchIds(), Has.Count.EqualTo(60));
+    }
+
+    /// <summary>
+    /// MatchIds used to hand out the dictionary's live key view, which throws if anyone
+    /// writes while a caller is part-way through it. Nothing could hit that while every
+    /// caller had its own ledger — the #146 bug was hiding this one — and a rebuild
+    /// enumerating ids while the poll loop captures is precisely the pair that now
+    /// shares an instance.
+    /// </summary>
+    [Test]
+    public void Listing_matches_does_not_break_when_one_is_written_mid_enumeration()
+    {
+        var a = new RawArchive(_root);
+        for (var i = 1; i <= 20; i++) a.Write(At($"m{i}", i * 1000));
+
+        Assert.DoesNotThrow(() => Parallel.Invoke(
+            () => { for (var i = 21; i <= 60; i++) a.Write(At($"m{i}", i * 1000)); },
+            () =>
+            {
+                for (var round = 0; round < 40; round++)
+                    foreach (var id in a.MatchIds()) _ = a.Meta(id);
+            }));
+    }
+
     [Test]
     public void Prune_never_removes_a_favourite_however_old()
     {
