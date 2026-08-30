@@ -177,6 +177,136 @@ public class RendererTests
         Assert.That(TranscriptSummary.Result(t), Is.EqualTo("Unfinished"));
     }
 
+    // ---------- Issue #119: how the match ended ----------
+
+    /// <summary>
+    /// One game record per case, because the ending is read off the deciding game.
+    /// </summary>
+    private static Transcript Ended(string? reason) =>
+        Sample() with { Games = [new GameRecord(1, null, 5, 1, null, reason)] };
+
+    [TestCase("ResultReason_Concede", "conceded")]
+    [TestCase("ResultReason_Timeout", "timed out")]
+    [TestCase("ResultReason_Game", "played out")]
+    public void Ending_names_how_the_deciding_game_finished(string reason, string expected) =>
+        Assert.That(TranscriptSummary.Ending(Ended(reason)), Is.EqualTo(expected));
+
+    /// <summary>
+    /// A reason nobody has taught it says nothing rather than guessing. The archive's
+    /// one unmapped value, ResultReason_Force, only ever appears at match scope on a
+    /// drawn match — which has no per-game result to reach here in the first place.
+    /// </summary>
+    [TestCase("ResultReason_Force")]
+    [TestCase(null)]
+    public void Ending_is_silent_when_the_log_did_not_say(string? reason) =>
+        Assert.That(TranscriptSummary.Ending(Ended(reason)), Is.Null);
+
+    /// <summary>
+    /// No games means no deciding game — a match that never reached one must not
+    /// borrow an ending from anywhere.
+    /// </summary>
+    [Test]
+    public void Ending_is_silent_for_a_match_with_no_game_records() =>
+        Assert.That(TranscriptSummary.Ending(Sample()), Is.Null);
+
+    /// <summary>
+    /// A draw has no deciding game, so the game whose result the log did carry is some
+    /// earlier one — and "Drew 1-1, conceded" would read as the match being conceded.
+    /// </summary>
+    [Test]
+    public void Ending_is_silent_for_a_drawn_match()
+    {
+        var t = Ended("ResultReason_Concede") with
+        {
+            WinningTeamId = null,
+            GamesWon = 1,
+            GamesLost = 1,
+            Drawn = true
+        };
+        Assert.That(TranscriptSummary.Result(t), Is.EqualTo("Drew 1-1"));
+        Assert.That(TranscriptSummary.Ending(t), Is.Null);
+    }
+
+    /// <summary>
+    /// Same guard from the other side: a log that stopped before the match was decided
+    /// reads "Unfinished", and "Unfinished, conceded" would claim the match ended.
+    /// </summary>
+    [Test]
+    public void Ending_is_silent_for_a_match_the_log_never_saw_decided()
+    {
+        var t = Ended("ResultReason_Concede") with { Incomplete = true, WinningTeamId = null };
+        Assert.That(TranscriptSummary.Result(t), Is.EqualTo("Unfinished"));
+        Assert.That(TranscriptSummary.Ending(t), Is.Null);
+    }
+
+    /// <summary>
+    /// The deciding game, not the first: a Bo3 conceded in game one and played out in
+    /// game three ended by being played out.
+    /// </summary>
+    /// <remarks>
+    /// Three game records rather than two, so the fixture agrees with the 2-1 tally
+    /// <see cref="Sample"/> already carries — game one lost to the concession, games
+    /// two and three won. A match that says it went 2-1 while holding two games would
+    /// be describing something that cannot happen.
+    /// </remarks>
+    [Test]
+    public void Ending_reads_the_last_game_not_the_first()
+    {
+        var t = Sample() with
+        {
+            Games =
+            [
+                new GameRecord(1, null, 8, 2, null, "ResultReason_Concede"),
+                new GameRecord(2, null, 9, 1, null, "ResultReason_Game"),
+                new GameRecord(3, null, 7, 1, null, "ResultReason_Game"),
+            ]
+        };
+        Assert.That(TranscriptSummary.Ending(t), Is.EqualTo("played out"));
+    }
+
+    /// <summary>
+    /// 880 of the 1,194 archived matches with a per-game result were conceded and every
+    /// one of them rendered as a bare "Lost 0-1". The word joins the result in the cell
+    /// it qualifies — no new column — and joins the search haystack, which is the only
+    /// way to filter to it.
+    /// </summary>
+    [Test]
+    public void Index_says_how_the_match_ended_beside_the_result()
+    {
+        var html = IndexRenderer.Render([IndexRenderer.Summarize(Ended("ResultReason_Concede"))]);
+
+        // In the result's own cell, so no column is added to a table that already
+        // scrolls sideways on a phone.
+        Assert.That(html, Does.Contain("Won 2-1, conceded"));
+
+        // And in the row's search text, which is the only way to filter to it.
+        var row = Regex.Match(html, "data-search=\"([^\"]*)\"");
+        Assert.That(row.Success, Is.True);
+        Assert.That(row.Groups[1].Value, Does.Contain("conceded"));
+    }
+
+    /// <summary>
+    /// Sorting stays by result alone. An ending folded into the sort key would scatter
+    /// wins and losses through each other, which is the one thing that column is for.
+    /// </summary>
+    [Test]
+    public void Index_keeps_the_ending_out_of_the_result_sort_key()
+    {
+        var html = IndexRenderer.Render([IndexRenderer.Summarize(Ended("ResultReason_Concede"))]);
+        Assert.That(html, Does.Contain("data-key=\"won 2-1\""));
+    }
+
+    /// <summary>
+    /// A match whose ending is unknown renders exactly as it did before — no trailing
+    /// comma left behind by an empty word.
+    /// </summary>
+    [Test]
+    public void Index_adds_nothing_when_the_ending_is_unknown()
+    {
+        var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample())]);
+        Assert.That(html, Does.Contain(">Won 2-1<"));
+    }
+
     // ---------- Task 8: markdown ----------
 
     [Test]

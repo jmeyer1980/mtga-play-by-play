@@ -224,6 +224,54 @@ public static class TranscriptSummary
     }
 
     /// <summary>
+    /// How the deciding game ended, in one word — "conceded", "timed out" or "played
+    /// out" — or null when there is no such game. The index carries it beside the result
+    /// so that the 880 archived matches whose last game was conceded stop reading
+    /// exactly like the 297 that were played to the end.
+    /// </summary>
+    /// <remarks>
+    /// Nobody is named. The result stands in the same cell and already says who lost,
+    /// and a concession is always the loser's — "Lost 0-1, conceded" and "Won 1-0,
+    /// conceded" are each unambiguous on their own, where "you conceded" would repeat
+    /// the column next to it.
+    /// <para>
+    /// The turn is left to the Turns column rather than said again here. For the 1,177
+    /// single-game matches in the archive that column <em>is</em> the turn the ending
+    /// happened on; for the 17 multi-game ones it is the total across games, and a
+    /// second, smaller turn number in the same row would read as the two disagreeing.
+    /// </para>
+    /// <para>
+    /// The last game's reason rather than the match's. <c>finalMatchResult</c> carries
+    /// one entry per game and one for the match, and it is the deciding game this
+    /// describes; the match-scope entry is also the one
+    /// <see cref="MtgaPbp.Core.GameRecord.Reason"/> deliberately does not come from.
+    /// </para>
+    /// <para>
+    /// Nothing is said about a match that was never decided. A draw has no deciding
+    /// game at all, and an unfinished one has not reached it — in both, the last game
+    /// the log happened to carry a result for is some earlier game, and "Drew 1-1,
+    /// conceded" or "Unfinished, conceded" would each read as a claim about the match.
+    /// The guard is the verdict rather than <see cref="Transcript.Incomplete"/>,
+    /// because a verdict is exactly what <see cref="Result"/> refuses to give under
+    /// the same condition.
+    /// </para>
+    /// </remarks>
+    public static string? Ending(Transcript t) =>
+        t.Drawn || t.WinningTeamId is null || t.Games.Count == 0
+        ? null
+        : t.Games[^1].Reason switch
+        {
+            "ResultReason_Concede" => "conceded",
+            "ResultReason_Timeout" => "timed out",
+            "ResultReason_Game" => "played out",
+            // Anything else says nothing, which includes ResultReason_Force: the
+            // archive shows it only at match scope on a drawn match, where "Drew 0-0"
+            // is the whole story and a word about how a game ended would be describing
+            // a game that has no result entry at all.
+            _ => null
+        };
+
+    /// <summary>
     /// How long the match ran, folded into the turn count rather than added as another
     /// bare field. "13 turns in 4 minutes" says which number is which; "13 turns · 4
     /// minutes" leaves a reader to guess what the second one counts. An incomplete

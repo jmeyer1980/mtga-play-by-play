@@ -152,6 +152,20 @@ public class MultiGameTests
         Assert.That(lines[^1], Is.EqualTo("You concede — opponent wins the match"));
     }
 
+    /// <summary>
+    /// The raw reason travels beside the sentence, so a caller that has to branch on
+    /// how a game ended never has to read English to find out — issue #119.
+    /// </summary>
+    [Test]
+    public void Every_game_carries_arenas_own_word_for_how_it_ended()
+    {
+        var t = Bo3();
+
+        Assert.That(t.Games.Select(g => g.Reason),
+            Is.EqualTo(new[] { "ResultReason_Concede", "ResultReason_Concede" }));
+        Assert.That(TranscriptSummary.Ending(t), Is.EqualTo("conceded"));
+    }
+
     [Test]
     public void A_single_game_match_grows_no_game_heading_and_no_game_result_line()
     {
