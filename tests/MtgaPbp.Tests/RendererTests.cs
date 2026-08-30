@@ -243,6 +243,12 @@ public class RendererTests
     /// The deciding game, not the first: a Bo3 conceded in game one and played out in
     /// game three ended by being played out.
     /// </summary>
+    /// <remarks>
+    /// Three game records rather than two, so the fixture agrees with the 2-1 tally
+    /// <see cref="Sample"/> already carries — game one lost to the concession, games
+    /// two and three won. A match that says it went 2-1 while holding two games would
+    /// be describing something that cannot happen.
+    /// </remarks>
     [Test]
     public void Ending_reads_the_last_game_not_the_first()
     {
@@ -252,6 +258,7 @@ public class RendererTests
             [
                 new GameRecord(1, null, 8, 2, null, "ResultReason_Concede"),
                 new GameRecord(2, null, 9, 1, null, "ResultReason_Game"),
+                new GameRecord(3, null, 7, 1, null, "ResultReason_Game"),
             ]
         };
         Assert.That(TranscriptSummary.Ending(t), Is.EqualTo("played out"));
