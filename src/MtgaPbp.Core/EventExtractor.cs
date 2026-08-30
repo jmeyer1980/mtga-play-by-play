@@ -1598,6 +1598,11 @@ public sealed class EventExtractor(ICardDb cards)
                     cards.EnumName("Step", step)
                 }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
+                // Told to the tracker, not merely read past it. Every other event is
+                // stamped with the tracker's phase and step, and this annotation is the
+                // only place most games ever say what they are (#148).
+                tracker.EnterPhase(phase, step);
+
                 // Phase 0 / Step 0 are both blank — nothing to say.
                 if (label.Length == 0) continue;
 

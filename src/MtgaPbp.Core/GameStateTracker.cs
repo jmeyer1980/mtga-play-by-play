@@ -125,6 +125,26 @@ public sealed class GameStateTracker(ICardDb cards)
     public int ActiveSeat { get; private set; }
     public int Phase { get; private set; }
     public int Step { get; private set; }
+
+    /// <summary>
+    /// Records the part of the turn the game has moved into.
+    /// </summary>
+    /// <remarks>
+    /// Arena announces this two ways and only one of them reaches
+    /// <c>turnInfo</c>. The other is an <c>AnnotationType_PhaseOrStepModified</c>
+    /// annotation, which carries the phase and step on itself — and which the extractor
+    /// read straight off the annotation without telling the tracker. So these two
+    /// properties sat at zero through whole games while the transcript printed the step
+    /// names correctly beside them, and every event stamped from here claimed to have
+    /// happened in no part of any turn (#148).
+    /// </remarks>
+    public void EnterPhase(int phase, int step)
+    {
+        if (phase > 0) Phase = phase;
+        // Step legitimately returns to zero: a main phase has no step, and saying so is
+        // the difference between "in a main phase" and "still in declare blockers".
+        Step = step;
+    }
     public int GameNumber { get; private set; } = 1;
     public int LocalSeat { get; set; }
 
