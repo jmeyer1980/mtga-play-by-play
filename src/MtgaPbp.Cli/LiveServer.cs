@@ -17,6 +17,14 @@ namespace MtgaPbp.Cli;
 /// output is built around — the page can finally fetch, so it can refresh itself and
 /// star a match without a full reload.
 /// </para>
+/// <para>
+/// Binding to loopback is necessary but not sufficient: the user's own browser sits
+/// on this side of it, running pages from everywhere. A hostile page can point a
+/// hostname it controls at 127.0.0.1 and become same-origin with this server (DNS
+/// rebinding), and any page can land a no-cors POST whose response it cannot read.
+/// The <c>Host</c> and <c>Origin</c> checks in <see cref="Serve"/> are what stand
+/// between those tricks and an archive full of real player names (#116).
+/// </para>
 /// </remarks>
 public sealed class LiveServer(string rootDirectory, int port) : IDisposable
 {
@@ -24,7 +32,11 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
     private readonly List<StreamWriter> _subscribers = [];
     private readonly CancellationTokenSource _cts = new();
 
-    public string Url => $"http://127.0.0.1:{port}/";
+    /// <summary>The port actually bound — asked of the listener because a requested
+    /// port of 0 means the OS picks one, which is how the tests avoid collisions.</summary>
+    public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+    public string Url => $"http://127.0.0.1:{Port}/";
 
     /// <summary>Invoked when the page asks to keep or unkeep a match.</summary>
     public Func<string, bool, bool>? OnFavorite { get; set; }
@@ -36,24 +48,36 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
     }
 
     /// <summary>Tells every open page that the archive changed.</summary>
+    /// <remarks>
+    /// The writes happen outside the lock: they block until the peer accepts the
+    /// bytes, and holding the lock through that would let one stalled page make
+    /// every other caller queue behind it. The socket send timeout set in
+    /// <see cref="Serve"/> bounds how long a dead subscriber can stall this call
+    /// itself before it is noticed and dropped.
+    /// </remarks>
     public void NotifyChanged()
     {
-        lock (_subscribers)
+        StreamWriter[] targets;
+        lock (_subscribers) targets = [.. _subscribers];
+
+        List<StreamWriter>? dead = null;
+        foreach (var s in targets)
         {
-            for (var i = _subscribers.Count - 1; i >= 0; i--)
+            try
             {
-                try
-                {
-                    _subscribers[i].Write("event: changed\ndata: 1\n\n");
-                    _subscribers[i].Flush();
-                }
-                catch
-                {
-                    // The page was closed. Nothing to recover, just stop tracking it.
-                    _subscribers.RemoveAt(i);
-                }
+                s.Write("event: changed\ndata: 1\n\n");
+                s.Flush();
+            }
+            catch
+            {
+                // The page was closed. Nothing to recover, just stop tracking it.
+                (dead ??= []).Add(s);
             }
         }
+
+        if (dead is null) return;
+        lock (_subscribers)
+            foreach (var s in dead) _subscribers.Remove(s);
     }
 
     private async Task AcceptLoop()
@@ -73,6 +97,12 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
     {
         try
         {
+            // A stalled or dribbling peer must never pin a pool thread for good. The
+            // send timeout doubles as the bound on how long a dead subscriber can
+            // stall NotifyChanged before its write fails and it is dropped.
+            client.ReceiveTimeout = 5000;
+            client.SendTimeout = 5000;
+
             var stream = client.GetStream();
             var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
             var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = false };
@@ -84,7 +114,29 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
             if (parts.Length < 2) { client.Dispose(); return; }
             var (method, target) = (parts[0], parts[1]);
 
-            while (reader.ReadLine() is { Length: > 0 }) { /* headers are not needed */ }
+            // Two headers are load-bearing; the rest are still discarded. Host is the
+            // DNS-rebinding check — a hostile page can point a hostname it controls
+            // at 127.0.0.1 and become same-origin with this server, and the header
+            // carrying that hostname is the only place the trick shows.
+            string? host = null, origin = null;
+            var headers = 0;
+            while (reader.ReadLine() is { Length: > 0 } header)
+            {
+                if (++headers > 100) { client.Dispose(); return; }
+                var colon = header.IndexOf(':');
+                if (colon < 1) continue;
+                var name = header[..colon].Trim();
+                var value = header[(colon + 1)..].Trim();
+                if (name.Equals("Host", StringComparison.OrdinalIgnoreCase)) host = value;
+                else if (name.Equals("Origin", StringComparison.OrdinalIgnoreCase)) origin = value;
+            }
+
+            if (!IsLoopbackHost(host))
+            {
+                Respond(writer, "404 Not Found", "text/plain", "not found"u8.ToArray());
+                client.Dispose();
+                return;
+            }
 
             var path = target.Split('?')[0];
             var query = target.Contains('?') ? target[(target.IndexOf('?') + 1)..] : "";
@@ -93,6 +145,17 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
 
             if (method == "POST" && path.StartsWith("/api/favorite/", StringComparison.Ordinal))
             {
+                // Browsers put an Origin on every cross-site POST, and a no-cors
+                // fetch lands its side effect even though the response is opaque —
+                // so a foreign Origin is refused outright. No Origin at all means a
+                // non-browser caller, which the loopback binding already vouches for.
+                if (origin is not null && !IsLoopbackOrigin(origin))
+                {
+                    Respond(writer, "403 Forbidden", "text/plain", "forbidden"u8.ToArray());
+                    client.Dispose();
+                    return;
+                }
+
                 var id = Uri.UnescapeDataString(path["/api/favorite/".Length..]);
                 var on = !query.Contains("on=false", StringComparison.Ordinal);
                 var ok = OnFavorite?.Invoke(id, on) ?? false;
@@ -110,6 +173,22 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
             try { client.Dispose(); } catch { /* already gone */ }
         }
     }
+
+    /// <summary>True when a Host header names this machine and nothing else.</summary>
+    private static bool IsLoopbackHost(string? host)
+    {
+        if (string.IsNullOrEmpty(host)) return false;
+        var name = host.Split(':')[0].Trim();
+        return name is "127.0.0.1"
+            || name.Equals("localhost", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>True when an Origin header is this server's own page.</summary>
+    /// <remarks>An opaque <c>Origin: null</c> (sandboxed frames, some redirects)
+    /// fails this on purpose — it proves nothing about who is asking.</remarks>
+    private static bool IsLoopbackOrigin(string origin) =>
+        origin.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        && IsLoopbackHost(origin["http://".Length..]);
 
     /// <summary>Holds the connection open and streams change events to the page.</summary>
     private void Subscribe(TcpClient client, StreamWriter writer)
@@ -133,8 +212,12 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
 
         var full = Path.GetFullPath(Path.Combine(rootDirectory, relative));
         var root = Path.GetFullPath(rootDirectory);
+        if (!root.EndsWith(Path.DirectorySeparatorChar)) root += Path.DirectorySeparatorChar;
 
-        // Refuse anything that escapes the output directory.
+        // Refuse anything that escapes the output directory. The comparison needs
+        // the trailing separator: without it a bare prefix check also admits a
+        // sibling directory whose name merely continues the root's, like `out-old`
+        // beside `out`.
         if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !File.Exists(full))
         {
             Respond(writer, "404 Not Found", "text/plain", "not found"u8.ToArray());
