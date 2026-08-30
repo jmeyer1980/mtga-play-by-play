@@ -49,7 +49,16 @@ public sealed record MatchSummary(
     /// yours — but a copied record has to be able to say whose it is, and the
     /// opponent was the only player who travelled this far.
     /// </summary>
-    string? You = null);
+    string? You = null,
+
+    /// <summary>
+    /// The opponent's commanders, when their command zone named any (#118) — see
+    /// <see cref="Transcript.OpponentCommanders"/>. In Brawl the commander is the
+    /// deck's name, which makes this the one deck-identity the fog of war allows
+    /// for the other seat. Null or empty means "none recorded", never "no
+    /// commander".
+    /// </summary>
+    IReadOnlyList<string>? OpponentCommanders = null);
 
 public static class IndexRenderer
 {
@@ -74,7 +83,8 @@ public static class IndexRenderer
         OnThePlay: t.Opening?.FirstPlayerSeat is { } first && t.You?.Seat is { } mine
             ? first == mine
             : null,
-        You: t.You?.ScreenName);
+        You: t.You?.ScreenName,
+        OpponentCommanders: t.OpponentCommanders);
 
     /// <summary>
     /// Rows are rendered statically rather than built by script: the page then works
@@ -135,6 +145,7 @@ public static class IndexRenderer
                 {Col("ID")}
                 {Col("Event", Text)}{Col("Deck", Text)}
                 {Col("Opponent", Text)}
+                {Col("Their deck", Text)}
                 {Col("Result", Text)}{Col("Turns", Num)}
                 {Col("Length", Num)}</tr></thead><tbody id="data">
                 """);
@@ -142,11 +153,18 @@ public static class IndexRenderer
             {
                 var cls = r.Result.StartsWith("Won", StringComparison.Ordinal) ? "win"
                     : r.Result.StartsWith("Drew", StringComparison.Ordinal) ? "draw" : "loss";
+                // "and" rather than a slash, because it is how a partner pair is
+                // already written everywhere else a commander is named.
+                var theirDeck = string.Join(" and ", r.OpponentCommanders ?? []);
                 // Both forms of the colours go in, so "wu" and "blue" each find the same
                 // rows. A row with no deck contributes neither, which is what stops a
                 // search for "white" from turning up matches whose colours nobody knows.
                 var haystack = string.Join(' ',
                     r.Opponent, r.EventName, r.Result, r.Date, string.Join(' ', r.Cards),
+                    // The opposing commander, so "kinnan" finds every game against the
+                    // deck — including the ones where it was never cast and so never
+                    // reached the cards list.
+                    string.Join(' ', r.OpponentCommanders ?? []),
                     r.Colors ?? "", r.Colors is null ? "" : DeckColors.Spoken(r.Colors),
                     // The deck token the panel filters by. Only matches whose log
                     // carried a decklist have one, which is what keeps a search for a
@@ -210,6 +228,7 @@ public static class IndexRenderer
                         ><span aria-hidden="true">¶</span></button></td>
                     <td{Key(r.EventName)}>{E(r.EventName)}</td><td class="deck"{Key(r.Colors)}>{Colors(r)}</td>
                     <td class="opp"{Key(r.Opponent)}>{E(r.Opponent)}</td>
+                    <td class="oppdeck"{Key(theirDeck)}>{E(theirDeck)}</td>
                     <td class="{cls}"{Key(r.Result)}>{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
                     <td{Key(r.Turns)}>{r.Turns}</td>
                     <td{Key(r.Length?.TotalSeconds)}>{Length(r)}</td></tr>
@@ -487,7 +506,8 @@ public static class IndexRenderer
     {
         var format = Breakdown("By format", "Format", s.ByFormat, decks: false);
         var deck = Breakdown("By deck", "Deck", s.ByDeck, decks: true);
-        if (format.Length == 0 && deck.Length == 0) return "";
+        var against = Breakdown("Against", "Their deck", s.ByOpponentDeck, decks: false);
+        if (format.Length == 0 && deck.Length == 0 && against.Length == 0) return "";
 
         var sb = new StringBuilder();
         sb.Append($"""
@@ -510,6 +530,7 @@ public static class IndexRenderer
                 """);
 
         sb.Append(deck);
+        sb.Append(against);
         sb.Append(SessionTable(s));
         sb.Append("</details>");
         return sb.ToString();

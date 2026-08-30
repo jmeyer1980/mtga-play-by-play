@@ -38,10 +38,14 @@ public static class MarkdownRenderer
         // Independent of the deck block on purpose: matches archived before deck
         // capture still saw the opponent's cards, and the one list this log CAN
         // build for them should not vanish with the one it cannot.
-        if (t.OpponentCards.Count > 0)
+        if (t.OpponentCards.Count > 0 || t.OpponentCommanders.Count > 0)
         {
             if (t.Deck.Count > 0) sb.AppendLine();
             sb.AppendLine($"## {TranscriptSummary.OpponentHeading(t)}").AppendLine();
+            // Above the list, the way the player's own commander sits above their
+            // deck: it was never revealed by a play, it was public from turn zero.
+            if (TranscriptSummary.OpponentCommanderLine(t) is { } theirCommander)
+                sb.AppendLine(theirCommander).AppendLine();
             foreach (var name in t.OpponentCards)
                 sb.AppendLine($"- {name}");
             sb.AppendLine().AppendLine($"*{TranscriptSummary.OpponentNote}*");
@@ -108,6 +112,19 @@ public static class TranscriptSummary
     /// rather than a decklist row: a decklist row implies a card that could be
     /// drawn, and the commander sits in the command zone from the first shuffle.
     /// </summary>
+    /// <summary>
+    /// The opponent's commander line (#118), or null when none was recorded — shaped
+    /// like <see cref="CommanderLine"/> so the two sides of the page read alike. The
+    /// command zone is public, which is what lets this be said at all: it is the one
+    /// fact about their deck that never depended on them playing anything.
+    /// </summary>
+    public static string? OpponentCommanderLine(Transcript t) => t.OpponentCommanders.Count switch
+    {
+        0 => null,
+        1 => $"Commander: {t.OpponentCommanders[0]}",
+        _ => $"Commanders: {string.Join(" and ", t.OpponentCommanders)}"
+    };
+
     public static string? CommanderLine(Transcript t) => t.Commanders.Count switch
     {
         0 => null,

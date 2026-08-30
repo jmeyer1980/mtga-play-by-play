@@ -146,6 +146,33 @@ public class CardPeekTests
         Assert.That(GamePageRenderer.Render(t), Does.Not.Contain("id=\"their-cards\""));
     }
 
+    [Test]
+    public void The_opponents_commander_leads_their_section()
+    {
+        var t = RendererTests.Sample(deck: [new DeckEntry("Plains", 33, true)])
+            with
+        { OpponentCards = ["Mountain"], OpponentCommanders = ["Shuri, Wakandan Inventor"] };
+
+        Assert.That(GamePageRenderer.Render(t),
+            Does.Contain("Commander: Shuri, Wakandan Inventor"));
+        Assert.That(MarkdownRenderer.Render(t),
+            Does.Contain("Commander: Shuri, Wakandan Inventor"));
+    }
+
+    [Test]
+    public void A_known_commander_shows_even_when_nothing_of_theirs_was_revealed()
+    {
+        // The command zone is public from before the first turn — a turn-one concede
+        // still knows what deck it was up against, and saying so is the point.
+        var t = RendererTests.Sample(deck: [new DeckEntry("Plains", 33, true)])
+            with
+        { OpponentCommanders = ["Shuri, Wakandan Inventor"] };
+
+        Assert.That(GamePageRenderer.Render(t), Does.Contain("id=\"their-cards\""));
+        Assert.That(MarkdownRenderer.Render(t),
+            Does.Contain("Commander: Shuri, Wakandan Inventor"));
+    }
+
     /// <summary>
     /// The page, the markdown export and the clipboard are one document — the #100
     /// review caught the clipboard drifting, so all three are asserted together.

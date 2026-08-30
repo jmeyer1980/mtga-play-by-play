@@ -129,6 +129,16 @@ public sealed record Transcript(
     public IReadOnlyList<string> OpponentCards { get; init; } = [];
 
     /// <summary>
+    /// The opponent's commanders, by name, in the order the command zone revealed
+    /// them. The command zone is public from before the first turn, so unlike
+    /// <see cref="OpponentCards"/> this does not wait for a card to be played —
+    /// naming the deck you are up against is the point. Empty when none was
+    /// recorded: every non-Brawl format, and a match whose log never described the
+    /// zone — so absence means "none recorded", never "they had no commander".
+    /// </summary>
+    public IReadOnlyList<string> OpponentCommanders { get; init; } = [];
+
+    /// <summary>
     /// Types found in <c>gameStateMessage.persistentAnnotations</c> that nothing reads
     /// and nobody has ruled out, counted once per distinct fact. Diagnostic only: none
     /// of it reaches the transcript.
@@ -805,7 +815,8 @@ public sealed class EventExtractor(ICardDb cards)
             Commanders = commanders,
             DeckColors = colors,
             UnknownPersistentAnnotations = st.UnknownPersistent,
-            OpponentCards = OpponentCardsOf(games, opp)
+            OpponentCards = OpponentCardsOf(games, opp),
+            OpponentCommanders = OpponentCommandersOf(games, opp)
         };
     }
 
@@ -833,6 +844,24 @@ public sealed class EventExtractor(ICardDb cards)
                     names.Add(name);
             }
         return names.ToList();
+    }
+
+    /// <summary>
+    /// The names behind <see cref="Transcript.OpponentCommanders"/> — the cards the
+    /// opponent has shown in a command zone, unioned across games the way
+    /// <see cref="OpponentCardsOf"/> harvests reveals. Names resolve through
+    /// <see cref="DeckList.CommanderNames"/> so an opposing commander reads exactly
+    /// the way the player's own does.
+    /// </summary>
+    private IReadOnlyList<string> OpponentCommandersOf(List<GameRun> games, PlayerInfo? opp)
+    {
+        if (opp is null) return [];
+        var grpIds = new List<int>();
+        foreach (var g in games)
+            foreach (var grpId in g.Tracker.CommandZoneCards(opp.Seat))
+                if (!grpIds.Contains(grpId))
+                    grpIds.Add(grpId);
+        return DeckList.CommanderNames(grpIds, cards);
     }
 
     /// <summary>

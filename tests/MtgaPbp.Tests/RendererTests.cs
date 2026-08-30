@@ -1296,7 +1296,7 @@ public class RendererTests
         Assert.That(cells[1].Attribute("data-key")?.Value,
             Is.EqualTo(sample.StartedAtMs.ToString(CultureInfo.InvariantCulture)));
 
-        var length = cells[8].Attribute("data-key")?.Value;
+        var length = cells[9].Attribute("data-key")?.Value;
         Assert.That(length, Is.Not.Null);
         Assert.That(double.Parse(length!, CultureInfo.InvariantCulture), Is.GreaterThan(0));
     }
@@ -1317,7 +1317,7 @@ public class RendererTests
         var row = MatchTable(Markup.Parse(IndexHtml(incomplete: true))).Descendants("tr")
             .Single(tr => tr.Attribute("data-search") is not null);
 
-        var length = row.Elements().ToList()[8];
+        var length = row.Elements().ToList()[9];
         Assert.That(length.Value, Is.Empty, "an incomplete match has no length");
         Assert.That(length.Attribute("data-key")?.Value, Is.Empty);
     }
@@ -1412,7 +1412,7 @@ public class RendererTests
         var root = Markup.Parse(IndexHtml());
         var columns = MatchTable(root).Descendants("thead").Single().Descendants("th").ToList();
 
-        Assert.That(columns, Has.Count.EqualTo(9));
+        Assert.That(columns, Has.Count.EqualTo(10));
         foreach (var th in columns)
         {
             Assert.That(th.Attribute("scope")?.Value, Is.EqualTo("col"));

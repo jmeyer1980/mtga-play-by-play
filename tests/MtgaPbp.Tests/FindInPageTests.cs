@@ -78,6 +78,32 @@ public class FindInPageTests
         Assert.That(haystack, Does.Contain(term.ToLowerInvariant()));
     }
 
+    [Test]
+    public void The_opponents_commander_is_shown_and_searchable()
+    {
+        var html = IndexRenderer.Render(
+            [Row() with { OpponentCommanders = ["Kinnan, Bonder Prodigy"] }]);
+
+        var cell = Markup.Parse(html).Descendants("td")
+            .Single(e => e.Attribute("class")?.Value == "oppdeck");
+        Assert.That(Markup.Clipboard(cell), Is.EqualTo("Kinnan, Bonder Prodigy"));
+
+        var haystack = Markup.Parse(html).Descendants("tr")
+            .Select(tr => tr.Attribute("data-search")?.Value)
+            .Single(v => v is not null)!;
+        Assert.That(haystack, Does.Contain("kinnan, bonder prodigy"));
+    }
+
+    [Test]
+    public void A_match_with_no_commander_recorded_shows_an_empty_deck_cell()
+    {
+        var html = IndexRenderer.Render([Row()]);
+        var cell = Markup.Parse(html).Descendants("td")
+            .Single(e => e.Attribute("class")?.Value == "oppdeck");
+        Assert.That(Markup.Clipboard(cell), Is.Empty,
+            "absence means none recorded, and the cell must not claim otherwise");
+    }
+
     /// <summary>A match whose length the log never recorded contributes no length terms.</summary>
     [Test]
     public void A_match_with_no_recorded_length_is_not_searchable_by_one()

@@ -50,6 +50,14 @@ public sealed record IndexStats(
     StatRow Overall,
     IReadOnlyList<StatRow> ByFormat,
     IReadOnlyList<StatRow> ByDeck,
+
+    /// <summary>
+    /// The record against each opposing commander (#118) — the closest thing to a
+    /// matchup table the fog of war allows. Only matches whose command zone named a
+    /// commander appear; the rest are simply absent rather than pooled into a row
+    /// that would mean nothing.
+    /// </summary>
+    IReadOnlyList<StatRow> ByOpponentDeck,
     int LongestWinStreak,
     int Unattributed,
     int Excluded,
@@ -112,6 +120,17 @@ public sealed record IndexStats(
             .ThenBy(r => r.Name, StringComparer.Ordinal)
             .ToList();
 
+        // Grouped by the full commander line rather than the first name: a partner
+        // pair is one deck, and two pairs sharing a commander are two decks — folding
+        // either way would publish a record for a deck nobody was playing.
+        var byOpponentDeck = counted
+            .Where(r => r.OpponentCommanders is { Count: > 0 })
+            .GroupBy(r => string.Join(" and ", r.OpponentCommanders!), StringComparer.Ordinal)
+            .Select(g => Row(g.Key, null, g.ToList()))
+            .OrderByDescending(r => r.Played)
+            .ThenBy(r => r.Name, StringComparer.Ordinal)
+            .ToList();
+
         var deckOf = new Dictionary<string, string>(StringComparer.Ordinal);
         var labelOf = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var c in clusters)
@@ -125,6 +144,7 @@ public sealed record IndexStats(
             Row("Overall", null, counted),
             byFormat,
             byDeck,
+            byOpponentDeck,
             LongestStreak(counted),
             Unattributed: counted.Count(r => r.Deck is null or { Count: 0 }),
             Excluded: rows.Count - counted.Count,
