@@ -140,6 +140,34 @@ public class DeckVersionTests
             "a version's sample is small by construction and the page has to say so");
     }
 
+    /// <summary>
+    /// The record copy walks the stats tables and skips a caption marked <c>.vh</c>,
+    /// and never visits a <c>summary</c> — so a hidden caption pasted a run of
+    /// unlabelled version tables, each a different deck, with nothing to say which.
+    /// </summary>
+    [Test]
+    public void Each_versions_table_names_its_deck_where_a_copied_record_can_see_it()
+    {
+        var rows = new List<MatchSummary>
+        {
+            Row("m3", 3, "Lost 0-1", ["Settle the Wreckage"]),
+            Row("m2", 2, "Won 1-0",  ["Angel of Finality"]),
+            Row("m1", 1, "Won 1-0",  ["Angel of Finality"]),
+        };
+
+        var table = Markup.Parse(IndexRenderer.Render(rows)).Descendants("details")
+            .Single(d => d.Attribute("class")?.Value == "versions")
+            .Descendants("table").Single();
+        var caption = table.Descendants("caption").Single();
+
+        Assert.That(caption.Value, Does.Contain("Gix, Yawgmoth Praetor"));
+        // No class at all, which is what the visible tables carry — asserted through
+        // the empty string so "no attribute" reads as "not hidden" rather than as a
+        // null the constraint refuses.
+        Assert.That(caption.Attribute("class")?.Value ?? "", Does.Not.Contain("vh"),
+            "a hidden caption is dropped from the copied record");
+    }
+
     private static MatchSummary Row(string id, long at, string result, string[] extra) =>
         new(id, "2026-08-30 04:00", at, "Brawl_Ladder", "Opponent", result,
             Turns: 10, Incomplete: false, Cards: [],

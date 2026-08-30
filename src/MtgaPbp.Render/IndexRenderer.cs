@@ -829,7 +829,16 @@ public static class IndexRenderer
     /// covers only the games played before the next edit — and a win rate over a dozen
     /// matches will happily swing twenty points on noise. Printing the rate without
     /// saying so would make this feature a machine for talking people into changes that
-    /// did nothing.
+    /// did nothing. It carries no id the copy excludes, so it travels with the numbers
+    /// into a pasted record too.
+    /// </para>
+    /// <para>
+    /// Each caption names its deck and stays visible. The name is on the disclosure as
+    /// well, which reads as a repetition on screen and is not one anywhere else: the
+    /// record copy walks the tables and skips a caption marked <c>.vh</c>, and it never
+    /// visits a <c>summary</c> at all — so a hidden caption pasted ten unlabelled
+    /// version tables one after another, each a different deck, with nothing to say
+    /// which.
     /// </para>
     /// </remarks>
     private static string Versions(IndexStats s)
@@ -851,7 +860,7 @@ public static class IndexRenderer
             sb.Append($"""
                 <details class="versions"><summary>{E(name)} — {versions.Count} versions</summary>
                 <div class="scroller"><table class="stats">
-                <caption class="vh">Versions of {E(name)}, oldest first</caption>
+                <caption>{E(name)} — oldest first</caption>
                 <thead><tr><th scope="col">Version</th><th scope="col">Played</th>
                 <th scope="col">Record</th><th scope="col">Win rate</th>
                 <th scope="col">Changed</th></tr></thead><tbody>
