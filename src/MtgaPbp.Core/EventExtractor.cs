@@ -784,6 +784,15 @@ public sealed class EventExtractor(ICardDb cards)
                 {
                     if (!GameStateTracker.HasType(pa, "AnnotationType_ControllerChanged")) continue;
 
+                    // Remembered before either reason for skipping it, not after. A
+                    // standing marker is re-sent for as long as the effect lasts, so
+                    // one skipped here because the streamed copy already told the theft
+                    // would otherwise arrive again in a later message — where
+                    // ControlSpokenFor has been cleared, nothing remembers it, and it
+                    // reports the same theft a second time minutes after it happened.
+                    var first = game.ControlChangesTold.Add(ControlChangeKey(pa));
+                    if (!first) continue;
+
                     // Already said by the streamed copy in this same message. Matched on
                     // the permanent rather than the annotation because the two surfaces
                     // describe it differently — one names the effect as the cause, the
@@ -791,10 +800,6 @@ public sealed class EventExtractor(ICardDb cards)
                     // game because one permanent really can change hands several times.
                     if (FirstAffected(pa) is { } already && st.ControlSpokenFor.Contains(already))
                         continue;
-
-                    // And a standing marker is re-sent for as long as the effect lasts,
-                    // so it is told once per game and then remembered.
-                    if (!game.ControlChangesTold.Add(ControlChangeKey(pa))) continue;
 
                     EmitFor(pa, tracker, ts, st, game, countered, leftPlay);
                 }
@@ -1724,13 +1729,21 @@ public sealed class EventExtractor(ICardDb cards)
                 if (moved is { } spoke) st.ControlSpokenFor.Add(spoke);
 
                 var cause = by is { } b2 && b2 > 2 ? tracker.NameOf(b2) : null;
+                var taken = tracker.NameOf(moved.Value);
+
+                // Both names go through SawCard, the permanent as much as the effect:
+                // CardsSeen is what the index searches and what "Seen from the
+                // opponent" lists, and a permanent whose only appearance on the page is
+                // being taken is still a card this match showed. A persistent-only
+                // change is exactly that case — nothing else in the log narrated it.
                 st.SawCard(cause);
+                st.SawCard(taken);
 
                 ev = Base(tracker, ts, EventKind.ControlChanged) with
                 {
                     ActorSeat = to,
                     SourceInstanceId = moved,
-                    SourceName = tracker.NameOf(moved.Value),
+                    SourceName = taken,
                     CauseName = cause
                 };
             }

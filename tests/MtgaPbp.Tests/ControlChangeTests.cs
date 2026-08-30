@@ -106,6 +106,44 @@ public class ControlChangeTests
     }
 
     /// <summary>
+    /// The streamed copy tells the theft, and the persistent marker for the same change
+    /// keeps arriving afterwards. Skipping it without remembering it left it to be told
+    /// again in a later message — where the per-message record has been cleared and
+    /// nothing else knows — reporting the theft a second time minutes after it happened.
+    /// </summary>
+    [Test]
+    public void A_marker_skipped_because_the_streamed_copy_told_it_stays_silent_later()
+    {
+        var objects = Stolen(500, 5, owner: 1, controller: 2);
+        var both = Message(objects,
+                           streamed: Change(3, affector: 600, affected: 500),
+                           persistent: Change(1, affector: 500, affected: 500));
+        var marker = Message(objects, persistent: Change(1, affector: 500, affected: 500));
+
+        // Asserted on the text, not on a count of lines: a repeat lands next to the
+        // original and the folding merges the two into "Llanowar Elves ×2", which is
+        // still one line. Counting lines here passes while the bug is present.
+        Assert.That(Narrate(both, marker, marker),
+            Has.Exactly(1).EqualTo("Opponent gains control of Llanowar Elves"));
+    }
+
+    /// <summary>
+    /// The permanent's name reaches CardsSeen, which is what the index searches and what
+    /// "Seen from the opponent" lists. A permanent whose only appearance on the page is
+    /// being taken is still a card this match showed — and a persistent-only change is
+    /// exactly that case, because nothing else in the log narrated it.
+    /// </summary>
+    [Test]
+    public void The_taken_permanent_counts_as_a_card_the_match_showed()
+    {
+        var t = EventExtractorTests.RunFor(
+            Message(Stolen(500, 5, owner: 1, controller: 2),
+                    persistent: Change(1, affector: 500, affected: 500)));
+
+        Assert.That(t.CardsSeen, Does.Contain("Llanowar Elves"));
+    }
+
+    /// <summary>
     /// One effect taking several permanents is one thing that happened. Arena sends an
     /// annotation each, all in the same message and therefore all at once, and printing
     /// them apart produced a stutter that named the same creature twice in four lines.
