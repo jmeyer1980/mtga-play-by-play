@@ -1797,13 +1797,25 @@ public sealed class EventExtractor(ICardDb cards)
         JsonElement fmr, ref int? winningTeam, ref int team1Games, ref int team2Games,
         ref string? reason, ref bool drawn)
     {
+        // How it ended: a concede, a timeout, or actually losing the game. Most matches
+        // end in a concede, which "wins the match" hides entirely.
+        //
+        // Read from the entry that is ABOUT the match, rather than from whichever entry
+        // happened to mention a reason first. resultList carries one entry per game and
+        // then one for the match, so taking the first non-Game reason anywhere in it
+        // meant a Bo3 conceded in game one and lost on board in game three announced
+        // "You concede — opponent wins the match": game one's ending, reported as the
+        // match's (#150).
+        string? matchReason = null;
+        string? lastGameReason = null;
+
         foreach (var r in Json.Array(fmr, "resultList"))
         {
             var scope = Json.Str(r, "scope");
-            // How it ended: a concede, a timeout, or actually losing the game. Most
-            // matches end in a concede, which "wins the match" hides entirely.
-            if (Json.Str(r, "reason") is { } why && why != "ResultReason_Game")
-                reason ??= why;
+
+            if (scope == "MatchScope_Match") matchReason = Json.Str(r, "reason");
+            else if (scope == "MatchScope_Game") lastGameReason = Json.Str(r, "reason");
+
             // A draw is the one result that carries no winningTeamId, so it has to be
             // read before the guard below skips the entry. Match scope only: a drawn
             // game inside a Bo3 does not make the match a draw, it just counts for
@@ -1818,6 +1830,17 @@ public sealed class EventExtractor(ICardDb cards)
                 else if (team == 2) team2Games++;
             }
         }
+
+        // The deciding game's reason as a fallback, for a result list that names no
+        // match-scope reason at all. Every one of the 1,228 archived matches carrying a
+        // final result does name one, and in every one of them it equals the last game's
+        // — so this fix changes no existing transcript, and the fallback covers a shape
+        // the archive has not shown rather than one it has.
+        //
+        // ResultReason_Game still reads as nothing to say: it means the game ended the
+        // way games end, which the win-or-lose sentence already conveys.
+        if ((matchReason ?? lastGameReason) is { } chosen && chosen != "ResultReason_Game")
+            reason ??= chosen;
     }
 
     /// <summary>
