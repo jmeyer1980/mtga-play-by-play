@@ -28,9 +28,16 @@ In order of how often it is the cause:
   log found` followed by the paths it looked in — and `mtga-pbp.json` takes a `LogPaths`
   list if yours are elsewhere.
 - **The window closed before you could read it.** Double-clicking the exe runs a single
-  build and exits. The released zip ships a `mtga-pbp.json` with `"OpenAfterBuild": true`
-  so the report opens by itself; if you are running your own build, either add that
-  setting, run it from a terminal, or use `watch`, which stays open.
+  build and exits. The released zip ships a `mtga-pbp.defaults.json` with
+  `"OpenAfterBuild": true` so the report opens by itself; if you are running your own
+  build, either add that setting to `mtga-pbp.json`, run it from a terminal, or use
+  `watch`, which stays open.
+- **The report came up empty after an upgrade.** Nothing was deleted. Releases up to
+  0.6.0 shipped their settings in `mtga-pbp.json` — the same filename you would put
+  your own in — so unzipping over the install folder replaced it, and a custom
+  `ArchiveDir` was forgotten. Point `ArchiveDir` back at your archive folder and every
+  match returns. From the next release on, the shipped settings live in
+  `mtga-pbp.defaults.json` and your file is left alone.
 
 Arena does not need to be running to build a report, and the tool makes no network
 requests. If a match you played is missing, it is a log question rather than a

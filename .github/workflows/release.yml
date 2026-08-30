@@ -66,7 +66,14 @@ jobs:
 
           # Ship a config that opens the report, because the console window closes
           # too fast to read the output path when the exe is double-clicked.
-          '{ "OpenAfterBuild": true }' | Set-Content staging/mtga-pbp.json -Encoding utf8
+          #
+          # NOT named mtga-pbp.json. That is the user's file, and unzipping an upgrade
+          # over the install folder replaced whatever they had put in it — forgetting a
+          # custom ArchiveDir, so the next run built a fresh archive at the default
+          # location and the report came up empty (#134). This one is read first and
+          # theirs wins over it, so an upgrade can overwrite this file freely.
+          '{ "OpenAfterBuild": true }' |
+            Set-Content staging/mtga-pbp.defaults.json -Encoding utf8
 
           Compress-Archive -Path staging/* -DestinationPath "$name.zip" -Force
 
