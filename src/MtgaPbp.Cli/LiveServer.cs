@@ -218,16 +218,34 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
     }
 
     /// <summary>Holds the connection open and streams change events to the page.</summary>
+    /// <remarks>
+    /// Ordered so that a client which has seen <c>: connected</c> is already in the
+    /// subscriber list: headers first (nothing may interleave before them), then
+    /// membership, then the comment. It used to flush the comment before the add,
+    /// and a notification landing in that gap was lost — a real path now that the
+    /// startup build notifies the moment it finishes, when a page has typically just
+    /// subscribed. The writer locks pair with <see cref="NotifyChanged"/>'s, so a
+    /// racing notification interleaves as whole frames, never as bytes.
+    /// </remarks>
     private void Subscribe(TcpClient client, StreamWriter writer)
     {
-        writer.Write("HTTP/1.1 200 OK\r\n");
-        writer.Write("Content-Type: text/event-stream\r\n");
-        writer.Write("Cache-Control: no-cache\r\n");
-        writer.Write("Connection: keep-alive\r\n\r\n");
-        writer.Write(": connected\n\n");
-        writer.Flush();
+        lock (writer)
+        {
+            writer.Write("HTTP/1.1 200 OK\r\n");
+            writer.Write("Content-Type: text/event-stream\r\n");
+            writer.Write("Cache-Control: no-cache\r\n");
+            writer.Write("Connection: keep-alive\r\n\r\n");
+            writer.Flush();
+        }
 
         lock (_subscribers) _subscribers.Add(writer);
+
+        lock (writer)
+        {
+            writer.Write(": connected\n\n");
+            writer.Flush();
+        }
+
         // The socket stays open; NotifyChanged writes to it and drops it when it dies.
         _ = client;
     }
