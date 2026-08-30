@@ -596,6 +596,73 @@ public class EventExtractorTests
     }
 
     /// <summary>
+    /// A Bo3 conceded in game one and lost on board in game three ended by being lost on
+    /// board. The reason used to be taken from the first entry in resultList that
+    /// mentioned one, and resultList carries the games before the match — so game one's
+    /// concession was announced as the match's ending (#150).
+    /// </summary>
+    [Test]
+    public void The_match_end_line_reports_how_the_MATCH_ended_not_the_first_game()
+    {
+        var final = """
+        { "timestamp": "2000", "matchGameRoomStateChangedEvent": { "gameRoomInfo": {
+            "gameRoomConfig": { "matchId": "m1" },
+            "finalMatchResult": { "matchId": "m1", "resultList": [
+              { "scope": "MatchScope_Game",  "winningTeamId": 2, "reason": "ResultReason_Concede" },
+              { "scope": "MatchScope_Game",  "winningTeamId": 1, "reason": "ResultReason_Game" },
+              { "scope": "MatchScope_Game",  "winningTeamId": 2, "reason": "ResultReason_Game" },
+              { "scope": "MatchScope_Match", "winningTeamId": 2, "reason": "ResultReason_Game" } ] } } } }
+        """;
+
+        var ending = Run(RoomLine, MulliganLine, final)
+            .Events.Single(e => e.Kind == EventKind.GameEnd);
+
+        Assert.That(ending.Detail, Is.EqualTo("Opponent wins the match"));
+        Assert.That(ending.Detail, Does.Not.Contain("concede"),
+            "game one's concession is not how the match finished");
+    }
+
+    /// <summary>And a match that really was conceded still says so.</summary>
+    [Test]
+    public void A_conceded_match_still_names_the_concession()
+    {
+        var final = """
+        { "timestamp": "2000", "matchGameRoomStateChangedEvent": { "gameRoomInfo": {
+            "gameRoomConfig": { "matchId": "m1" },
+            "finalMatchResult": { "matchId": "m1", "resultList": [
+              { "scope": "MatchScope_Game",  "winningTeamId": 2, "reason": "ResultReason_Game" },
+              { "scope": "MatchScope_Game",  "winningTeamId": 2, "reason": "ResultReason_Concede" },
+              { "scope": "MatchScope_Match", "winningTeamId": 2, "reason": "ResultReason_Concede" } ] } } } }
+        """;
+
+        Assert.That(
+            Run(RoomLine, MulliganLine, final).Events.Single(e => e.Kind == EventKind.GameEnd).Detail,
+            Is.EqualTo("You concede — opponent wins the match"));
+    }
+
+    /// <summary>
+    /// A result list that names no match-scope reason falls back to the deciding game's.
+    /// No archived match has this shape — all 1,228 carrying a final result name one —
+    /// so this covers a log the archive has not shown rather than one it has.
+    /// </summary>
+    [Test]
+    public void With_no_match_scope_reason_the_deciding_game_answers()
+    {
+        var final = """
+        { "timestamp": "2000", "matchGameRoomStateChangedEvent": { "gameRoomInfo": {
+            "gameRoomConfig": { "matchId": "m1" },
+            "finalMatchResult": { "matchId": "m1", "resultList": [
+              { "scope": "MatchScope_Game",  "winningTeamId": 2, "reason": "ResultReason_Concede" },
+              { "scope": "MatchScope_Game",  "winningTeamId": 2, "reason": "ResultReason_Timeout" },
+              { "scope": "MatchScope_Match", "winningTeamId": 2 } ] } } } }
+        """;
+
+        Assert.That(
+            Run(RoomLine, MulliganLine, final).Events.Single(e => e.Kind == EventKind.GameEnd).Detail,
+            Is.EqualTo("You run out of time — opponent wins the match"));
+    }
+
+    /// <summary>
     /// The archive's first drawn match, shaped from the real one (issue #9): the
     /// server called the match off before either player acted, so the log is three
     /// lines with no seat ever identified, and the only result is a match-scope
