@@ -215,8 +215,11 @@ public static class Program
     /// warning — non-null when the logs carried match-shaped volume that produced no
     /// matches at all — returned rather than printed so `watch` can route it through
     /// the board instead of corrupting the pinned block with a bare write.
+    /// <c>Prune</c> is the retention cap's account of itself and travels for the same
+    /// reason — null when the cap is off or had nothing to do, and otherwise carrying
+    /// both what to say and whether it is reporting a deletion or refusing one.
     /// </returns>
-    private static (int Exit, int Written, string? Drift, string? Prune) CaptureCore(
+    private static (int Exit, int Written, string? Drift, PruneReport? Prune) CaptureCore(
         Config cfg, bool quiet, bool prune)
     {
         var archive = new RawArchive(cfg.ArchiveDir);
@@ -284,14 +287,10 @@ public static class Program
         }
 
         var pruned = Prune(cfg, archive, prune);
-        if (!quiet && pruned is not null) Console.WriteLine(pruned);
+        if (!quiet && pruned is { } report) Console.WriteLine(report.Message);
         return (0, written, drift, pruned);
     }
 
-    /// <summary>
-    /// Enforces the retention cap, deleting the rendered output for anything dropped
-    /// so the report does not link to pages that no longer exist.
-    /// </summary>
     /// <summary>
     /// Enforces the retention cap, deleting the rendered output for anything dropped so
     /// the report does not link to pages that no longer exist — unless the cap would
@@ -299,11 +298,11 @@ public static class Program
     /// would have done and does nothing.
     /// </summary>
     /// <returns>
-    /// What to tell the reader, or null when nothing happened and nothing was withheld.
-    /// Returned rather than printed for <see cref="DriftCanary"/>'s reason: under
-    /// <c>watch</c> a bare write lands inside the pinned block and corrupts the repaint,
-    /// and this notice in particular must not simply be silenced there — it is the only
-    /// account of matches being deleted, or of a deletion being refused (#133).
+    /// What happened, or null when nothing did and nothing was withheld. Returned rather
+    /// than printed for <see cref="DriftCanary"/>'s reason: under <c>watch</c> a bare
+    /// write lands inside the pinned block and corrupts the repaint, and this notice in
+    /// particular must not simply be silenced there — it is the only account of matches
+    /// being deleted, or of a deletion being refused (#133).
     /// </returns>
     /// <remarks>
     /// The guard exists because the cap is applied to an archive whose size it was never
@@ -319,7 +318,7 @@ public static class Program
     /// key would sit in the same file as the mistake and be typed in the same sitting.
     /// </para>
     /// </remarks>
-    private static string? Prune(Config cfg, RawArchive archive, bool confirmed)
+    private static PruneReport? Prune(Config cfg, RawArchive archive, bool confirmed)
     {
         if (cfg.MaxArchivedMatches <= 0) return null;
 
@@ -328,12 +327,14 @@ public static class Program
 
         if (!confirmed && RetentionGuard.WouldBeLarge(doomed.Count, archive.Count))
         {
-            return $"nothing was deleted. \"MaxArchivedMatches\" is {cfg.MaxArchivedMatches}, " +
-                   $"and applying it would delete {doomed.Count} of the {archive.Count} " +
-                   "archived matches — more than this tool will do without being asked " +
-                   "twice. The archive is the only copy and there is no undo. If you meant " +
-                   $"it, run `mtga-pbp capture --prune`; if not, change the cap in " +
-                   $"{Config.UserFile}.";
+            return new PruneReport(
+                $"nothing was deleted. \"MaxArchivedMatches\" is {cfg.MaxArchivedMatches}, " +
+                $"and applying it would delete {doomed.Count} of the {archive.Count} " +
+                "archived matches — more than this tool will do without being asked " +
+                "twice. The archive is the only copy and there is no undo. If you meant " +
+                $"it, run `mtga-pbp capture --prune`; if not, change the cap in " +
+                $"{Config.UserFile}.",
+                Held: true);
         }
 
         var removed = archive.Prune(cfg.MaxArchivedMatches);
@@ -349,9 +350,28 @@ public static class Program
 
         return removed.Count == 0
             ? null
-            : $"pruned {removed.Count} match(es) past the {cfg.MaxArchivedMatches} cap " +
-              "(favourites kept)";
+            : new PruneReport(
+                $"pruned {removed.Count} match(es) past the {cfg.MaxArchivedMatches} cap " +
+                "(favourites kept)",
+                Held: false);
     }
+
+    /// <summary>
+    /// What the retention cap did, or refused to do.
+    /// </summary>
+    /// <param name="Message">What to tell the reader.</param>
+    /// <param name="Held">
+    /// True when nothing was deleted because the prune was larger than
+    /// <see cref="RetentionGuard"/> allows unasked; false when matches actually left.
+    /// </param>
+    /// <remarks>
+    /// A flag beside the sentence rather than a caller reading the sentence. `watch`
+    /// has to tell a standing condition from an event — it repeats a refusal once per
+    /// session and reports real deletions every time — and deciding that by matching
+    /// the words the message happens to start with makes the wording load-bearing:
+    /// rewrite the sentence and the board silently starts repeating it every poll.
+    /// </remarks>
+    private readonly record struct PruneReport(string Message, bool Held);
 
     /// <summary>
     /// Serves the report and keeps it current: polls the log, re-captures when it
@@ -541,9 +561,8 @@ public static class Program
             // every three seconds would otherwise repeat it forever. Matches actually
             // leaving is an event rather than a state, so only the refusal is held to
             // once — under the guard an automatic prune is small and rare anyway.
-            if (pruned is not null && (!pruned.StartsWith("nothing was deleted", StringComparison.Ordinal)
-                                       || said.Add("prune-held")))
-                board.Say($"[{DateTime.Now:HH:mm:ss}] ** {pruned}");
+            if (pruned is { } pruneReport && (!pruneReport.Held || said.Add("prune-held")))
+                board.Say($"[{DateTime.Now:HH:mm:ss}] ** {pruneReport.Message}");
 
             if (exit != 0 || written == 0) continue;
 
