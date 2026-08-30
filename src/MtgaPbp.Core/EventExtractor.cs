@@ -1529,9 +1529,20 @@ public sealed class EventExtractor(ICardDb cards)
                 // needs it for one case: every SBA in the archive ends in the graveyard
                 // except SBA_Commander, which is the commander leaving it — dropping the
                 // destination rendered that trip home as a second burial (#18).
+                // SpellCast joins them for its source only. A cast never needs its
+                // destination — every spell goes to the stack — but where it was cast
+                // FROM is the whole of a flashback, an escape or an adventure, and
+                // without it those read as an ordinary cast of a card that should not
+                // have been available (#127).
                 var wantsZone = kind
-                    is EventKind.ZoneMove or EventKind.Returned or EventKind.StateBasedAction;
-                string? Zone(string key) => wantsZone &&
+                    is EventKind.ZoneMove or EventKind.Returned or EventKind.StateBasedAction
+                    or EventKind.SpellCast;
+
+                // ...and its destination is refused, rather than merely unused. Every
+                // spell goes to the stack, so a cast's zone_dest says nothing no reader
+                // wants — and an event carrying a field its own comment says it does not
+                // have is one refactor away from something downstream believing it.
+                string? Zone(string key, bool want) => want &&
                     GameStateTracker.DetailInt(a, key) is { } z &&
                     tracker.ZoneTypes.TryGetValue(z, out var name2) ? name2 : null;
 
@@ -1543,8 +1554,8 @@ public sealed class EventExtractor(ICardDb cards)
                     CauseInstanceId = causeName is null ? null : cause,
                     CauseName = causeName,
                     Detail = category,
-                    FromZone = Zone("zone_src"),
-                    ToZone = Zone("zone_dest")
+                    FromZone = Zone("zone_src", wantsZone),
+                    ToZone = Zone("zone_dest", wantsZone && kind is not EventKind.SpellCast)
                 };
             }
             else if (type == "AnnotationType_AbilityInstanceCreated")

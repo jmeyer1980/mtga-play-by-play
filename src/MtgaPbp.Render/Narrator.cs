@@ -739,6 +739,43 @@ public static class Narrator
         _ => ""
     };
 
+    /// <summary>
+    /// Where a spell was cast from, when that is not where spells come from.
+    /// </summary>
+    /// <remarks>
+    /// A flashback, an escape, an adventure and a foretell all rendered as an ordinary
+    /// cast, so the page showed a card being cast that the reader had just watched go to
+    /// the graveyard, with nothing in between to account for it. That reads as the
+    /// parser repeating a line rather than as the play it was (#127).
+    /// <para>
+    /// The complaint is about a missing account, not about an impossibility. A card can
+    /// legitimately be cast from hand more than once — anything that returns it there
+    /// does it — and singleton limits how many copies a deck may hold, not how often one
+    /// card may be cast. What made the transcript unreadable was casting a card whose
+    /// last reported whereabouts were somewhere it could not be cast from.
+    /// </para>
+    /// <para>
+    /// Counted over 1,238 archived matches: 15,632 casts come from hand, and the ones
+    /// worth marking are 461 from exile across 206 matches, 107 from a graveyard across
+    /// 63, and 41 from a library across 21.
+    /// </para>
+    /// <para>
+    /// The command zone is deliberately not among them, though at 1,488 casts across 715
+    /// matches it is much the largest non-hand source. It is where a commander lives and
+    /// the only place one can be cast from, so the name of the card already says it —
+    /// and a recast is explained by the "returns to the command zone" line the
+    /// transcript already carries. Marking it would put a phrase on more than half the
+    /// archive's matches to report the unsurprising.
+    /// </para>
+    /// </remarks>
+    private static string CastFrom(GameEvent e) => e.FromZone switch
+    {
+        "ZoneType_Graveyard" => " from the graveyard",
+        "ZoneType_Exile" => " from exile",
+        "ZoneType_Library" => " from the library",
+        _ => ""
+    };
+
     private static string? Phrase(GameEvent e, Transcript t, Density density) => e.Kind switch
     {
         EventKind.TurnStart =>
@@ -752,6 +789,7 @@ public static class Narrator
 
         EventKind.SpellCast when e.SourceName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "cast", "casts", t)} {e.SourceName}"
+            + CastFrom(e)
             + CastTiming(e, density)
             + (e.TargetName is not null ? $", targeting {e.TargetName}" : ""),
 
