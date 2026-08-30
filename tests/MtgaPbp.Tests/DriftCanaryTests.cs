@@ -26,7 +26,9 @@ public class DriftCanaryTests
     {
         var warning = DriftCanary.Warn(Read(350_000), slicesSeen: 0);
 
-        Assert.That(warning, Does.Contain("350,000"));
+        // Formatted the same way the message formats it, so the assertion holds on
+        // machines whose culture does not group thousands with a comma.
+        Assert.That(warning, Does.Contain(350_000.ToString("N0")));
         Assert.That(warning, Does.Contain("without recognizing a single match"));
     }
 

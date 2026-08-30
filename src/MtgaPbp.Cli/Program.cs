@@ -150,7 +150,10 @@ public static class Program
     /// <c>Written</c> counts matches that were <em>added or updated</em>. A match
     /// first seen mid-game is archived incomplete and rewritten when it ends, which
     /// leaves the archive the same size — so callers must not use the match count to
-    /// decide whether anything happened.
+    /// decide whether anything happened. <c>Drift</c> is <see cref="DriftCanary"/>'s
+    /// warning — non-null when the logs carried match-shaped volume that produced no
+    /// matches at all — returned rather than printed so `watch` can route it through
+    /// the board instead of corrupting the pinned block with a bare write.
     /// </returns>
     private static (int Exit, int Written, string? Drift) CaptureCore(Config cfg, bool quiet)
     {
