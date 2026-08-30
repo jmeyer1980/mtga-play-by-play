@@ -1529,8 +1529,14 @@ public sealed class EventExtractor(ICardDb cards)
                 // needs it for one case: every SBA in the archive ends in the graveyard
                 // except SBA_Commander, which is the commander leaving it — dropping the
                 // destination rendered that trip home as a second burial (#18).
+                // SpellCast joins them for its source only. A cast never needs its
+                // destination — every spell goes to the stack — but where it was cast
+                // FROM is the whole of a flashback, an escape or an adventure, and
+                // without it those read as an ordinary cast of a card that should not
+                // have been available (#127).
                 var wantsZone = kind
-                    is EventKind.ZoneMove or EventKind.Returned or EventKind.StateBasedAction;
+                    is EventKind.ZoneMove or EventKind.Returned or EventKind.StateBasedAction
+                    or EventKind.SpellCast;
                 string? Zone(string key) => wantsZone &&
                     GameStateTracker.DetailInt(a, key) is { } z &&
                     tracker.ZoneTypes.TryGetValue(z, out var name2) ? name2 : null;
