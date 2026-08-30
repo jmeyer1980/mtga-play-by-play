@@ -261,14 +261,25 @@ public static class Program
         if (code != 0) return code;
 
         using var server = new LiveServer(cfg.OutputDir, port);
+        var rebuilds = new RebuildGate();
         server.OnFavorite = (id, on) =>
         {
             var ok = new RawArchive(cfg.ArchiveDir).SetFavorite(id, on);
+            // The response goes back the moment the flag is written. The rebuild only
+            // repaints what is already true, and at a thousand matches it takes long
+            // enough that a star waiting on it reads as a broken button (#113) — so it
+            // runs behind the gate instead, where it also cannot overlap the poll
+            // loop's own rebuild.
+            //
             // Observed with a no-op rather than left unobserved: keeping a match changes
             // the archive and not the night's record, so there is nothing to repaint —
             // but an unobserved build prints the nudge itself, straight into the middle
             // of the pinned block, bypassing the erase that keeps it intact.
-            if (ok) { Build(cfg, open: false, quiet: true, observed: (_, _, _) => { }); server.NotifyChanged(); }
+            if (ok) rebuilds.RunInBackground(() =>
+            {
+                Build(cfg, open: false, quiet: true, observed: (_, _, _) => { });
+                server.NotifyChanged();
+            });
             return ok;
         };
 
@@ -369,8 +380,11 @@ public static class Program
             var (exit, written) = CaptureCore(cfg, quiet: true);
             if (exit != 0 || written == 0) continue;
 
-            Build(cfg, open: false, quiet: true, observed: Repaint);
-            server.NotifyChanged();
+            rebuilds.Run(() =>
+            {
+                Build(cfg, open: false, quiet: true, observed: Repaint);
+                server.NotifyChanged();
+            });
         }
 
         Console.WriteLine();
