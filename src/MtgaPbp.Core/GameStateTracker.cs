@@ -15,6 +15,18 @@ public sealed class TrackedObject
     public int? Toughness;
     public int Damage;
     public bool IsTapped;
+
+    /// <summary>
+    /// Whether this permanent is phased out — on the battlefield in every respect Arena
+    /// records, and treated as though it were not there.
+    /// </summary>
+    /// <remarks>
+    /// Phasing is not a zone change, which is why Arena announces it with an annotation
+    /// rather than a ZoneTransfer, and why nothing here noticed it: the object keeps its
+    /// battlefield zone throughout. So the board lines kept printing a creature that
+    /// could not block, could not be targeted and was not there (#125).
+    /// </remarks>
+    public bool IsPhasedOut;
     public int? Loyalty;
     public int? ObjectSourceGrpId;
 
@@ -138,6 +150,12 @@ public sealed class GameStateTracker(ICardDb cards)
     /// names correctly beside them, and every event stamped from here claimed to have
     /// happened in no part of any turn (#148).
     /// </remarks>
+    /// <summary>Records a permanent phasing out or back in.</summary>
+    public void SetPhased(int instanceId, bool phasedOut)
+    {
+        if (_objects.TryGetValue(Resolve(instanceId), out var o)) o.IsPhasedOut = phasedOut;
+    }
+
     public void EnterPhase(int phase, int step)
     {
         if (phase > 0) Phase = phase;
@@ -959,6 +977,11 @@ public sealed class GameStateTracker(ICardDb cards)
         {
             if (o.ControllerSeat != seat) continue;
             if (!o.CardTypes.Contains("CardType_Creature")) continue;
+
+            // A phased-out permanent is still on the battlefield by every field Arena
+            // sends, and is still not there. Leaving it in put untouchable creatures on
+            // board lines and on the final snapshot.
+            if (o.IsPhasedOut) continue;
             if (!_zoneTypes.TryGetValue(o.ZoneId, out var zt) || zt != "ZoneType_Battlefield")
                 continue;
             if (!seen.Add(Resolve(o.InstanceId))) continue;
