@@ -614,6 +614,7 @@ public static class IndexRenderer
                 """);
 
         sb.Append(deck);
+        sb.Append(Versions(s));
         sb.Append(against);
         sb.Append(SessionTable(s));
         sb.Append("</details>");
@@ -808,6 +809,94 @@ public static class IndexRenderer
     }
 
     private static string Count(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
+
+    /// <summary>
+    /// Each deck that has been played as more than one list, broken into those lists with
+    /// their own records and what changed between them.
+    /// </summary>
+    /// <remarks>
+    /// A deck's row above pools every version of it. That answers "how is this deck
+    /// doing" and cannot answer "did that change help", which is the question anyone asks
+    /// the evening they edit a decklist (#158).
+    /// <para>
+    /// Collapsed, and after the deck table rather than inside it. The deck table carries
+    /// the filter buttons and is sortable, and rows belonging to a different level of the
+    /// same subject would be re-ordered into nonsense by the first click on a column
+    /// heading.
+    /// </para>
+    /// <para>
+    /// The note is not decoration. A version's sample is small by construction — it
+    /// covers only the games played before the next edit — and a win rate over a dozen
+    /// matches will happily swing twenty points on noise. Printing the rate without
+    /// saying so would make this feature a machine for talking people into changes that
+    /// did nothing. It carries no id the copy excludes, so it travels with the numbers
+    /// into a pasted record too.
+    /// </para>
+    /// <para>
+    /// Each caption names its deck and stays visible. The name is on the disclosure as
+    /// well, which reads as a repetition on screen and is not one anywhere else: the
+    /// record copy walks the tables and skips a caption marked <c>.vh</c>, and it never
+    /// visits a <c>summary</c> at all — so a hidden caption pasted ten unlabelled
+    /// version tables one after another, each a different deck, with nothing to say
+    /// which.
+    /// </para>
+    /// </remarks>
+    private static string Versions(IndexStats s)
+    {
+        if (s.DeckVersions.Count == 0) return "";
+
+        var sb = new StringBuilder();
+        sb.Append("""
+            <p class="note" id="version-note">A version covers only the matches played
+            before the next change to that list, so most of them are small samples —
+            read the record, not the percentage.</p>
+            """);
+
+        foreach (var deck in s.DeckVersions.GroupBy(v => v.Slug, StringComparer.Ordinal))
+        {
+            var name = s.LabelOf.GetValueOrDefault(deck.Key, deck.Key);
+            var versions = deck.OrderBy(v => v.Number).ToList();
+
+            sb.Append($"""
+                <details class="versions"><summary>{E(name)} — {versions.Count} versions</summary>
+                <div class="scroller"><table class="stats">
+                <caption>{E(name)} — oldest first</caption>
+                <thead><tr><th scope="col">Version</th><th scope="col">Played</th>
+                <th scope="col">Record</th><th scope="col">Win rate</th>
+                <th scope="col">Changed</th></tr></thead><tbody>
+                """);
+
+            foreach (var v in versions)
+                sb.Append($"""
+                    <tr><th scope="row">{v.Number}</th><td>{v.Record.Played}</td>
+                    <td>{Record(v.Record)}</td><td>{Rate(v.Record)}</td>
+                    <td class="changed">{Changed(v)}</td></tr>
+                    """);
+
+            sb.Append("</tbody></table></div></details>");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// What one edit did, as a sentence rather than two lists — "out: A, B · in: C".
+    /// </summary>
+    /// <remarks>
+    /// Out before in, because the question a reader is holding is what they gave up. The
+    /// first version has nothing before it to differ from, and says so rather than
+    /// showing an empty cell that reads as "nothing changed".
+    /// </remarks>
+    private static string Changed(DeckVersionRow v)
+    {
+        if (v.Number == 1) return Missing("the first list played");
+        if (v.Added.Count == 0 && v.Removed.Count == 0)
+            return Missing("only the number of copies changed");
+
+        var parts = new List<string>();
+        if (v.Removed.Count > 0) parts.Add($"out: {E(string.Join(", ", v.Removed))}");
+        if (v.Added.Count > 0) parts.Add($"in: {E(string.Join(", ", v.Added))}");
+        return string.Join(" · ", parts);
+    }
 
     private static string Breakdown(string title, string what, IReadOnlyList<StatRow> rows, bool decks, string id)
     {
@@ -1074,6 +1163,11 @@ public static class IndexRenderer
         .star.on{color:#8a6100}
         .star:enabled{cursor:pointer}
         .star:enabled:hover{background:rgba(128,128,128,.2)}
+        details.versions{margin:0 0 .6rem}
+        details.versions>summary{cursor:pointer;padding:.25rem 0}
+        /* Long enough to wrap, and narrow enough that the columns before it stay
+           readable — this is the only cell on the page that is a sentence. */
+        .changed{white-space:normal;min-width:18rem;max-width:34rem}
         #stats{margin:0 0 1.5rem}
         #stats h2{font-size:1.1rem;margin:0 0 .6rem}
         /* The coach button's shape, for the same kind of control: bordered text

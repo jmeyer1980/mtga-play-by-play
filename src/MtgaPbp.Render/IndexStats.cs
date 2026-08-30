@@ -31,6 +31,18 @@ public sealed record StatRow(
 }
 
 /// <summary>
+/// One version of a deck, with its own record and what changed to produce it.
+/// </summary>
+/// <param name="Slug">The deck this is a version of.</param>
+/// <param name="Number">Which version, counting from the oldest at 1.</param>
+/// <param name="Record">Its own win-loss, over its own matches only.</param>
+/// <param name="Added">Cards this version gained over the one before it.</param>
+/// <param name="Removed">Cards it lost.</param>
+public sealed record DeckVersionRow(
+    string Slug, int Number, StatRow Record,
+    IReadOnlyList<string> Added, IReadOnlyList<string> Removed);
+
+/// <summary>
 /// The record the index reports above its table: overall, by format, and by deck.
 /// </summary>
 /// <remarks>
@@ -77,6 +89,14 @@ public sealed record IndexStats(
     IReadOnlyDictionary<string, string> LabelOf,
 
     /// <summary>
+    /// Every deck's versions, oldest first, so that "did that change help" has somewhere
+    /// to be asked. A deck played as only one list contributes none — there is nothing
+    /// to compare it against, and a lone version restating the deck's own record would
+    /// be noise on every row that never changed.
+    /// </summary>
+    IReadOnlyList<DeckVersionRow> DeckVersions,
+
+    /// <summary>
     /// How each sitting went, newest first. Computed here rather than by whoever renders
     /// it so that the panel and the coach that watches a live session cannot disagree
     /// about where one night ends and the next begins.
@@ -120,6 +140,16 @@ public sealed record IndexStats(
             .ThenBy(r => r.Name, StringComparer.Ordinal)
             .ToList();
 
+        // Only where there is more than one: a single version is the deck, and saying so
+        // again under every unchanged deck would be a row of noise per deck.
+        var deckVersions = clusters
+            .Where(c => c.Versions.Count > 1)
+            .SelectMany(c => c.Versions.Select((v, i) => new DeckVersionRow(
+                c.Slug, i + 1,
+                Row(c.Label, c.Slug, v.MatchIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList()),
+                v.Added, v.Removed)))
+            .ToList();
+
         // Grouped by the full commander line rather than the first name: a partner
         // pair is one deck, and two pairs sharing a commander are two decks — folding
         // either way would publish a record for a deck nobody was playing.
@@ -149,6 +179,7 @@ public sealed record IndexStats(
             Unattributed: counted.Count(r => r.Deck is null or { Count: 0 }),
             Excluded: rows.Count - counted.Count,
             DeckOf: deckOf,
+            DeckVersions: deckVersions,
             LabelOf: labelOf,
             // Over every match, not only the decided ones: an unfinished game still took
             // up part of the evening, and a session that reports two games when three
