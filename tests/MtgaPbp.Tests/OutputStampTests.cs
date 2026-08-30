@@ -85,6 +85,33 @@ public class OutputStampTests
         Assert.That(OutputStamp.MatchTime(SampleStart, Path.Combine(_dir, "gone.md")), Is.False);
     }
 
+    /// <summary>
+    /// One unstampable file must not take its siblings down with it. The page and the
+    /// export describe the same match, and there is no reading of "best effort" under
+    /// which failing to stamp one is a reason to leave the other on the build clock.
+    /// </summary>
+    [Test]
+    public void A_file_that_cannot_be_stamped_does_not_stop_the_others()
+    {
+        var missing = Path.Combine(_dir, "gone.html");
+        var real = File_("m1.md");
+
+        // The unstampable one goes first, so passing this needs the loop to continue
+        // rather than merely to have got lucky with the order.
+        Assert.That(OutputStamp.MatchTime(SampleStart, missing, real), Is.True);
+
+        var expected = DateTimeOffset.FromUnixTimeMilliseconds(SampleStart).UtcDateTime;
+        Assert.That(File.GetLastWriteTimeUtc(real),
+            Is.EqualTo(expected).Within(TimeSpan.FromSeconds(1)));
+    }
+
+    /// <summary>Nothing to stamp is not something stamped.</summary>
+    [Test]
+    public void No_paths_is_false()
+    {
+        Assert.That(OutputStamp.MatchTime(SampleStart), Is.False);
+    }
+
     /// <summary>And a timestamp no filesystem will represent is refused, not thrown.</summary>
     [Test]
     public void An_impossible_timestamp_is_refused_quietly()

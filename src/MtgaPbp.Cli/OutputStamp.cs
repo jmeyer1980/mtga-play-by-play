@@ -32,6 +32,7 @@ public static class OutputStamp
     /// <summary>
     /// Stamps each path with <paramref name="startedAtMs"/>, and returns whether it did.
     /// </summary>
+    /// <returns>Whether any path was stamped.</returns>
     /// <remarks>
     /// Every failure is silence. A file time is a convenience on top of a file whose
     /// contents are already correct and already written, so there is no version of
@@ -40,22 +41,42 @@ public static class OutputStamp
     /// A match with no recorded start is left alone rather than stamped with the epoch,
     /// which would sort it to the top of a directory as confidently as the build clock
     /// sorted it to the bottom.
+    /// <para>
+    /// Silence is per path, not per call. One try around the whole loop would let a
+    /// single locked file take its siblings down with it — the page and the export
+    /// describe the same match, and there is no reading of "best effort" under which
+    /// failing to stamp one is a reason to leave the other on the build clock.
+    /// </para>
     /// </remarks>
     public static bool MatchTime(long startedAtMs, params string[] paths)
     {
         if (startedAtMs <= 0) return false;
 
+        DateTime when;
         try
         {
-            var when = DateTimeOffset.FromUnixTimeMilliseconds(startedAtMs).UtcDateTime;
-            foreach (var path in paths) File.SetLastWriteTimeUtc(path, when);
-            return true;
+            when = DateTimeOffset.FromUnixTimeMilliseconds(startedAtMs).UtcDateTime;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException
-                                    or ArgumentException or ArgumentOutOfRangeException
-                                    or NotSupportedException)
+        catch (ArgumentOutOfRangeException)
         {
+            // Not a moment any clock can name, so no file can carry it either.
             return false;
         }
+
+        var stamped = false;
+        foreach (var path in paths)
+        {
+            try
+            {
+                File.SetLastWriteTimeUtc(path, when);
+                stamped = true;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                                        or ArgumentException or NotSupportedException)
+            {
+                // And on to the next one.
+            }
+        }
+        return stamped;
     }
 }
