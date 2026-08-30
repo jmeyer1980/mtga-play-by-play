@@ -163,6 +163,14 @@ public static class IndexRenderer
                 // "and" rather than a slash, because it is how a partner pair is
                 // already written everywhere else a commander is named.
                 var theirDeck = string.Join(" and ", r.OpponentCommanders ?? []);
+                // The deck's name, which the clustering already worked out and this
+                // loop already half-reads: the slug goes into the haystack below, and
+                // until #120 the label it belongs to was looked up nowhere and the
+                // visible cell printed colours alone. Null for a match whose log
+                // carried no decklist, which is the same set that has no colours.
+                var deckName = stats.DeckOf.TryGetValue(r.MatchId, out var slug)
+                    ? stats.LabelOf.GetValueOrDefault(slug)
+                    : null;
                 // Both forms of the colours go in, so "wu" and "blue" each find the same
                 // rows. A row with no deck contributes neither, which is what stops a
                 // search for "white" from turning up matches whose colours nobody knows.
@@ -180,7 +188,11 @@ public static class IndexRenderer
                     // The deck token the panel filters by. Only matches whose log
                     // carried a decklist have one, which is what keeps a search for a
                     // deck from turning up matches nobody knows the deck of.
-                    stats.DeckOf.TryGetValue(r.MatchId, out var deck) ? $"deck:{deck}" : "",
+                    slug is null ? "" : $"deck:{slug}",
+                    // And the name in plain words. The slug alone made "elspeth" work
+                    // only by accident — it matches inside "deck:elspeth-storm-slayer" —
+                    // while "storm slayer" with a space matched nothing at all.
+                    deckName ?? "",
                     // Both forms of the length, for the same reason as the colours, and
                     // now the only way to search one: the clipped twin that Ctrl+F used
                     // to match was removed for matching text nothing could show (#34).
@@ -237,7 +249,7 @@ public static class IndexRenderer
                         data-id="{E(r.MatchId)}" aria-describedby="copymd-note"
                         aria-label="Copy transcript without names"
                         ><span aria-hidden="true">¶</span></button></td>
-                    <td{Key(r.EventName)}>{E(r.EventName)}</td><td class="deck"{Key(r.Colors)}>{Colors(r)}</td>
+                    <td{Key(r.EventName)}>{E(r.EventName)}</td><td class="deck"{Key(deckName ?? r.Colors)}>{Deck(r, deckName)}</td>
                     <td class="opp"{Key(r.Opponent)}>{E(r.Opponent)}</td>
                     <td class="oppdeck"{Key(theirDeck)}>{E(theirDeck)}</td>
                     <td class="{cls}"{Key(r.Result)}>{E(r.Result)}{Ending(r)}{Incomplete(r)}{Gaps(r)}</td>
@@ -425,6 +437,35 @@ public static class IndexRenderer
     private static string Colors(MatchSummary r) => r.Colors is not { Length: > 0 } c
         ? ""
         : Twin(E(c), E(DeckColors.Spoken(c)));
+
+    /// <summary>
+    /// Which deck was played: its name, with the colours beneath it.
+    /// </summary>
+    /// <remarks>
+    /// The name leads because the archive can now say one. Colour was the only thing
+    /// telling one of your decks from another when a match was all the renderer had —
+    /// but <see cref="MtgaPbp.Core.DeckIdentity"/> groups matches into decks and names
+    /// each one, so a column that still printed "W" against every mono-white deck was
+    /// answering a question the archive had stopped needing to ask.
+    /// <para>
+    /// A second line rather than a <c>title</c>, which the issue also offered. A title
+    /// appears on hover and nowhere else: not on a phone, not to a keyboard, and not to
+    /// a screen reader unless it happens to be configured for it. The colours are a
+    /// fact about the row and are carried as one.
+    /// </para>
+    /// <para>
+    /// Either half can be missing and the other still renders.
+    /// <see cref="MatchSummary.Colors"/> and the cluster label come from different
+    /// places — colours from the deck's card ids, the name from comparing lists across
+    /// the archive — so this does not assume that having one means having the other.
+    /// Both absent leaves the cell empty, which is what a match with no recorded deck
+    /// has always shown.
+    /// </para>
+    /// </remarks>
+    private static string Deck(MatchSummary r, string? name) =>
+        name is not { Length: > 0 }
+            ? Colors(r)
+            : $"""<span class="dname">{E(name)}</span>{Colors(r)}""";
 
     /// <summary>
     /// The record, above the table it summarises.
@@ -973,6 +1014,28 @@ public static class IndexRenderer
            time. Rows run 87px tall when a neighbouring column wraps, so the height is
            not fully recoverable this way and the remaining shortfall is vertical. */
         td>[role=img]{display:block;margin:-.45rem -.6rem;padding:.45rem .6rem}
+        /* The deck cell holds two lines now, so the padding a lone glyph used to
+           reclaim is split between them rather than given to one: the name takes the
+           top half, the colours the bottom, and together they still cover the cell the
+           way the single glyph did. Without this the rule above would stretch the
+           colours over the name they sit under. More specific than that rule on
+           purpose — a class beats an element, so it wins wherever both apply. */
+        .deck>span{display:block;margin-inline:-.6rem;padding-inline:.6rem}
+        /* And back out of the letter styling the cell carries. Monospace with
+           .08em tracking exists so "WU" reads as two letters rather than a word;
+           applied to "Elspeth, Storm Slayer" it reads as code. nowrap goes too —
+           on a name it would force the column as wide as the longest commander,
+           which is the sideways scroll this was supposed to avoid. Body's own stack
+           spelled out rather than font-family:inherit — inherit resolves to the
+           parent's computed value, and the parent is the monospace rule being
+           backed out of, so it changes nothing. */
+        .deck>.dname{margin-top:-.45rem;padding-top:.45rem;letter-spacing:normal;
+                     white-space:normal;
+                     font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+        .deck>[role=img]{margin:0 -.6rem -.45rem;padding:0 .6rem .45rem;font-size:.85em}
+        /* Only when it is the second line. A colours-only cell keeps the full stretch
+           above, because there it really is the whole content. */
+        .deck>.dname+[role=img]{opacity:.7}
         thead th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;opacity:.6}
         tbody th{font-weight:400}
         tbody tr:hover{background:rgba(128,128,128,.12)}
