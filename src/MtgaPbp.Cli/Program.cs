@@ -306,7 +306,13 @@ public static class Program
         }
 
         Console.WriteLine($"watching {cfg.LogPaths.FirstOrDefault()}");
-        OpenInBrowser(server.Url);
+
+        // On anything but a first run there is a report to show right now. A first
+        // run has nothing yet — opening the browser onto a 404 with no script in it
+        // would strand the user there, because a 404 cannot subscribe to the change
+        // stream that would have refreshed it — so the open waits for the build.
+        var hadReport = File.Exists(Path.Combine(cfg.OutputDir, "index.html"));
+        if (hadReport) OpenInBrowser(server.Url);
 
         Capture(cfg);
 
@@ -325,8 +331,10 @@ public static class Program
         }));
         if (code != 0) return code;
 
-        // Any page that connected during the build gets the fresh rows now.
+        // Any page that connected during the build gets the fresh rows now — and a
+        // first run finally has something worth opening a browser onto.
         server.NotifyChanged();
+        if (!hadReport) OpenInBrowser(server.Url);
 
         // The standing state is drawn once and repainted; only the notable lines scroll.
         // See LiveBoard for why that split exists — 41 lines an evening saying "report

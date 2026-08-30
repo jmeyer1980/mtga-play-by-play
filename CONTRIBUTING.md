@@ -150,7 +150,9 @@ Start-Process dist/mtga-pbp.exe watch
 
 The port answers immediately, serving the previous run's report; the page refreshes
 itself once the startup capture and build finish, which at a large archive can take
-half a minute. (`watch` used to bind only after that build, and the refused connection
+half a minute. A genuinely first run has no previous report — the port answers 404
+until the first build lands, and the browser is opened only then, so a 404 in that
+window is the expected state and not a regression. (`watch` used to bind only after that build, and the refused connection
 in the gap was mistaken for a crash more than once — that is why this sentence exists.)
 `dist/` is gitignored and local; the released zip is built by CI from the tag, not from
 whatever is in your working copy.
