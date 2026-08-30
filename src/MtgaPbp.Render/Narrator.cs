@@ -482,6 +482,94 @@ public static class Narrator
     private const char OpenQuote = '\u201c';
     private const char CloseQuote = '\u201d';
 
+    /// <summary>
+    /// When in the turn a spell was cast, for the casts where that is the play — or
+    /// nothing at all, which is most of them.
+    /// </summary>
+    /// <remarks>
+    /// The beats view reported <em>that</em> an instant resolved and never <em>when</em>,
+    /// and for a card whose whole identity is its timing that loses the play (#148). A
+    /// removal spell cast in upkeep, in response to a trigger, after blockers, or in the
+    /// second main phase all rendered identically — and "cast a trick after blockers
+    /// were declared" and "cast it before attacks" are different plays with different
+    /// quality. A transcript that cannot tell them apart cannot be used to review them.
+    /// <para>
+    /// Only the casts that are not the ordinary case are marked. A spell cast on your
+    /// own turn in a main phase is what casting normally means, and annotating every one
+    /// of those would bury the handful that matter. So the test is whether the caster
+    /// held the turn AND was in a main phase; anything else gets the step named. It keys
+    /// off the turn and the phase rather than off card type, because "an instant" is not
+    /// the question — a sorcery-speed spell cast in someone else's main phase would be a
+    /// bug worth seeing, and flash makes card type a poor proxy anyway.
+    /// </para>
+    /// <para>
+    /// Beats only. Verbose already prints the step transitions as their own lines, so
+    /// this would be saying the same thing twice on the density that least needs help.
+    /// </para>
+    /// <para>
+    /// It sits against the spell's name rather than at the end of the line, because a
+    /// target carries its own parenthetical — "targeting Bristly Bill (2/2 → 0/0)" —
+    /// and two of them running together read as one confused aside rather than as two
+    /// facts. Against the name it is unambiguously about the cast.
+    /// </para>
+    /// </remarks>
+    private static string CastTiming(GameEvent e, Density density) =>
+        density == Density.Verbose || !OutsideYourOwnMainPhase(e) || StepOrPhase(e) is not { } when
+            ? ""
+            : $" ({when})";
+
+    /// <summary>
+    /// Whether a cast happened anywhere other than its caster's own main phase — the
+    /// one place a spell is cast by default.
+    /// </summary>
+    private static bool OutsideYourOwnMainPhase(GameEvent e) =>
+        e.ActorSeat != e.ActiveSeat || e.Phase is not (FirstMain or SecondMain);
+
+    // Phase and Step numbering read from Arena's own card database rather than assumed
+    // — the Enums table joined to Localizations_enUS gives, for Phase: 1 Beginning,
+    // 2 1st Main, 3 Combat, 4 2nd Main, 5 Ending; and for Step: 1 Untap, 2 Upkeep,
+    // 3 Draw, 4 Begin Combat, 5 Declare Attackers, 6 Declare Blockers, 7 Combat Damage,
+    // 8 End Combat, 9 End, 10 Cleanup, 11 First Strike Damage. A main phase carries no
+    // step, which is why step 0 falls back to naming the phase.
+    private const int FirstMain = 2;
+    private const int SecondMain = 4;
+
+    /// <summary>
+    /// The step a cast landed in, or the phase when the step says nothing.
+    /// </summary>
+    /// <remarks>
+    /// Written here in English rather than read back from the card database. The wording
+    /// the database carries is the label for a phase transition — "Combat · Declare
+    /// Attackers" — and taking the half of it this wants would mean splitting a string
+    /// built for a reader, which is how a rewording quietly becomes a behaviour change.
+    /// Every other word the narrator emits is its own; these are too.
+    /// </remarks>
+    private static string? StepOrPhase(GameEvent e) => e.Step switch
+    {
+        1 => "untap",
+        2 => "upkeep",
+        3 => "draw step",
+        4 => "beginning of combat",
+        5 => "declare attackers",
+        6 => "declare blockers",
+        7 => "combat damage",
+        8 => "end of combat",
+        9 => "end step",
+        10 => "cleanup",
+        11 => "first-strike damage",
+        _ => e.Phase switch
+        {
+            1 => "beginning phase",
+            FirstMain => "first main phase",
+            3 => "combat",
+            SecondMain => "second main phase",
+            5 => "ending phase",
+            // Phase 0 as well as anything Arena adds later: better to say nothing than
+            // to name a part of the turn by a number nobody recognises.
+            _ => null
+        }
+    };
+
     private static string Ability(string detail, Density density)
     {
         if (density == Density.Verbose || detail.Length <= AbilityLimit) return detail;
@@ -598,6 +686,7 @@ public static class Narrator
 
         EventKind.SpellCast when e.SourceName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "cast", "casts", t)} {e.SourceName}"
+            + CastTiming(e, density)
             + (e.TargetName is not null ? $", targeting {e.TargetName}" : ""),
 
         EventKind.Resolved when e.SourceName is not null => $"{e.SourceName} resolves",

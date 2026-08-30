@@ -62,7 +62,7 @@
 - Ajani's Pridemate's ability triggers
 - Ajani's Pridemate gets 1 +1/+1 counter
 - Opponent attacks with Hinterland Sanctifier
-- You cast Elspeth's Smite, targeting Hinterland Sanctifier
+- You cast Elspeth's Smite (declare attackers), targeting Hinterland Sanctifier
 - Elspeth's Smite deals 3 damage to Hinterland Sanctifier
 - Elspeth's Smite resolves
 - Hinterland Sanctifier is put into the graveyard
