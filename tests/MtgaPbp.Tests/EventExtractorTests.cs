@@ -67,6 +67,14 @@ public class EventExtractorTests
     private static Transcript Run(params string[] lines) =>
         new EventExtractor(new FakeCardDb()).Extract("m1", lines);
 
+    /// <summary>
+    /// The same, with the two lines every match needs before it can say anything —
+    /// who is in the room, and that a game has begun. Shared so tests living in their
+    /// own file do not each rebuild the preamble.
+    /// </summary>
+    internal static Transcript RunFor(params string[] messages) =>
+        Run([RoomLine, MulliganLine, .. messages]);
+
     private const string RoomLine = """
     { "timestamp": "1000", "matchGameRoomStateChangedEvent": { "gameRoomInfo": {
         "gameRoomConfig": { "matchId": "m1", "reservedPlayers": [
@@ -81,7 +89,7 @@ public class EventExtractorTests
       { "type": "GREMessageType_MulliganReq", "systemSeatIds": [ 1 ] } ] } }
     """;
 
-    private static string Gre(string gsmBody) => $$"""
+    internal static string Gre(string gsmBody) => $$"""
     { "timestamp": "1002", "greToClientEvent": { "greToClientMessages": [
       { "type": "GREMessageType_GameStateMessage", "gameStateMessage": {{gsmBody}} } ] } }
     """;
