@@ -150,21 +150,28 @@ public static class Program
     /// <c>Written</c> counts matches that were <em>added or updated</em>. A match
     /// first seen mid-game is archived incomplete and rewritten when it ends, which
     /// leaves the archive the same size — so callers must not use the match count to
-    /// decide whether anything happened.
+    /// decide whether anything happened. <c>Drift</c> is <see cref="DriftCanary"/>'s
+    /// warning — non-null when the logs carried match-shaped volume that produced no
+    /// matches at all — returned rather than printed so `watch` can route it through
+    /// the board instead of corrupting the pinned block with a bare write.
     /// </returns>
-    private static (int Exit, int Written) CaptureCore(Config cfg, bool quiet)
+    private static (int Exit, int Written, string? Drift) CaptureCore(Config cfg, bool quiet)
     {
         var archive = new RawArchive(cfg.ArchiveDir);
         var ledger = new InventoryLedger(cfg.ArchiveDir);
         var stats = new ScanStats();
         var written = 0;
+        var slices = 0;
         var sawAnyLog = false;
 
         foreach (var log in cfg.LogPaths.Where(File.Exists))
         {
             sawAnyLog = true;
             foreach (var slice in MatchSlicer.Slice(Offering(LogScanner.Scan(log, stats), ledger)))
+            {
+                slices++;
                 if (archive.Write(slice)) written++;
+            }
         }
 
         // After the logs, because the ledger records where the last of them left the
@@ -178,13 +185,19 @@ public static class Program
                 "error: no Arena log found. Looked for:\n  " +
                 string.Join("\n  ", cfg.LogPaths) +
                 "\nSet \"LogPaths\" in mtga-pbp.json if Arena is installed elsewhere.");
-            return (2, 0);
+            return (2, 0, null);
         }
 
         if (!quiet)
             Console.WriteLine(
                 $"captured {written} new match{(written == 1 ? "" : "es")} " +
                 $"({stats.JsonLines:N0} records read)");
+
+        // Returned rather than printed so `watch` can route it through the board —
+        // a bare WriteLine under quiet mode would land inside the pinned block and
+        // corrupt the repaint, which is why quiet mode exists.
+        var drift = DriftCanary.Warn(stats, slices);
+        if (!quiet && drift is not null) Console.WriteLine($"warning: {drift}");
 
         // Said out loud even when nothing new was captured: it is the one condition
         // under which a transcript that looks finished is not, and a count buried in a
@@ -203,7 +216,7 @@ public static class Program
         }
 
         Prune(cfg, archive);
-        return (0, written);
+        return (0, written, drift);
     }
 
     /// <summary>
@@ -383,7 +396,15 @@ public static class Program
             // that started mid-poll is archived incomplete and rewritten once it ends,
             // and that rewrite leaves the count unchanged — which is exactly the update
             // worth showing, since only then does the transcript know how it finished.
-            var (exit, written) = CaptureCore(cfg, quiet: true);
+            var (exit, written, drift) = CaptureCore(cfg, quiet: true);
+
+            // Said through the board so it scrolls above the pinned block and stays.
+            // Once per watch session: the counts in the message grow every poll, so
+            // deduplicating on the text itself would say it every three seconds —
+            // and a drift that persists is one fact, not a stream of them.
+            if (drift is not null && said.Add("format-drift"))
+                board.Say($"[{DateTime.Now:HH:mm:ss}] ** {drift}");
+
             if (exit != 0 || written == 0) continue;
 
             // Notified outside the gate for the favorite handler's reason: a page
