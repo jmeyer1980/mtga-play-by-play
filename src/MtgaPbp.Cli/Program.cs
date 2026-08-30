@@ -30,6 +30,9 @@ public static class Program
         // Opt-in for a prune large enough to look like a mistake. Deliberately a flag
         // and not a config key — see Prune.
         var prune = args.Contains("--prune");
+        // Ignore the build cache and re-derive every match. The flag has always named
+        // this guarantee; until #122 there was no cache for it to bypass.
+        var rebuild = args.Contains("--rebuild");
 
         // Identity first, on every command that a person reads.
         if (command is not ("keep" or "unkeep")) Banner.Write();
@@ -39,14 +42,14 @@ public static class Program
             return command switch
             {
                 "capture" => Capture(cfg, prune),
-                "build" => Build(cfg, open),
+                "build" => Build(cfg, open, rebuild: rebuild),
                 "stats" => Stats(cfg),
-                "watch" => Watch(cfg, operands, prune),
+                "watch" => Watch(cfg, operands, prune, rebuild),
                 "collection" => ImportCollection(cfg, operands.FirstOrDefault()),
                 "why" => Why.Run(cfg, operands.FirstOrDefault(), operands.Skip(1).ToArray()),
                 "keep" => Favorite(cfg, operands.FirstOrDefault(), on: true),
                 "unkeep" => Favorite(cfg, operands.FirstOrDefault(), on: false),
-                "all" => Capture(cfg, prune) is var c && c != 0 ? c : Build(cfg, open),
+                "all" => Capture(cfg, prune) is var c && c != 0 ? c : Build(cfg, open, rebuild: rebuild),
                 _ => Usage()
             };
         }
@@ -104,7 +107,8 @@ public static class Program
             mtga-pbp --open           ... and open the report in your browser
             mtga-pbp capture          capture only
             mtga-pbp build            re-derive the whole site from the archive
-            mtga-pbp build --rebuild  same as above (build never caches)
+            mtga-pbp build --rebuild  rebuild every match, ignoring the build cache
+                                      (on `watch`, applies to its first build only)
             mtga-pbp stats            unhandled annotations and unresolved cards
             mtga-pbp watch [port]     serve the report and keep it live (default 8787)
             mtga-pbp collection <file> import a collection exported from elsewhere
@@ -390,7 +394,7 @@ public static class Program
     /// so change notifications fire continuously and tell us nothing useful. Length is
     /// the honest signal, and a shrink means Arena restarted and truncated the log.
     /// </remarks>
-    private static int Watch(Config cfg, string[] operands, bool prune)
+    private static int Watch(Config cfg, string[] operands, bool prune, bool rebuild)
     {
         var port = int.TryParse(operands.FirstOrDefault(), out var p) ? p : 8787;
         var interval = TimeSpan.FromSeconds(3);
@@ -471,10 +475,15 @@ public static class Program
         var code = 0;
         // Behind the gate: the server is already answering, so a star clicked during
         // startup queues its rebuild behind this one instead of racing it.
+        // --rebuild applies to this build and no other. A watch that re-derived the
+        // whole archive on every poll would be the behaviour #122 exists to remove, and
+        // at a thousand matches it would spend half a minute of every three seconds
+        // rebuilding pages nothing had touched. Asking for a rebuild means "start from
+        // a clean slate", and once the slate is clean it stays clean.
         rebuilds.Run(() => code = Build(cfg, open: false, observed: (rows, st, nudge) =>
         {
             firstRows = rows; firstStats = st; firstNudge = nudge;
-        }, shared: archive));
+        }, shared: archive, rebuild: rebuild));
         if (code != 0) return code;
 
         // Any page that connected during the build gets the fresh rows now — and a
@@ -699,9 +708,38 @@ public static class Program
     }
 
     /// <summary>
-    /// Always re-derives every archived match — parsing 24 matches takes well under a
-    /// second, so there is no cache to invalidate. <c>--rebuild</c> is accepted and
-    /// documented because that is the guarantee it names, but it changes nothing today.
+    /// The card database as a single comparable string — its path and when it was last
+    /// written.
+    /// </summary>
+    /// <remarks>
+    /// Every card name, face and line of ability text on a page is looked up in it, so a
+    /// database Arena has updated can change a page whose match has not moved at all.
+    /// Path as well as time, because pointing "CardDbPath" at a different file is the
+    /// same kind of change and leaves the timestamp saying nothing.
+    /// </remarks>
+    /// <param name="path">Where the card database was found this run.</param>
+    private static string CardDbStamp(string path)
+    {
+        try
+        {
+            var file = new FileInfo(path);
+            var at = file.Exists
+                ? new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds()
+                : 0;
+            return $"{path}|{at}";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                                    or ArgumentException or NotSupportedException)
+        {
+            // Unknowable, so nothing matches it and everything re-renders.
+            return $"{path}|?{Guid.NewGuid()}";
+        }
+    }
+
+    /// <summary>
+    /// Re-derives the archived matches that have moved since the last build, and leaves
+    /// the rest alone. <c>--rebuild</c> ignores the cache and re-derives everything,
+    /// which is what it has always claimed to do and now actually does.
     /// </summary>
     /// <param name="observed">
     /// Handed the state this build worked out, for a caller that wants to draw it. The
@@ -709,9 +747,12 @@ public static class Program
     /// which would have been the second implementation of both and free to disagree
     /// with the page it sits beside.
     /// </param>
+    /// <param name="rebuild">
+    /// Ignore what the last build recorded and re-derive every match.
+    /// </param>
     private static int Build(Config cfg, bool open, bool quiet = false,
         Action<IReadOnlyList<MatchSummary>, IndexStats, Nudge?>? observed = null,
-        RawArchive? shared = null)
+        RawArchive? shared = null, bool rebuild = false)
     {
         // Lent one under `watch` for CaptureCore's reason, and for one of its own: a
         // build reads Meta().Favorite to draw each row's star, so a build holding its
@@ -727,6 +768,12 @@ public static class Program
         var extractor = new EventExtractor(cards);
         var summaries = new List<MatchSummary>();
         var unresolved = new SortedSet<string>(StringComparer.Ordinal);
+
+        // What the last build already worked out. The card database is part of the
+        // question because every name, face and ability on a page comes out of it.
+        var cache = BuildCache.Load(cfg.OutputDir, ignore: rebuild);
+        var cardStamp = CardDbStamp(dbPath);
+        var reused = 0;
 
         // Every match in the order they were played, worked out before anything is
         // extracted. The ledger already knows when each match started, so a page can be
@@ -755,13 +802,29 @@ public static class Program
         foreach (var matchId in archive.MatchIds())
         {
             var gamePath = Path.Combine(gamesDir, $"{matchId}.html");
-            var lines = archive.ReadLines(matchId);
-            if (lines.Count == 0) continue;
+            var textPath = Path.Combine(textDir, $"{matchId}.md");
 
             // Read once. Every Meta call takes the ledger lock now (#146), and this
             // loop wanted the same entry twice — for the row's star and for the file
             // times below.
             var meta = archive.Meta(matchId);
+            var neighbours = NeighboursOf(matchId);
+
+            // The star is applied here rather than cached, because it is the one thing
+            // about a match that changes without the match changing.
+            if (archive.RawStamp(matchId) is { } raw &&
+                cache.Reusable(matchId, raw.Size, raw.ModifiedMs,
+                               neighbours, gamePath, textPath, cardStamp) is { } hit)
+            {
+                summaries.Add(hit.Summary with { Favorite = meta?.Favorite ?? false });
+                foreach (var c in hit.Unresolved) unresolved.Add(c);
+                cache.Keep(matchId, hit);
+                reused++;
+                continue;
+            }
+
+            var lines = archive.ReadLines(matchId);
+            if (lines.Count == 0) continue;
 
             var transcript = extractor.Extract(matchId, lines);
 
@@ -776,22 +839,30 @@ public static class Program
                 if (!faces.ContainsKey(name) && cards.FaceForName(name) is { } face)
                     faces[name] = face;
 
-            var textPath = Path.Combine(textDir, $"{matchId}.md");
             File.WriteAllText(gamePath,
-                GamePageRenderer.Render(transcript, NeighboursOf(matchId), faces));
+                GamePageRenderer.Render(transcript, neighbours, faces));
             File.WriteAllText(textPath, MarkdownRenderer.Render(transcript));
 
             // Both files carry the match's time rather than the build's, so that a
             // directory of them sorts the way the report does — see OutputStamp (#147).
             OutputStamp.MatchTime(meta?.StartedAtMs ?? 0, gamePath, textPath);
-            summaries.Add(IndexRenderer.Summarize(transcript) with
-            {
-                Favorite = meta?.Favorite ?? false
-            });
 
-            foreach (var c in transcript.UnresolvedNames.Keys)
-                unresolved.Add(c);
+            var summary = IndexRenderer.Summarize(transcript);
+            summaries.Add(summary with { Favorite = meta?.Favorite ?? false });
+
+            var names = transcript.UnresolvedNames.Keys.ToList();
+            foreach (var c in names) unresolved.Add(c);
+
+            // Stored without the star, for the reason above.
+            if (archive.RawStamp(matchId) is { } stamp)
+                cache.Keep(matchId, new CachedMatch(
+                    stamp.Size, stamp.ModifiedMs,
+                    neighbours.NewerId, neighbours.NewerWhen,
+                    neighbours.OlderId, neighbours.OlderWhen,
+                    summary, names));
         }
+
+        cache.Save(cfg.OutputDir, cardStamp);
 
         // Asked with the clock, so it answers about the sitting in progress and stays
         // quiet on a build run the next morning — see SessionCoach.Check. A one-shot
@@ -819,7 +890,9 @@ public static class Program
 
         if (!quiet)
         {
-            Console.WriteLine($"built {summaries.Count} game(s)");
+            Console.WriteLine(
+                $"built {summaries.Count} game(s)"
+                + (reused > 0 ? $" ({reused} unchanged, left alone)" : ""));
             Console.WriteLine();
             Console.WriteLine($"  report:  {indexPath}");
             Console.WriteLine($"  cards:   {dbPath}");

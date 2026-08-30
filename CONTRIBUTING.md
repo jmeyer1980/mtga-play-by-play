@@ -44,7 +44,13 @@ Player.log  →  archive/raw/<matchId>.json.gz  →  out/*.html, out/text/*.md
 
 The archive is the source of truth and is never edited. Everything downstream is
 re-derived from it by `mtga-pbp build`, which is what makes a parser fix apply to every
-match you have ever played rather than only to new ones. **If you are tempted to fix
+match you have ever played rather than only to new ones.
+
+`build` skips matches nothing has happened to, using `out/.build-cache.json`. That cache
+is keyed on the build's own version, so **a parser fix still reaches every match**: your
+change produces a different `BuildInfo.Version`, the cache is discarded, and the next
+build is a full one. There is no constant to remember to bump. If you are ever unsure,
+`mtga-pbp build --rebuild` ignores the cache entirely. **If you are tempted to fix
 something by editing rendered output or archived JSON, the fix belongs in the extractor
 or the narrator instead.**
 

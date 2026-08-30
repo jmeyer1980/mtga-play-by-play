@@ -125,6 +125,25 @@ Add a port the same way if you need one: `"...\mtga-pbp.exe" watch 9000`. The
 **Start in** field can be left as Windows set it — `mtga-pbp.json` is read from the
 folder the exe is in, not from the working directory.
 
+### Rebuilds only touch what changed
+
+`build` re-derives the matches whose archived slice has moved since last time and leaves
+the rest alone, so capturing one match does not re-parse the whole archive. Measured on
+1,223 matches: **32.4s cold, 0.69s warm**.
+
+A match is rebuilt when its archived slice changes, when the links to the matches either
+side of it change, when its page or markdown is missing, when Arena's card database is
+updated, or when you upgrade the tool — a new build throws the whole cache away, so a
+parser fix reaches every match you have ever played, which is the guarantee the archive
+exists for.
+
+The cache lives in `out/.build-cache.json` and is derived data: deleting it costs one
+slow build and nothing else. To force one:
+
+```
+mtga-pbp build --rebuild
+```
+
 ### Keeping the archive from growing forever
 
 Set `"MaxArchivedMatches": 60` in `mtga-pbp.json` and the oldest match is dropped
