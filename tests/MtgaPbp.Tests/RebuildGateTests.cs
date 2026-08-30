@@ -49,6 +49,20 @@ public class RebuildGateTests
     }
 
     [Test]
+    public void A_rebuild_that_throws_does_not_jam_the_gate()
+    {
+        var gate = new RebuildGate();
+
+        var task = gate.RunInBackground(() => throw new InvalidOperationException("boom"));
+        Assert.That(() => task.Wait(TimeSpan.FromSeconds(5)), Throws.TypeOf<AggregateException>());
+
+        // Would never return if the failed rebuild had kept the gate.
+        var ran = false;
+        gate.Run(() => ran = true);
+        Assert.That(ran, Is.True);
+    }
+
+    [Test]
     public void A_foreground_rebuild_waits_for_one_already_in_flight()
     {
         var gate = new RebuildGate();

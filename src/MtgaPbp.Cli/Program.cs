@@ -275,12 +275,18 @@ public static class Program
             // the archive and not the night's record, so there is nothing to repaint —
             // but an unobserved build prints the nudge itself, straight into the middle
             // of the pinned block, bypassing the erase that keeps it intact.
-            if (ok) rebuilds.RunInBackground(() =>
-            {
-                Build(cfg, open: false, quiet: true, observed: (_, _, _) => { });
-                server.NotifyChanged();
-            });
+            if (ok) _ = RebuildThenNotify();
             return ok;
+
+            async Task RebuildThenNotify()
+            {
+                // The refresh nudge waits for the rebuild but happens outside the
+                // gate: NotifyChanged writes to every subscribed page, and one
+                // stalled socket must not stretch the section rebuilds queue behind.
+                await rebuilds.RunInBackground(() =>
+                    Build(cfg, open: false, quiet: true, observed: (_, _, _) => { }));
+                server.NotifyChanged();
+            }
         };
 
         try { server.Start(); }
@@ -380,11 +386,10 @@ public static class Program
             var (exit, written) = CaptureCore(cfg, quiet: true);
             if (exit != 0 || written == 0) continue;
 
-            rebuilds.Run(() =>
-            {
-                Build(cfg, open: false, quiet: true, observed: Repaint);
-                server.NotifyChanged();
-            });
+            // Notified outside the gate for the favorite handler's reason: a page
+            // that has stopped reading must not hold the next rebuild hostage.
+            rebuilds.Run(() => Build(cfg, open: false, quiet: true, observed: Repaint));
+            server.NotifyChanged();
         }
 
         Console.WriteLine();

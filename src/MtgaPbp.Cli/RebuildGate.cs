@@ -14,17 +14,33 @@ namespace MtgaPbp.Cli;
 /// already true, and at a thousand matches it takes long enough that a star
 /// waiting on it reads as a broken button.
 /// </para>
+/// <para>
+/// The gate is a semaphore awaited asynchronously, so queued background rebuilds
+/// park no thread while they wait. The hop through <see cref="Task.Run(Action)"/>
+/// is load-bearing: awaiting the semaphore directly in an async method would run
+/// the rebuild on the caller's thread whenever the gate happened to be free —
+/// which is the favorite handler's request thread, and the exact wait this class
+/// exists to remove.
+/// </para>
 /// </remarks>
 public sealed class RebuildGate
 {
-    private readonly object _gate = new();
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
     /// <summary>Runs a rebuild now, after any rebuild already in flight finishes.</summary>
     public void Run(Action rebuild)
     {
-        lock (_gate) rebuild();
+        _gate.Wait();
+        try { rebuild(); }
+        finally { _gate.Release(); }
     }
 
     /// <summary>Queues a rebuild and returns without waiting for it.</summary>
-    public Task RunInBackground(Action rebuild) => Task.Run(() => Run(rebuild));
+    public Task RunInBackground(Action rebuild) =>
+        Task.Run(async () =>
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try { rebuild(); }
+            finally { _gate.Release(); }
+        });
 }
