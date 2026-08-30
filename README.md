@@ -134,6 +134,20 @@ whenever a new one arrives, deleting its archive, page and markdown together.
 with 70 kept matches keeps all 70. The cap defaults to `0`, meaning no limit, so
 nothing is ever deleted unless you ask for it.
 
+**A cap you set after the fact will not empty your archive by surprise.** Setting
+`"MaxArchivedMatches": 50` against an archive of 1,200 is asking for 1,150 matches to
+be deleted from the only copy there is, and there is no undo and no recycle bin. When a
+cap would take more than a tenth of the archive — and more than ten matches — nothing
+is deleted. The tool prints what it would have done and waits:
+
+```
+mtga-pbp capture --prune
+```
+
+Deliberately a flag rather than a setting, so it cannot happen by double-clicking the
+exe. Routine pruning, where a new match pushes out an old one, is unaffected and needs
+no flag.
+
 ### Running it from anywhere
 
 To type `mtga-pbp` from any directory, add its folder to your `PATH` once:
