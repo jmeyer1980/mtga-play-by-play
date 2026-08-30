@@ -236,7 +236,18 @@ public sealed class RawArchive
         var tmp = _ledgerPath + ".tmp";
         File.WriteAllText(tmp,
             JsonSerializer.Serialize(_ledger, new JsonSerializerOptions { WriteIndented = true }));
-        if (File.Exists(_ledgerPath)) File.Replace(tmp, _ledgerPath, _ledgerPath + ".bak");
-        else File.Move(tmp, _ledgerPath);
+        try
+        {
+            if (File.Exists(_ledgerPath)) File.Replace(tmp, _ledgerPath, _ledgerPath + ".bak");
+            else File.Move(tmp, _ledgerPath);
+        }
+        catch
+        {
+            // A swap that failed leaves the temp file holding nothing the in-memory
+            // ledger does not — the next successful save rewrites both — so it is
+            // removed rather than left to look like something worth recovering.
+            try { File.Delete(tmp); } catch (IOException) { /* the next save overwrites it */ }
+            throw;
+        }
     }
 }

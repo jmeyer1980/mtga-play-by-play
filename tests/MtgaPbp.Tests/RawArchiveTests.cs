@@ -373,6 +373,22 @@ public class RawArchiveTests
     }
 
     [Test]
+    public void A_failed_swap_does_not_leave_the_temp_file_behind()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1"));
+
+        // Hold the ledger open so the swap cannot land — the shape of an AV scanner
+        // or indexer sitting on the file at the wrong moment.
+        using (File.Open(Path.Combine(_root, "index.json"),
+                   FileMode.Open, FileAccess.Read, FileShare.None))
+            Assert.That(() => a.SetFavorite("m1", true), Throws.InstanceOf<IOException>());
+
+        Assert.That(File.Exists(Path.Combine(_root, "index.json.tmp")), Is.False,
+            "a save that failed must clean up after itself");
+    }
+
+    [Test]
     public void A_backup_one_save_behind_does_not_lose_the_newest_match()
     {
         var a = new RawArchive(_root);
