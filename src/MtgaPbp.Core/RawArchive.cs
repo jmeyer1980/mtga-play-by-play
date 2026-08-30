@@ -287,6 +287,33 @@ public sealed class RawArchive
         get { lock (_ledgerLock) return _ledger.Count; }
     }
 
+    /// <summary>
+    /// The size and last-write time of a match's archived slice, or null when there is
+    /// no file — the cheapest honest answer to "has this changed since last time".
+    /// </summary>
+    /// <remarks>
+    /// Not hashed. A hash would mean decompressing and reading every match in the
+    /// archive to decide which ones need reading, which is the work being avoided.
+    /// Size and mtime together miss only a rewrite that preserved both, and
+    /// <see cref="Write"/> rewrites a slice exactly when it has more of the match than
+    /// the stored copy — which is never the same bytes.
+    /// </remarks>
+    public (long Size, long ModifiedMs)? RawStamp(string matchId)
+    {
+        var file = new FileInfo(Path.Combine(_rawDir, $"{matchId}.json.gz"));
+        if (!file.Exists) return null;
+
+        try
+        {
+            return (file.Length, new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds());
+        }
+        catch (IOException)
+        {
+            // Unreadable metadata is "assume it moved", which costs a re-render.
+            return null;
+        }
+    }
+
     public IReadOnlyList<string> ReadLines(string matchId)
     {
         var path = Path.Combine(_rawDir, $"{matchId}.json.gz");
