@@ -106,8 +106,14 @@ public sealed class BuildCache
                 new Dictionary<string, CachedMatch>(file.Matches, StringComparer.Ordinal),
                 file.CardDb);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                                    or JsonException or NotSupportedException
+                                    or ArgumentException)
         {
+            // NotSupportedException included deliberately: System.Text.Json raises it
+            // for a type it cannot construct, which is exactly what a cache written by
+            // a different shape of this record looks like. Crashing a build over a file
+            // whose only job is to make it faster would be the wrong way round.
             return new BuildCache([]);
         }
     }
@@ -168,7 +174,7 @@ public sealed class BuildCache
                     new CacheFile(SchemaVersion, BuildInfo.Version, cardDb, _next), Json));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException
-                                    or NotSupportedException)
+                                    or NotSupportedException or JsonException)
         {
             // Next build does the work again, which is the same answer more slowly.
         }

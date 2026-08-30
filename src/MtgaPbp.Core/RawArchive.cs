@@ -307,9 +307,12 @@ public sealed class RawArchive
         {
             return (file.Length, new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds());
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                                    or NotSupportedException or ArgumentException)
         {
-            // Unreadable metadata is "assume it moved", which costs a re-render.
+            // Unreadable metadata is "assume it moved", which costs a re-render. An
+            // ACL or an odd path must not be able to abort a build over a number that
+            // only decides whether some work can be skipped.
             return null;
         }
     }

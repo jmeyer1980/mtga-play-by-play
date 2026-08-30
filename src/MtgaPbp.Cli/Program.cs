@@ -44,7 +44,7 @@ public static class Program
                 "capture" => Capture(cfg, prune),
                 "build" => Build(cfg, open, rebuild: rebuild),
                 "stats" => Stats(cfg),
-                "watch" => Watch(cfg, operands, prune),
+                "watch" => Watch(cfg, operands, prune, rebuild),
                 "collection" => ImportCollection(cfg, operands.FirstOrDefault()),
                 "why" => Why.Run(cfg, operands.FirstOrDefault(), operands.Skip(1).ToArray()),
                 "keep" => Favorite(cfg, operands.FirstOrDefault(), on: true),
@@ -108,6 +108,7 @@ public static class Program
             mtga-pbp capture          capture only
             mtga-pbp build            re-derive the whole site from the archive
             mtga-pbp build --rebuild  rebuild every match, ignoring the build cache
+                                      (on `watch`, applies to its first build only)
             mtga-pbp stats            unhandled annotations and unresolved cards
             mtga-pbp watch [port]     serve the report and keep it live (default 8787)
             mtga-pbp collection <file> import a collection exported from elsewhere
@@ -393,7 +394,7 @@ public static class Program
     /// so change notifications fire continuously and tell us nothing useful. Length is
     /// the honest signal, and a shrink means Arena restarted and truncated the log.
     /// </remarks>
-    private static int Watch(Config cfg, string[] operands, bool prune)
+    private static int Watch(Config cfg, string[] operands, bool prune, bool rebuild)
     {
         var port = int.TryParse(operands.FirstOrDefault(), out var p) ? p : 8787;
         var interval = TimeSpan.FromSeconds(3);
@@ -474,10 +475,15 @@ public static class Program
         var code = 0;
         // Behind the gate: the server is already answering, so a star clicked during
         // startup queues its rebuild behind this one instead of racing it.
+        // --rebuild applies to this build and no other. A watch that re-derived the
+        // whole archive on every poll would be the behaviour #122 exists to remove, and
+        // at a thousand matches it would spend half a minute of every three seconds
+        // rebuilding pages nothing had touched. Asking for a rebuild means "start from
+        // a clean slate", and once the slate is clean it stays clean.
         rebuilds.Run(() => code = Build(cfg, open: false, observed: (rows, st, nudge) =>
         {
             firstRows = rows; firstStats = st; firstNudge = nudge;
-        }, shared: archive));
+        }, shared: archive, rebuild: rebuild));
         if (code != 0) return code;
 
         // Any page that connected during the build gets the fresh rows now — and a
@@ -702,17 +708,6 @@ public static class Program
     }
 
     /// <summary>
-    /// Re-derives the archived matches that have moved since the last build, and leaves
-    /// the rest alone. <c>--rebuild</c> ignores the cache and re-derives everything,
-    /// which is what it has always claimed to do and now actually does.
-    /// </summary>
-    /// <param name="observed">
-    /// Handed the state this build worked out, for a caller that wants to draw it. The
-    /// alternative was recomputing the sessions and the coach's verdict in `watch`,
-    /// which would have been the second implementation of both and free to disagree
-    /// with the page it sits beside.
-    /// </param>
-    /// <summary>
     /// The card database as a single comparable string — its path and when it was last
     /// written.
     /// </summary>
@@ -722,6 +717,7 @@ public static class Program
     /// Path as well as time, because pointing "CardDbPath" at a different file is the
     /// same kind of change and leaves the timestamp saying nothing.
     /// </remarks>
+    /// <param name="path">Where the card database was found this run.</param>
     private static string CardDbStamp(string path)
     {
         try
@@ -740,6 +736,20 @@ public static class Program
         }
     }
 
+    /// <summary>
+    /// Re-derives the archived matches that have moved since the last build, and leaves
+    /// the rest alone. <c>--rebuild</c> ignores the cache and re-derives everything,
+    /// which is what it has always claimed to do and now actually does.
+    /// </summary>
+    /// <param name="observed">
+    /// Handed the state this build worked out, for a caller that wants to draw it. The
+    /// alternative was recomputing the sessions and the coach's verdict in `watch`,
+    /// which would have been the second implementation of both and free to disagree
+    /// with the page it sits beside.
+    /// </param>
+    /// <param name="rebuild">
+    /// Ignore what the last build recorded and re-derive every match.
+    /// </param>
     private static int Build(Config cfg, bool open, bool quiet = false,
         Action<IReadOnlyList<MatchSummary>, IndexStats, Nudge?>? observed = null,
         RawArchive? shared = null, bool rebuild = false)
