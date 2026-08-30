@@ -766,16 +766,25 @@ public class RendererTests
             .Single(td => td.Attribute("class")?.Value == "deck");
 
         // "Hare Apparent" is the most-copied nonland in SampleDeck, which is how
-        // DeckIdentity names a deck that carries no commander.
-        Assert.That(Markup.Clipboard(cell), Does.StartWith("Hare Apparent"));
+        // DeckIdentity names a deck that carries no commander. Whitespace is collapsed
+        // the way the page's own textContent readers collapse it, which is what makes
+        // this assert the two halves stay SEPARATE: without the newline between the
+        // spans the cell reads back as "Hare ApparentW" and a StartsWith would still
+        // have passed.
+        Assert.That(Collapse(Markup.Clipboard(cell)), Is.EqualTo("Hare Apparent W"));
 
-        // The colours survive as the second line, and as a twin: the eye still gets
-        // the letter, the ear still gets the word. #34 is the reason the spoken form
-        // must not become loose text in the cell.
-        Assert.That(Markup.Clipboard(cell), Does.Contain("W"));
+        // The colours survive as a twin: the eye gets the letter, the ear gets the
+        // word. #34 is the reason the spoken form must not become loose text.
         Assert.That(Markup.Spoken(cell), Does.Contain("white"));
         Assert.That(cell.Value, Does.Not.Contain("white"));
     }
+
+    /// <summary>
+    /// Whitespace collapsed the way the index's own <c>textOf</c> collapses it, so a
+    /// claim about the cell's text is a claim about what a reader copying it gets.
+    /// </summary>
+    private static string Collapse(string s) =>
+        Regex.Replace(s, @"\s+", " ").Trim();
 
     /// <summary>
     /// The column sorts by what it visibly leads with. Sorting a name-led column by

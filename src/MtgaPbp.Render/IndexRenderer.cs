@@ -461,11 +461,24 @@ public static class IndexRenderer
     /// Both absent leaves the cell empty, which is what a match with no recorded deck
     /// has always shown.
     /// </para>
+    /// <para>
+    /// The newline between the two spans is load-bearing, not formatting. Both are
+    /// block-level, so it renders as nothing — but anything reading the cell through
+    /// <c>textContent</c> concatenates children with no separator, and "Hare Apparent"
+    /// followed immediately by "W" comes back as "Hare ApparentW". The page's own
+    /// clipboard code never reaches this cell (it walks <c>#stats</c> alone, which is
+    /// what keeps a copied record free of opponent names), but a reader selecting a row
+    /// by hand does — the same failure the <c>.vh</c> rule's <c>user-select:none</c>
+    /// exists to prevent, where a row pasted as "11m 12s11 minutes 12 seconds".
+    /// </para>
     /// </remarks>
     private static string Deck(MatchSummary r, string? name) =>
         name is not { Length: > 0 }
             ? Colors(r)
-            : $"""<span class="dname">{E(name)}</span>{Colors(r)}""";
+            : $"""
+              <span class="dname">{E(name)}</span>
+              {Colors(r)}
+              """;
 
     /// <summary>
     /// The record, above the table it summarises.
@@ -1014,28 +1027,27 @@ public static class IndexRenderer
            time. Rows run 87px tall when a neighbouring column wraps, so the height is
            not fully recoverable this way and the remaining shortfall is vertical. */
         td>[role=img]{display:block;margin:-.45rem -.6rem;padding:.45rem .6rem}
-        /* The deck cell holds two lines now, so the padding a lone glyph used to
-           reclaim is split between them rather than given to one: the name takes the
-           top half, the colours the bottom, and together they still cover the cell the
-           way the single glyph did. Without this the rule above would stretch the
-           colours over the name they sit under. More specific than that rule on
-           purpose — a class beats an element, so it wins wherever both apply. */
-        .deck>span{display:block;margin-inline:-.6rem;padding-inline:.6rem}
-        /* And back out of the letter styling the cell carries. Monospace with
-           .08em tracking exists so "WU" reads as two letters rather than a word;
-           applied to "Elspeth, Storm Slayer" it reads as code. nowrap goes too —
-           on a name it would force the column as wide as the longest commander,
-           which is the sideways scroll this was supposed to avoid. Body's own stack
-           spelled out rather than font-family:inherit — inherit resolves to the
-           parent's computed value, and the parent is the monospace rule being
-           backed out of, so it changes nothing. */
-        .deck>.dname{margin-top:-.45rem;padding-top:.45rem;letter-spacing:normal;
-                     white-space:normal;
+        /* A deck cell with a name in it holds two lines, so the padding a lone glyph
+           used to reclaim is split between them rather than given to one: the name
+           takes the top half, the colours the bottom, and together they still cover
+           the cell the way the single glyph did. Without this the rule above would
+           stretch the colours over the name they sit under.
+           EVERY rule below requires .dname to be present — the first by matching it,
+           the second by matching what follows it. A colours-only cell matches neither
+           and keeps the whole-cell stretch above, because there the glyph really is
+           the entire content and that is the case the stretch was measured for.
+           Also backs out the letter styling the cell carries: monospace with .08em
+           tracking exists so "WU" reads as two letters rather than a word, and applied
+           to "Elspeth, Storm Slayer" it reads as code. nowrap goes too — on a name it
+           would force the column as wide as the longest commander, which is the
+           sideways scroll this was supposed to avoid. Body's own stack is spelled out
+           rather than font-family:inherit, because inherit resolves to the parent's
+           computed value and the parent is the monospace rule being backed out of. */
+        .deck>.dname{display:block;margin:-.45rem -.6rem 0;padding:.45rem .6rem 0;
+                     letter-spacing:normal;white-space:normal;
                      font-family:system-ui,-apple-system,Segoe UI,sans-serif}
-        .deck>[role=img]{margin:0 -.6rem -.45rem;padding:0 .6rem .45rem;font-size:.85em}
-        /* Only when it is the second line. A colours-only cell keeps the full stretch
-           above, because there it really is the whole content. */
-        .deck>.dname+[role=img]{opacity:.7}
+        .deck>.dname+[role=img]{margin:0 -.6rem -.45rem;padding:0 .6rem .45rem;
+                                font-size:.85em;opacity:.7}
         thead th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;opacity:.6}
         tbody th{font-weight:400}
         tbody tr:hover{background:rgba(128,128,128,.12)}
