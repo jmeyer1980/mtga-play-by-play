@@ -758,6 +758,11 @@ public static class Program
             var lines = archive.ReadLines(matchId);
             if (lines.Count == 0) continue;
 
+            // Read once. Every Meta call takes the ledger lock now (#146), and this
+            // loop wanted the same entry twice — for the row's star and for the file
+            // times below.
+            var meta = archive.Meta(matchId);
+
             var transcript = extractor.Extract(matchId, lines);
 
             // Every name the deck section will print, resolved to a face where the
@@ -771,13 +776,17 @@ public static class Program
                 if (!faces.ContainsKey(name) && cards.FaceForName(name) is { } face)
                     faces[name] = face;
 
+            var textPath = Path.Combine(textDir, $"{matchId}.md");
             File.WriteAllText(gamePath,
                 GamePageRenderer.Render(transcript, NeighboursOf(matchId), faces));
-            File.WriteAllText(Path.Combine(textDir, $"{matchId}.md"),
-                MarkdownRenderer.Render(transcript));
+            File.WriteAllText(textPath, MarkdownRenderer.Render(transcript));
+
+            // Both files carry the match's time rather than the build's, so that a
+            // directory of them sorts the way the report does — see OutputStamp (#147).
+            OutputStamp.MatchTime(meta?.StartedAtMs ?? 0, gamePath, textPath);
             summaries.Add(IndexRenderer.Summarize(transcript) with
             {
-                Favorite = archive.Meta(matchId)?.Favorite ?? false
+                Favorite = meta?.Favorite ?? false
             });
 
             foreach (var c in transcript.UnresolvedNames.Keys)
