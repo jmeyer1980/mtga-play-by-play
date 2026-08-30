@@ -91,6 +91,23 @@ public class LiveServerTests
     }
 
     [Test]
+    public void A_loopback_host_with_the_wrong_port_is_refused()
+    {
+        // A Host that names us but not our port is nothing a browser pointed at
+        // this server would ever send — refuse it rather than reason about it.
+        var response = Get("/", host: $"127.0.0.1:{_server.Port + 1}");
+        Assert.That(response, Does.Contain("404"));
+        Assert.That(response, Does.Not.Contain("the report"));
+    }
+
+    [Test]
+    public void A_portless_loopback_host_is_still_accepted()
+    {
+        // A bare loopback name states no port and so names no other server.
+        Assert.That(Get("/", host: "localhost"), Does.Contain("200 OK"));
+    }
+
+    [Test]
     public void A_request_with_no_host_at_all_is_refused()
     {
         var response = Send("GET / HTTP/1.1\r\nConnection: close\r\n\r\n");
@@ -150,6 +167,20 @@ public class LiveServerTests
 
         Assert.That(response, Does.Contain("403"));
         Assert.That(invoked, Is.False, "the callback must not run for a cross-site request");
+    }
+
+    [Test]
+    public void The_favorite_endpoint_refuses_a_sibling_loopback_origin()
+    {
+        // Same-origin includes the port: a page served by some other local
+        // application is another site, however local it is.
+        var invoked = false;
+        _server.OnFavorite = (_, _) => invoked = true;
+
+        var response = Post("/api/favorite/m1", origin: $"http://127.0.0.1:{_server.Port + 1}");
+
+        Assert.That(response, Does.Contain("403"));
+        Assert.That(invoked, Is.False);
     }
 
     [Test]

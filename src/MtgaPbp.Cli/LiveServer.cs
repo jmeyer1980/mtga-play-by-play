@@ -65,8 +65,14 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
         {
             try
             {
-                s.Write("event: changed\ndata: 1\n\n");
-                s.Flush();
+                // Per-writer lock: two overlapping notifications must not interleave
+                // bytes inside one subscriber's stream. The list lock above guards
+                // membership only, so this is the only thing serializing the writes.
+                lock (s)
+                {
+                    s.Write("event: changed\ndata: 1\n\n");
+                    s.Flush();
+                }
             }
             catch
             {
@@ -149,7 +155,7 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
                 // fetch lands its side effect even though the response is opaque —
                 // so a foreign Origin is refused outright. No Origin at all means a
                 // non-browser caller, which the loopback binding already vouches for.
-                if (origin is not null && !IsLoopbackOrigin(origin))
+                if (origin is not null && !IsOwnOrigin(origin))
                 {
                     Respond(writer, "403 Forbidden", "text/plain", "forbidden"u8.ToArray());
                     client.Dispose();
@@ -174,21 +180,42 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
         }
     }
 
-    /// <summary>True when a Host header names this machine and nothing else.</summary>
-    private static bool IsLoopbackHost(string? host)
+    /// <summary>True when a Host header names this server and no other.</summary>
+    /// <remarks>
+    /// A stated port must be this server's own — <c>127.0.0.1:1234</c> aimed at a
+    /// listener on 8787 is nothing a browser pointed here would send. A bare
+    /// loopback name states no port and so names no other server; it stays
+    /// accepted for plain non-browser clients.
+    /// </remarks>
+    private bool IsLoopbackHost(string? host)
     {
         if (string.IsNullOrEmpty(host)) return false;
-        var name = host.Split(':')[0].Trim();
-        return name is "127.0.0.1"
-            || name.Equals("localhost", StringComparison.OrdinalIgnoreCase);
+        var colon = host.LastIndexOf(':');
+        var name = (colon < 0 ? host : host[..colon]).Trim();
+        if (name is not "127.0.0.1" &&
+            !name.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+            return false;
+        return colon < 0 || host[(colon + 1)..].Trim() == Port.ToString();
     }
 
-    /// <summary>True when an Origin header is this server's own page.</summary>
-    /// <remarks>An opaque <c>Origin: null</c> (sandboxed frames, some redirects)
-    /// fails this on purpose — it proves nothing about who is asking.</remarks>
-    private static bool IsLoopbackOrigin(string origin) =>
-        origin.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-        && IsLoopbackHost(origin["http://".Length..]);
+    /// <summary>True when an Origin header is this server's own page, exactly.</summary>
+    /// <remarks>
+    /// Same-origin includes the port: a page served by some other local application
+    /// is another site, however local it is. An opaque <c>Origin: null</c>
+    /// (sandboxed frames, some redirects) fails on purpose — it proves nothing
+    /// about who is asking.
+    /// </remarks>
+    private bool IsOwnOrigin(string origin)
+    {
+        if (!origin.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) return false;
+        var rest = origin["http://".Length..].TrimEnd('/');
+        var colon = rest.LastIndexOf(':');
+        var name = colon < 0 ? rest : rest[..colon];
+        var port = colon < 0 ? "80" : rest[(colon + 1)..];
+        return (name is "127.0.0.1" ||
+                name.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+            && port == Port.ToString();
+    }
 
     /// <summary>Holds the connection open and streams change events to the page.</summary>
     private void Subscribe(TcpClient client, StreamWriter writer)
@@ -254,7 +281,12 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
         try { _listener.Stop(); } catch { /* already stopped */ }
         lock (_subscribers)
         {
-            foreach (var s in _subscribers) { try { s.Dispose(); } catch { /* gone */ } }
+            foreach (var s in _subscribers)
+            {
+                // Same per-writer lock as NotifyChanged, so a dispose cannot land
+                // in the middle of a notification's write.
+                try { lock (s) s.Dispose(); } catch { /* gone */ }
+            }
             _subscribers.Clear();
         }
         _cts.Dispose();
