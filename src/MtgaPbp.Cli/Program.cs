@@ -144,6 +144,46 @@ public static class Program
     private static int Capture(Config cfg) => CaptureCore(cfg, quiet: false).Exit;
 
     /// <summary>
+    /// A sentence naming an archive that holds matches when the configured one does
+    /// not, or null when there is nothing worth pointing at.
+    /// </summary>
+    /// <remarks>
+    /// Counted by reading the raw directory rather than by opening a
+    /// <see cref="RawArchive"/>: that constructor creates its directories, so probing
+    /// a location with one would conjure the very archive it was asked about.
+    /// <para>
+    /// This does NOT catch the case that motivated #134, and should not be read as
+    /// doing so. When an upgrade overwrote the user's config, what it forgot was a
+    /// custom <c>ArchiveDir</c> — so the run that follows is pointed at the default,
+    /// and the path worth naming is the one the replaced file was the only record of.
+    /// Nothing can name it. That is why the fix for #134 is that the shipped config no
+    /// longer uses the user's filename at all, and why this is a second, smaller net:
+    /// it catches a configured directory that is empty while the default is not.
+    /// </para>
+    /// </remarks>
+    private static string? Misplaced(Config cfg)
+    {
+        var fallback = Config.Default().ArchiveDir;
+        if (string.IsNullOrWhiteSpace(cfg.ArchiveDir) || Same(fallback, cfg.ArchiveDir)) return null;
+
+        var raw = Path.Combine(fallback, "raw");
+        if (!Directory.Exists(raw)) return null;
+
+        var held = Directory.EnumerateFiles(raw, "*.json.gz").Count();
+        if (held == 0) return null;
+
+        return $"the archive at {cfg.ArchiveDir} is empty, but {fallback} holds " +
+               $"{held} match{(held == 1 ? "" : "es")}. If that is where your history " +
+               $"is, set \"ArchiveDir\" in {Config.UserFile} to point at it.";
+
+        static bool Same(string a, string b) =>
+            string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Reads the logs into the archive and reports how many matches were written.
     /// </summary>
     /// <returns>
@@ -158,6 +198,9 @@ public static class Program
     private static (int Exit, int Written, string? Drift) CaptureCore(Config cfg, bool quiet)
     {
         var archive = new RawArchive(cfg.ArchiveDir);
+        // Asked before the logs are read, because the question is whether this archive
+        // was already empty when the run began and capture is about to make it not be.
+        var startedEmpty = !archive.MatchIds().Any();
         var ledger = new InventoryLedger(cfg.ArchiveDir);
         var stats = new ScanStats();
         var written = 0;
@@ -192,6 +235,9 @@ public static class Program
             Console.WriteLine(
                 $"captured {written} new match{(written == 1 ? "" : "es")} " +
                 $"({stats.JsonLines:N0} records read)");
+
+        if (!quiet && startedEmpty && Misplaced(cfg) is { } elsewhere)
+            Console.WriteLine($"note: {elsewhere}");
 
         // Returned rather than printed so `watch` can route it through the board —
         // a bare WriteLine under quiet mode would land inside the pinned block and

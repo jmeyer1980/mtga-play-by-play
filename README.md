@@ -41,9 +41,10 @@ network requests.
 
 ## Use
 
-**Double-clicking `mtga-pbp.exe` is the simplest way** — the shipped `mtga-pbp.json`
-sets `"OpenAfterBuild": true`, so it captures, builds, and opens the report. The
-console window closes too fast to read, which is exactly why that setting exists.
+**Double-clicking `mtga-pbp.exe` is the simplest way** — the shipped
+`mtga-pbp.defaults.json` sets `"OpenAfterBuild": true`, so it captures, builds, and
+opens the report. The console window closes too fast to read, which is exactly why
+that setting exists.
 
 If you would rather have a window that stays open — and a report that keeps updating
 while you play — make a desktop shortcut that runs `watch`. No terminal needed:
@@ -213,6 +214,12 @@ costs nothing.
 ## Configuration
 
 Optional `mtga-pbp.json` beside the executable:
+
+Two files are read, in order: `mtga-pbp.defaults.json`, which the release ships and
+every upgrade replaces, and then `mtga-pbp.json`, which is yours and is never shipped.
+Later wins, key by key — so unzipping a new version cannot take away a setting you
+chose, and anything you leave out keeps whatever the shipped file said. **Put your own
+settings in `mtga-pbp.json`.**
 
 ```json
 {
