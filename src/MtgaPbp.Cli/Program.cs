@@ -230,7 +230,10 @@ public static class Program
         var archive = shared ?? new RawArchive(cfg.ArchiveDir);
         // Asked before the logs are read, because the question is whether this archive
         // was already empty when the run began and capture is about to make it not be.
-        var startedEmpty = !archive.MatchIds().Any();
+        // Count rather than MatchIds().Any(): the ids are a materialized snapshot now
+        // (see RawArchive.MatchIds), so asking for all of them to find out whether there
+        // are none would copy every id in the archive on every poll under `watch`.
+        var startedEmpty = archive.Count == 0;
         var ledger = new InventoryLedger(cfg.ArchiveDir);
         var stats = new ScanStats();
         var written = 0;

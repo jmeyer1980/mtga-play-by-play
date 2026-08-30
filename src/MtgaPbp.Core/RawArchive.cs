@@ -14,7 +14,8 @@ public sealed class RawArchive
     private readonly Dictionary<string, ArchiveEntry> _ledger;
 
     /// <summary>
-    /// Guards <see cref="_ledger"/> and every write of it to disk.
+    /// Guards <see cref="_ledger"/>, and every write of it to disk once construction
+    /// has finished.
     /// </summary>
     /// <remarks>
     /// The ledger is loaded once and written back whole, so two instances of this class
@@ -30,6 +31,14 @@ public sealed class RawArchive
     /// some gigabytes decompressed. Holding this across that would block a star click
     /// for the length of a whole build, which is the delay #113 reported and #145 went
     /// to some trouble to remove.
+    /// </para>
+    /// <para>
+    /// The constructor is the one place that loads and saves without taking it —
+    /// <see cref="Reindex"/> is called from there and nowhere else, and until the
+    /// constructor returns nothing else can be holding a reference to this instance to
+    /// race with. That is a fact about when it runs rather than a gap in the guard, but
+    /// it is the kind of fact a later edit can quietly falsify: anything that starts
+    /// calling Reindex after construction has to take the lock.
     /// </para>
     /// </remarks>
     private readonly Lock _ledgerLock = new();
