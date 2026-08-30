@@ -331,6 +331,13 @@ public sealed class EventExtractor(ICardDb cards)
         public readonly List<GameEvent> Events = [];
         public readonly Dictionary<string, int> Unknown = new(StringComparer.Ordinal);
         public readonly Dictionary<string, int> UnknownPersistent = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Permanents whose control change the streamed annotations have already
+        /// reported in the message being processed. Cleared at the end of each message —
+        /// it answers "did I just say this", not "have I ever".
+        /// </summary>
+        public readonly HashSet<int> ControlSpokenFor = [];
         public readonly HashSet<string> CardsSeen = new(StringComparer.Ordinal);
 
         /// <summary>
@@ -530,6 +537,18 @@ public sealed class EventExtractor(ICardDb cards)
         /// </remarks>
         public bool AlreadyTold(JsonElement annotation) =>
             !_narrated.Add(annotation.GetRawText());
+
+        /// <summary>
+        /// Control changes already narrated this game, so the persistent copy of one
+        /// that also arrived streamed does not report the theft twice.
+        /// </summary>
+        /// <remarks>
+        /// Keyed on the annotation's identity rather than its raw text, because the two
+        /// surfaces do not spell it the same way — <see cref="AlreadyTold"/> compares
+        /// raw JSON and would call them different. Per game for the same reason
+        /// everything else here is: Arena hands out annotation ids again in game two.
+        /// </remarks>
+        public readonly HashSet<string> ControlChangesTold = new(StringComparer.Ordinal);
     }
 
     /// <summary>What Arena said about one finished game.</summary>
@@ -747,8 +766,39 @@ public sealed class EventExtractor(ICardDb cards)
                 {
                     var told = game.AlreadyTold(a);
                     if (resync && told) continue;
-                    EmitFor(a, tracker, ts, st, countered, leftPlay);
+                    EmitFor(a, tracker, ts, st, game, countered, leftPlay);
                 }
+
+                // Control changes that never came down the streamed surface at all.
+                // persistentAnnotations is otherwise inventory only, and for this one
+                // type that is not good enough: 7 of the archive's 23 matches carrying a
+                // ControllerChanged carry it ONLY here, and one of them is an opponent
+                // taking the player's commander with nothing on the page to say so
+                // (#124).
+                //
+                // After the streamed loop rather than at the persistent count above, so
+                // the ordinary case keeps the order it already reads well in — the
+                // effect's trigger line first, then what it took. Anything already told
+                // from the streamed copy is skipped by key.
+                foreach (var pa in Json.Array(gsm, "persistentAnnotations"))
+                {
+                    if (!GameStateTracker.HasType(pa, "AnnotationType_ControllerChanged")) continue;
+
+                    // Already said by the streamed copy in this same message. Matched on
+                    // the permanent rather than the annotation because the two surfaces
+                    // describe it differently — one names the effect as the cause, the
+                    // other names the permanent itself — and per message rather than per
+                    // game because one permanent really can change hands several times.
+                    if (FirstAffected(pa) is { } already && st.ControlSpokenFor.Contains(already))
+                        continue;
+
+                    // And a standing marker is re-sent for as long as the effect lasts,
+                    // so it is told once per game and then remembered.
+                    if (!game.ControlChangesTold.Add(ControlChangeKey(pa))) continue;
+
+                    EmitFor(pa, tracker, ts, st, game, countered, leftPlay);
+                }
+                st.ControlSpokenFor.Clear();
 
                 // After the streamed annotations, not before: the grant and the spell
                 // that made it arrive in the same message, and "Enter the Avatar State
@@ -1339,6 +1389,7 @@ public sealed class EventExtractor(ICardDb cards)
     }
 
     private void EmitFor(JsonElement a, GameStateTracker tracker, long ts, Emit st,
+        GameRun game,
                          IReadOnlySet<int> countered, IReadOnlySet<int> leftPlay)
     {
         foreach (var typeEl in Json.Array(a, "type"))
@@ -1650,6 +1701,39 @@ public sealed class EventExtractor(ICardDb cards)
                     Amount = AmountFor(type, a)
                 };
             }
+            else if (type == "AnnotationType_ControllerChanged")
+            {
+                // The annotation says which permanent moved and what moved it, and
+                // never says where to — the new controller arrives on the game object
+                // itself. That is readable here because the tracker has already applied
+                // this message's objects: Apply runs before these annotation loops, so
+                // ControllerSeat is the seat the permanent has just been given rather
+                // than the one it is leaving.
+                var moved = FirstAffected(a);
+                var by = Json.Int(a, "affectorId");
+                var to = moved is { } id ? tracker.Get(id)?.ControllerSeat ?? 0 : 0;
+
+                // Nothing to say without knowing what moved or who now has it. Both are
+                // present on every one of the 59 in the archive; a future log missing
+                // either would otherwise produce "Someone gains control of something".
+                if (moved is null || to <= 0) continue;
+
+                // Remembered by the permanent, not by the annotation: the persistent
+                // copy of this same change carries a different id and names the object
+                // itself as the cause, so the two never match on identity.
+                if (moved is { } spoke) st.ControlSpokenFor.Add(spoke);
+
+                var cause = by is { } b2 && b2 > 2 ? tracker.NameOf(b2) : null;
+                st.SawCard(cause);
+
+                ev = Base(tracker, ts, EventKind.ControlChanged) with
+                {
+                    ActorSeat = to,
+                    SourceInstanceId = moved,
+                    SourceName = tracker.NameOf(moved.Value),
+                    CauseName = cause
+                };
+            }
             else
             {
                 st.Unknown[type] = st.Unknown.GetValueOrDefault(type) + 1;
@@ -1760,6 +1844,20 @@ public sealed class EventExtractor(ICardDb cards)
         Step = t.Step,
         Kind = kind
     };
+
+    /// <summary>
+    /// What identifies one control change across both annotation surfaces: which
+    /// annotation, what caused it, and what it moved.
+    /// </summary>
+    private static string ControlChangeKey(JsonElement a)
+    {
+        var key = new StringBuilder()
+            .Append(Json.Int(a, "id") ?? -1).Append('/')
+            .Append(Json.Int(a, "affectorId") ?? -1).Append(':');
+        foreach (var x in Json.Array(a, "affectedIds"))
+            key.Append(Json.Int(x) ?? -1).Append(',');
+        return key.ToString();
+    }
 
     private static int? FirstAffected(JsonElement a)
     {

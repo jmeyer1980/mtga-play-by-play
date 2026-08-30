@@ -111,7 +111,7 @@ public static class Narrator
 
         var game = 0;
 
-        foreach (var e in t.Events.OrderBy(x => x.Seq))
+        foreach (var e in FoldControlChanges(t.Events.OrderBy(x => x.Seq).ToList()))
         {
             if (multi && e.GameNumber != game)
             {
@@ -155,6 +155,72 @@ public static class Narrator
                 Accrues: Accumulates(e.Kind) ? e.TargetInstanceId ?? e.SourceInstanceId : null));
         }
         return Collapse(lines);
+    }
+
+    /// <summary>
+    /// One effect stealing six permanents is one thing that happened, so it becomes one
+    /// line.
+    /// </summary>
+    /// <remarks>
+    /// Arena sends a separate <c>ControllerChanged</c> annotation per permanent, all in
+    /// the same message and therefore all at once — there is no order among them to
+    /// preserve, and printing them apart produced a stutter that reads as a fault:
+    /// <c>gains control of Hare Apparent ×2 / of Rabbit / of Hare Apparent / of Rabbit
+    /// ×2</c>, the same creature named twice in a run of four lines for what was one
+    /// trigger.
+    /// <para>
+    /// <see cref="Collapse"/> cannot do this. It folds adjacent lines that are already
+    /// identical, and these differ by the permanent each names — the folding has to
+    /// happen while the seat is still known, which is before the phrasing rather than
+    /// after it.
+    /// </para>
+    /// <para>
+    /// Only a run going to the same player is folded. Two effects trading permanents in
+    /// opposite directions is two things happening, and one sentence claiming both would
+    /// name the wrong player for half of it.
+    /// </para>
+    /// </remarks>
+    private static List<GameEvent> FoldControlChanges(IReadOnlyList<GameEvent> events)
+    {
+        var folded = new List<GameEvent>(events.Count);
+
+        for (var i = 0; i < events.Count; i++)
+        {
+            var e = events[i];
+            if (e.Kind != EventKind.ControlChanged || e.SourceName is null)
+            {
+                folded.Add(e);
+                continue;
+            }
+
+            var names = new List<string>();
+            var run = 0;
+            while (i + run < events.Count
+                   && events[i + run] is { Kind: EventKind.ControlChanged } next
+                   && next.SourceName is not null
+                   && next.ActorSeat == e.ActorSeat
+                   && next.GameNumber == e.GameNumber
+                   && next.Turn == e.Turn)
+            {
+                names.Add(next.SourceName);
+                run++;
+            }
+
+            // Counted in the order they were first named, so the sentence lists the
+            // board the way the board was described.
+            var tally = new List<string>();
+            foreach (var name in names)
+            {
+                if (tally.Any(x => x == name || x.StartsWith($"{name} ×", StringComparison.Ordinal)))
+                    continue;
+                var many = names.Count(x => x == name);
+                tally.Add(many == 1 ? name : $"{name} ×{many}");
+            }
+
+            folded.Add(run == 1 ? e : e with { Detail = string.Join(", ", tally) });
+            i += run - 1;
+        }
+        return folded;
     }
 
     /// <summary>
@@ -828,6 +894,18 @@ public static class Narrator
         // "enters as" rather than "becomes" for the clones that arrived copying
         // something: nothing changed about them, they came that way, and "becomes"
         // would invite the reader to look back for the moment it happened.
+        // Named for the seat that gains it, because that is the fact the rest of the
+        // transcript then depends on: every later line about this permanent — the board
+        // it appears on, who attacks with it — is about the player named here. Without
+        // it those lines look like the parser losing track of a creature (#124).
+        //
+        // The cause is left to the line above rather than repeated. Arena announces the
+        // effect's trigger or resolution immediately before, so "Loki, Lord of Misrule's
+        // ability triggers" is already on the page, and naming it again turns one theft
+        // into two sentences that both look like the whole story.
+        EventKind.ControlChanged when (e.Detail ?? e.SourceName) is { } taken =>
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "gain", "gains", t)} control of {taken}",
+
         EventKind.Copied when e.SourceName is not null && e.TargetName is not null
                               && e.Detail == EventExtractor.PermanentCopy =>
             $"{e.SourceName} enters as a copy of {e.TargetName}",

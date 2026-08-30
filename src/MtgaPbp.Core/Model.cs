@@ -151,6 +151,15 @@ public enum EventKind
     Damage, LifeChanged, TokenCreated, CounterChanged,
     Scry, Revealed, ManaPaid, Attack, Block, BoardSnapshot, Triggered, Activated,
     Attached, LevelUp, AbilityGained, AbilityExpired, Copied,
+
+    /// <summary>
+    /// A permanent changed hands. Every line after one of these is about a creature the
+    /// other player now controls, and without it those lines read as parser bugs — the
+    /// board snapshot moves it to the other side, the attack attribution follows, and
+    /// nothing on the page says why (#124).
+    /// </summary>
+    ControlChanged,
+
     GameEnd,
 
     /// <summary>
