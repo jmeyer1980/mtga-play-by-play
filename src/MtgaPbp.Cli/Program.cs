@@ -147,8 +147,8 @@ public static class Program
         }
     }
 
-    private static int Capture(Config cfg, bool prune) =>
-        CaptureCore(cfg, quiet: false, prune).Exit;
+    private static int Capture(Config cfg, bool prune, RawArchive? shared = null) =>
+        CaptureCore(cfg, quiet: false, prune, shared).Exit;
 
     /// <summary>
     /// A sentence naming an archive that holds matches when the configured one does
@@ -220,9 +220,14 @@ public static class Program
     /// both what to say and whether it is reporting a deletion or refusing one.
     /// </returns>
     private static (int Exit, int Written, string? Drift, PruneReport? Prune) CaptureCore(
-        Config cfg, bool quiet, bool prune)
+        Config cfg, bool quiet, bool prune, RawArchive? shared = null)
     {
-        var archive = new RawArchive(cfg.ArchiveDir);
+        // One ledger per archive, when the caller has one to lend. `watch` runs a poll
+        // loop, a rebuild and a web request against the same files at the same time,
+        // and three instances means three copies of index.json that overwrite each
+        // other wholesale — see RawArchive's lock (#146). Standalone commands pass
+        // nothing and get their own, which is correct: they are the only writer.
+        var archive = shared ?? new RawArchive(cfg.ArchiveDir);
         // Asked before the logs are read, because the question is whether this archive
         // was already empty when the run began and capture is about to make it not be.
         var startedEmpty = !archive.MatchIds().Any();
@@ -387,6 +392,14 @@ public static class Program
         var port = int.TryParse(operands.FirstOrDefault(), out var p) ? p : 8787;
         var interval = TimeSpan.FromSeconds(3);
 
+        // ONE ledger for the whole session, lent to everything below. The poll loop,
+        // the rebuilds and the web request that toggles a star all touch index.json,
+        // and each of them used to hold its own copy loaded at a different moment —
+        // so a star saved while a capture was in flight was reverted the moment that
+        // capture wrote back the copy it had loaded before the click (#146). The
+        // instance is safe to share; see RawArchive's lock.
+        var archive = new RawArchive(cfg.ArchiveDir);
+
         Directory.CreateDirectory(cfg.OutputDir);
 
         // The server comes up before the first capture ever runs: the previous run's
@@ -400,7 +413,7 @@ public static class Program
         var rebuilds = new RebuildGate();
         server.OnFavorite = (id, on) =>
         {
-            var ok = new RawArchive(cfg.ArchiveDir).SetFavorite(id, on);
+            var ok = archive.SetFavorite(id, on);
             // The response goes back the moment the flag is written. The rebuild only
             // repaints what is already true, and at a thousand matches it takes long
             // enough that a star waiting on it reads as a broken button (#113) — so it
@@ -420,7 +433,8 @@ public static class Program
                 // gate: NotifyChanged writes to every subscribed page, and one
                 // stalled socket must not stretch the section rebuilds queue behind.
                 await rebuilds.RunInBackground(() =>
-                    Build(cfg, open: false, quiet: true, observed: (_, _, _) => { }));
+                    Build(cfg, open: false, quiet: true, observed: (_, _, _) => { },
+                          shared: archive));
                 server.NotifyChanged();
             }
         };
@@ -443,7 +457,7 @@ public static class Program
         var hadReport = File.Exists(Path.Combine(cfg.OutputDir, "index.html"));
         if (hadReport) OpenInBrowser(server.Url);
 
-        Capture(cfg, prune);
+        Capture(cfg, prune, archive);
 
         // The first build's state is kept rather than discarded: without it the board
         // could not be drawn until a match finished, so `watch` started on an existing
@@ -457,7 +471,7 @@ public static class Program
         rebuilds.Run(() => code = Build(cfg, open: false, observed: (rows, st, nudge) =>
         {
             firstRows = rows; firstStats = st; firstNudge = nudge;
-        }));
+        }, shared: archive));
         if (code != 0) return code;
 
         // Any page that connected during the build gets the fresh rows now — and a
@@ -547,7 +561,7 @@ public static class Program
             // that started mid-poll is archived incomplete and rewritten once it ends,
             // and that rewrite leaves the count unchanged — which is exactly the update
             // worth showing, since only then does the transcript know how it finished.
-            var (exit, written, drift, pruned) = CaptureCore(cfg, quiet: true, prune);
+            var (exit, written, drift, pruned) = CaptureCore(cfg, quiet: true, prune, archive);
 
             // Said through the board so it scrolls above the pinned block and stays.
             // Once per watch session: the counts in the message grow every poll, so
@@ -568,7 +582,8 @@ public static class Program
 
             // Notified outside the gate for the favorite handler's reason: a page
             // that has stopped reading must not hold the next rebuild hostage.
-            rebuilds.Run(() => Build(cfg, open: false, quiet: true, observed: Repaint));
+            rebuilds.Run(() => Build(cfg, open: false, quiet: true, observed: Repaint,
+                                     shared: archive));
             server.NotifyChanged();
         }
 
@@ -692,9 +707,13 @@ public static class Program
     /// with the page it sits beside.
     /// </param>
     private static int Build(Config cfg, bool open, bool quiet = false,
-        Action<IReadOnlyList<MatchSummary>, IndexStats, Nudge?>? observed = null)
+        Action<IReadOnlyList<MatchSummary>, IndexStats, Nudge?>? observed = null,
+        RawArchive? shared = null)
     {
-        var archive = new RawArchive(cfg.ArchiveDir);
+        // Lent one under `watch` for CaptureCore's reason, and for one of its own: a
+        // build reads Meta().Favorite to draw each row's star, so a build holding its
+        // own copy of the ledger can render a star that was toggled after it started.
+        var archive = shared ?? new RawArchive(cfg.ArchiveDir);
         using var cards = OpenCards(cfg, out var dbPath);
 
         var gamesDir = Path.Combine(cfg.OutputDir, "games");
