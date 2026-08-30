@@ -41,7 +41,27 @@ public sealed record GameRecord(
     /// boundary between games: for the last game the match-end line already says it,
     /// and a single-game match would only be told twice.
     /// </summary>
-    string? ResultLine);
+    string? ResultLine,
+
+    /// <summary>
+    /// Arena's own word for how this game ended — <c>ResultReason_Concede</c>,
+    /// <c>ResultReason_Timeout</c> or <c>ResultReason_Game</c> — or null when the log
+    /// carried no result for it.
+    /// </summary>
+    /// <remarks>
+    /// Kept beside <see cref="ResultLine"/> rather than read back out of it. The
+    /// sentence is written for a reader and is free to be reworded; anything matching
+    /// on the word "concede" inside it would be one rewording away from silently
+    /// reporting every match as having been played out.
+    /// <para>
+    /// Counted over the 1,206 archived matches: of the 1,194 carrying a per-game
+    /// result, the deciding game ends in <c>ResultReason_Concede</c> 880 times,
+    /// <c>ResultReason_Game</c> 297 and <c>ResultReason_Timeout</c> 17. A fourth
+    /// value, <c>ResultReason_Force</c>, appears 7 times and only ever at match scope,
+    /// on the 7 drawn matches — which carry no per-game entry for it to reach here.
+    /// </para>
+    /// </remarks>
+    string? Reason = null);
 
 public sealed record Transcript(
     string MatchId, long StartedAtMs, long EndedAtMs, string EventName,
@@ -920,7 +940,8 @@ public sealed class EventExtractor(ICardDb cards)
                 BuildOpening(g, st, chooser),
                 turns,
                 outcome?.WinningTeamId,
-                EndLine(outcome?.WinningTeamId, yourTeam, outcome?.Reason, $"game {g.Number}")));
+                EndLine(outcome?.WinningTeamId, yourTeam, outcome?.Reason, $"game {g.Number}"),
+                outcome?.Reason));
         }
         return records;
     }

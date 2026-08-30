@@ -58,7 +58,13 @@ public sealed record MatchSummary(
     /// for the other seat. Null or empty means "none recorded", never "no
     /// commander".
     /// </summary>
-    IReadOnlyList<string>? OpponentCommanders = null);
+    IReadOnlyList<string>? OpponentCommanders = null,
+
+    /// <summary>
+    /// How the deciding game ended — see <see cref="TranscriptSummary.Ending"/> — or
+    /// null when the log never said, which is every unfinished match and every draw.
+    /// </summary>
+    string? Ending = null);
 
 public static class IndexRenderer
 {
@@ -84,7 +90,8 @@ public static class IndexRenderer
             ? first == mine
             : null,
         You: t.You?.ScreenName,
-        OpponentCommanders: t.OpponentCommanders);
+        OpponentCommanders: t.OpponentCommanders,
+        Ending: TranscriptSummary.Ending(t));
 
     /// <summary>
     /// Rows are rendered statically rather than built by script: the page then works
@@ -161,6 +168,10 @@ public static class IndexRenderer
                 // search for "white" from turning up matches whose colours nobody knows.
                 var haystack = string.Join(' ',
                     r.Opponent, r.EventName, r.Result, r.Date, string.Join(' ', r.Cards),
+                    // How it ended, so "conceded" filters to the concessions — the
+                    // question the ending was surfaced to answer, and one no other
+                    // column can be searched for.
+                    r.Ending ?? "",
                     // The opposing commander, so "kinnan" finds every game against the
                     // deck — including the ones where it was never cast and so never
                     // reached the cards list.
@@ -229,7 +240,7 @@ public static class IndexRenderer
                     <td{Key(r.EventName)}>{E(r.EventName)}</td><td class="deck"{Key(r.Colors)}>{Colors(r)}</td>
                     <td class="opp"{Key(r.Opponent)}>{E(r.Opponent)}</td>
                     <td class="oppdeck"{Key(theirDeck)}>{E(theirDeck)}</td>
-                    <td class="{cls}"{Key(r.Result)}>{E(r.Result)}{Incomplete(r)}{Gaps(r)}</td>
+                    <td class="{cls}"{Key(r.Result)}>{E(r.Result)}{Ending(r)}{Incomplete(r)}{Gaps(r)}</td>
                     <td{Key(r.Turns)}>{r.Turns}</td>
                     <td{Key(r.Length?.TotalSeconds)}>{Length(r)}</td></tr>
                     """);
@@ -284,6 +295,25 @@ public static class IndexRenderer
             </body></html>
             """;
     }
+
+    /// <summary>
+    /// How the match ended, appended to the result it qualifies rather than given a
+    /// column of its own — the table already scrolls sideways on a phone, and this is
+    /// the same fact the cell beside it is stating, one step finer.
+    /// </summary>
+    /// <remarks>
+    /// Plain text, with no dimming of its own. The whole cell already carries
+    /// <c>.loss</c> or <c>.draw</c> at <c>opacity:.7</c>, and a second .7 inside it
+    /// would land at .49 — under the 4.5:1 every dimmed element on this page is
+    /// measured against.
+    /// <para>
+    /// It stays inside the result cell rather than becoming a sortable column because
+    /// the sort key here is the result alone: sorting by ending would scatter wins and
+    /// losses through each other, and the search field already filters to it.
+    /// </para>
+    /// </remarks>
+    private static string Ending(MatchSummary r) =>
+        r.Ending is { Length: > 0 } how ? $", {E(how)}" : "";
 
     /// <summary>
     /// The asterisk is a sighted-reader shorthand explained by the footnote below the
