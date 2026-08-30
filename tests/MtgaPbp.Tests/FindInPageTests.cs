@@ -78,6 +78,45 @@ public class FindInPageTests
         Assert.That(haystack, Does.Contain(term.ToLowerInvariant()));
     }
 
+    [Test]
+    public void The_opponents_commander_is_shown_and_searchable()
+    {
+        var html = IndexRenderer.Render(
+            [Row() with { OpponentCommanders = ["Kinnan, Bonder Prodigy"] }]);
+
+        var cell = Markup.Parse(html).Descendants("td")
+            .Single(e => e.Attribute("class")?.Value == "oppdeck");
+        Assert.That(Markup.Clipboard(cell), Is.EqualTo("Kinnan, Bonder Prodigy"));
+
+        var haystack = Markup.Parse(html).Descendants("tr")
+            .Select(tr => tr.Attribute("data-search")?.Value)
+            .Single(v => v is not null)!;
+        Assert.That(haystack, Does.Contain("kinnan, bonder prodigy"));
+    }
+
+    [Test]
+    public void The_against_table_carries_its_own_id()
+    {
+        // Breakdown used to derive the id from a two-way flag, so the third table
+        // reused "by-format" — two elements with one id is invalid HTML and whichever
+        // selector relied on it found only the first.
+        var html = IndexRenderer.Render(
+            [Row() with { OpponentCommanders = ["Kinnan, Bonder Prodigy"] }]);
+
+        Assert.That(html.Split("id=\"against\"").Length - 1, Is.EqualTo(1));
+        Assert.That(html.Split("id=\"by-format\"").Length - 1, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void A_match_with_no_commander_recorded_shows_an_empty_deck_cell()
+    {
+        var html = IndexRenderer.Render([Row()]);
+        var cell = Markup.Parse(html).Descendants("td")
+            .Single(e => e.Attribute("class")?.Value == "oppdeck");
+        Assert.That(Markup.Clipboard(cell), Is.Empty,
+            "absence means none recorded, and the cell must not claim otherwise");
+    }
+
     /// <summary>A match whose length the log never recorded contributes no length terms.</summary>
     [Test]
     public void A_match_with_no_recorded_length_is_not_searchable_by_one()

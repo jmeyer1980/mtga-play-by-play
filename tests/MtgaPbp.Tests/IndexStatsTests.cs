@@ -27,6 +27,34 @@ public class IndexStatsTests
     private static IReadOnlyList<DeckEntry> Deck(params string[] names) =>
         names.Select(n => new DeckEntry(n, 4, true)).ToList();
 
+    [Test]
+    public void Records_group_by_the_opponents_commander()
+    {
+        var stats = IndexStats.From([
+            Match("Won 2-0") with { OpponentCommanders = ["Kinnan, Bonder Prodigy"] },
+            Match("Lost 0-2") with { OpponentCommanders = ["Kinnan, Bonder Prodigy"] },
+            Match("Won 2-1") with { OpponentCommanders = ["Katara, Waterbending Master"] },
+            Match("Won 2-0")
+        ]);
+
+        Assert.That(stats.ByOpponentDeck, Has.Count.EqualTo(2),
+            "a match with no commander recorded belongs to no row, not to a pooled one");
+        var kinnan = stats.ByOpponentDeck.Single(r => r.Name.Contains("Kinnan"));
+        Assert.That((kinnan.Won, kinnan.Lost), Is.EqualTo((1, 1)));
+    }
+
+    [Test]
+    public void Partner_pairs_are_one_deck_not_two()
+    {
+        var stats = IndexStats.From([
+            Match("Won 2-0") with { OpponentCommanders = ["A", "B"] },
+            Match("Lost 0-2") with { OpponentCommanders = ["A", "B"] }
+        ]);
+
+        Assert.That(stats.ByOpponentDeck, Has.Count.EqualTo(1));
+        Assert.That(stats.ByOpponentDeck[0].Name, Does.Contain("A").And.Contain("B"));
+    }
+
     // ---------- the four traps ----------
 
     /// <summary>

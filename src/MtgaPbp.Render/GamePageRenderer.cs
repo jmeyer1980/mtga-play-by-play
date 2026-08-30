@@ -145,12 +145,34 @@ public static partial class GamePageRenderer
     private static void AppendOpponentCards(StringBuilder sb, Transcript t,
         IReadOnlyDictionary<string, CardFace>? faces)
     {
-        if (t.OpponentCards.Count == 0) return;
+        if (t.OpponentCards.Count == 0 && t.OpponentCommanders.Count == 0) return;
 
         sb.Append($"""
             <details class="deck" id="their-cards">
             <summary>{E(TranscriptSummary.OpponentHeading(t))}</summary>
             """);
+
+        // The same paragraph-above-the-list treatment the player's own commander
+        // gets, for the same screen-reader reason — and the same peek when a face
+        // is known.
+        if (TranscriptSummary.OpponentCommanderLine(t) is { } theirCommander)
+        {
+            var commanderFaces = t.OpponentCommanders
+                .Select(n => faces?.GetValueOrDefault(n))
+                .OfType<CardFace>()
+                .ToList();
+            if (commanderFaces.Count > 0)
+            {
+                sb.Append($"""<details class="peek"><summary><span class="commander">{E(theirCommander)}</span></summary>""");
+                foreach (var f in commanderFaces) AppendFace(sb, f);
+                sb.Append("</details>");
+            }
+            else
+            {
+                sb.Append($"""<p class="commander">{E(theirCommander)}</p>""");
+            }
+        }
+
         sb.Append("""<ul class="cards" role="list">""");
         foreach (var name in t.OpponentCards)
             AppendCardLi(sb, null, E(name), faces?.GetValueOrDefault(name));

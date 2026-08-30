@@ -607,6 +607,7 @@ public static class Program
             var faces = new Dictionary<string, CardFace>(StringComparer.Ordinal);
             foreach (var name in transcript.Deck.Select(d => d.Name)
                          .Concat(transcript.Commanders)
+                         .Concat(transcript.OpponentCommanders)
                          .Concat(transcript.OpponentCards))
                 if (!faces.ContainsKey(name) && cards.FaceForName(name) is { } face)
                     faces[name] = face;
