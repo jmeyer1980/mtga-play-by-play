@@ -27,6 +27,9 @@ public static class Program
         var cfg = Config.Load(exeDir);
         var (command, operands) = Parse(args);
         var open = cfg.OpenAfterBuild || args.Contains("--open");
+        // Opt-in for a prune large enough to look like a mistake. Deliberately a flag
+        // and not a config key — see Prune.
+        var prune = args.Contains("--prune");
 
         // Identity first, on every command that a person reads.
         if (command is not ("keep" or "unkeep")) Banner.Write();
@@ -35,15 +38,15 @@ public static class Program
         {
             return command switch
             {
-                "capture" => Capture(cfg),
+                "capture" => Capture(cfg, prune),
                 "build" => Build(cfg, open),
                 "stats" => Stats(cfg),
-                "watch" => Watch(cfg, operands),
+                "watch" => Watch(cfg, operands, prune),
                 "collection" => ImportCollection(cfg, operands.FirstOrDefault()),
                 "why" => Why.Run(cfg, operands.FirstOrDefault(), operands.Skip(1).ToArray()),
                 "keep" => Favorite(cfg, operands.FirstOrDefault(), on: true),
                 "unkeep" => Favorite(cfg, operands.FirstOrDefault(), on: false),
-                "all" => Capture(cfg) is var c && c != 0 ? c : Build(cfg, open),
+                "all" => Capture(cfg, prune) is var c && c != 0 ? c : Build(cfg, open),
                 _ => Usage()
             };
         }
@@ -57,7 +60,7 @@ public static class Program
     private static readonly string[] Commands =
         ["capture", "build", "stats", "watch", "keep", "unkeep", "collection", "why"];
 
-    private static readonly string[] Options = ["--open", "--rebuild"];
+    private static readonly string[] Options = ["--open", "--rebuild", "--prune"];
 
     /// <summary>
     /// Splits the arguments into a command and its operands.
@@ -113,7 +116,10 @@ public static class Program
 
             Set "MaxArchivedMatches" in mtga-pbp.json to cap how many matches are kept;
             the oldest are dropped as new ones arrive. Kept matches never count against
-            the cap. It defaults to 0, meaning no limit.
+            the cap. It defaults to 0, meaning no limit. A cap that would delete more
+            than a tenth of the archive at once is not applied on its own — it says what
+            it would do and waits for `mtga-pbp capture --prune`, because the archive is
+            the only copy and there is no undo.
 
             Set "OpenAfterBuild": true in mtga-pbp.json to always open the report —
             useful when launching by double-click, where this window closes too fast
@@ -141,7 +147,8 @@ public static class Program
         }
     }
 
-    private static int Capture(Config cfg) => CaptureCore(cfg, quiet: false).Exit;
+    private static int Capture(Config cfg, bool prune) =>
+        CaptureCore(cfg, quiet: false, prune).Exit;
 
     /// <summary>
     /// A sentence naming an archive that holds matches when the configured one does
@@ -209,7 +216,8 @@ public static class Program
     /// matches at all — returned rather than printed so `watch` can route it through
     /// the board instead of corrupting the pinned block with a bare write.
     /// </returns>
-    private static (int Exit, int Written, string? Drift) CaptureCore(Config cfg, bool quiet)
+    private static (int Exit, int Written, string? Drift, string? Prune) CaptureCore(
+        Config cfg, bool quiet, bool prune)
     {
         var archive = new RawArchive(cfg.ArchiveDir);
         // Asked before the logs are read, because the question is whether this archive
@@ -242,7 +250,7 @@ public static class Program
                 "error: no Arena log found. Looked for:\n  " +
                 string.Join("\n  ", cfg.LogPaths) +
                 "\nSet \"LogPaths\" in mtga-pbp.json if Arena is installed elsewhere.");
-            return (2, 0, null);
+            return (2, 0, null, null);
         }
 
         if (!quiet)
@@ -275,17 +283,58 @@ public static class Program
                 "marked as missing data in the report.");
         }
 
-        Prune(cfg, archive);
-        return (0, written, drift);
+        var pruned = Prune(cfg, archive, prune);
+        if (!quiet && pruned is not null) Console.WriteLine(pruned);
+        return (0, written, drift, pruned);
     }
 
     /// <summary>
     /// Enforces the retention cap, deleting the rendered output for anything dropped
     /// so the report does not link to pages that no longer exist.
     /// </summary>
-    private static void Prune(Config cfg, RawArchive archive)
+    /// <summary>
+    /// Enforces the retention cap, deleting the rendered output for anything dropped so
+    /// the report does not link to pages that no longer exist — unless the cap would
+    /// take a large enough bite to look like a mistake, in which case it says what it
+    /// would have done and does nothing.
+    /// </summary>
+    /// <returns>
+    /// What to tell the reader, or null when nothing happened and nothing was withheld.
+    /// Returned rather than printed for <see cref="DriftCanary"/>'s reason: under
+    /// <c>watch</c> a bare write lands inside the pinned block and corrupts the repaint,
+    /// and this notice in particular must not simply be silenced there — it is the only
+    /// account of matches being deleted, or of a deletion being refused (#133).
+    /// </returns>
+    /// <remarks>
+    /// The guard exists because the cap is applied to an archive whose size it was never
+    /// checked against. Someone who reads the README's capping note and sets 50 meaning
+    /// "tidy the report" is asking, without knowing it, for eleven hundred matches to be
+    /// deleted from the only copy that exists — no recycle bin, no undo — and the whole
+    /// thing happens on the next double-click.
+    /// <para>
+    /// That is also why the way through is a command-line flag rather than another
+    /// config key. The dangerous path is the double-click, which passes no arguments at
+    /// all, so a flag cannot be reached by it: a large prune becomes something that only
+    /// happens when somebody opens a terminal and asks for it by name. A second config
+    /// key would sit in the same file as the mistake and be typed in the same sitting.
+    /// </para>
+    /// </remarks>
+    private static string? Prune(Config cfg, RawArchive archive, bool confirmed)
     {
-        if (cfg.MaxArchivedMatches <= 0) return;
+        if (cfg.MaxArchivedMatches <= 0) return null;
+
+        var doomed = archive.Prunable(cfg.MaxArchivedMatches);
+        if (doomed.Count == 0) return null;
+
+        if (!confirmed && RetentionGuard.WouldBeLarge(doomed.Count, archive.Count))
+        {
+            return $"nothing was deleted. \"MaxArchivedMatches\" is {cfg.MaxArchivedMatches}, " +
+                   $"and applying it would delete {doomed.Count} of the {archive.Count} " +
+                   "archived matches — more than this tool will do without being asked " +
+                   "twice. The archive is the only copy and there is no undo. If you meant " +
+                   $"it, run `mtga-pbp capture --prune`; if not, change the cap in " +
+                   $"{Config.UserFile}.";
+        }
 
         var removed = archive.Prune(cfg.MaxArchivedMatches);
         foreach (var id in removed)
@@ -298,10 +347,10 @@ public static class Program
                 if (File.Exists(path)) File.Delete(path);
         }
 
-        if (removed.Count > 0)
-            Console.WriteLine(
-                $"pruned {removed.Count} match(es) past the {cfg.MaxArchivedMatches} cap " +
-                "(favourites kept)");
+        return removed.Count == 0
+            ? null
+            : $"pruned {removed.Count} match(es) past the {cfg.MaxArchivedMatches} cap " +
+              "(favourites kept)";
     }
 
     /// <summary>
@@ -313,7 +362,7 @@ public static class Program
     /// so change notifications fire continuously and tell us nothing useful. Length is
     /// the honest signal, and a shrink means Arena restarted and truncated the log.
     /// </remarks>
-    private static int Watch(Config cfg, string[] operands)
+    private static int Watch(Config cfg, string[] operands, bool prune)
     {
         var port = int.TryParse(operands.FirstOrDefault(), out var p) ? p : 8787;
         var interval = TimeSpan.FromSeconds(3);
@@ -374,7 +423,7 @@ public static class Program
         var hadReport = File.Exists(Path.Combine(cfg.OutputDir, "index.html"));
         if (hadReport) OpenInBrowser(server.Url);
 
-        Capture(cfg);
+        Capture(cfg, prune);
 
         // The first build's state is kept rather than discarded: without it the board
         // could not be drawn until a match finished, so `watch` started on an existing
@@ -478,7 +527,7 @@ public static class Program
             // that started mid-poll is archived incomplete and rewritten once it ends,
             // and that rewrite leaves the count unchanged — which is exactly the update
             // worth showing, since only then does the transcript know how it finished.
-            var (exit, written, drift) = CaptureCore(cfg, quiet: true);
+            var (exit, written, drift, pruned) = CaptureCore(cfg, quiet: true, prune);
 
             // Said through the board so it scrolls above the pinned block and stays.
             // Once per watch session: the counts in the message grow every poll, so
@@ -486,6 +535,15 @@ public static class Program
             // and a drift that persists is one fact, not a stream of them.
             if (drift is not null && said.Add("format-drift"))
                 board.Say($"[{DateTime.Now:HH:mm:ss}] ** {drift}");
+
+            // Through the board for the same reason, and deduplicated for the same
+            // reason: a cap that is too small is one standing fact, and a watch polling
+            // every three seconds would otherwise repeat it forever. Matches actually
+            // leaving is an event rather than a state, so only the refusal is held to
+            // once — under the guard an automatic prune is small and rare anyway.
+            if (pruned is not null && (!pruned.StartsWith("nothing was deleted", StringComparison.Ordinal)
+                                       || said.Add("prune-held")))
+                board.Say($"[{DateTime.Now:HH:mm:ss}] ** {pruned}");
 
             if (exit != 0 || written == 0) continue;
 

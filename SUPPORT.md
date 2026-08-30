@@ -32,6 +32,12 @@ In order of how often it is the cause:
   `"OpenAfterBuild": true` so the report opens by itself; if you are running your own
   build, either add that setting to `mtga-pbp.json`, run it from a terminal, or use
   `watch`, which stays open.
+- **You set `MaxArchivedMatches` and nothing was deleted.** That is the guard, not a
+  bug. A cap that would remove more than a tenth of the archive — and more than ten
+  matches — is not applied on its own, because the archive is the only copy and there is
+  no undo. The tool prints what it would have done; run `mtga-pbp capture --prune` from
+  a terminal if you meant it. Routine pruning, where a new match pushes out an old one,
+  needs no flag and is unaffected.
 - **The report came up empty after an upgrade.** Nothing was deleted. Releases up to
   0.6.0 shipped their settings in `mtga-pbp.json` — the same filename you would put
   your own in — so unzipping over the install folder replaced it, and a custom

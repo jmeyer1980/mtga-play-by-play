@@ -80,6 +80,37 @@ public class RawArchiveTests
         Assert.That(File.Exists(Path.Combine(_root, "raw", "m1.json.gz")), Is.False);
     }
 
+    /// <summary>
+    /// Answering "what would go" must not be the same act as it going — the archive is
+    /// the only copy and File.Delete does not go via the recycle bin (#133).
+    /// </summary>
+    [Test]
+    public void Prunable_names_the_doomed_without_touching_them()
+    {
+        var a = new RawArchive(_root);
+        for (var i = 1; i <= 5; i++) a.Write(At($"m{i}", i * 1000));
+
+        Assert.That(a.Prunable(keep: 3), Is.EqualTo(new[] { "m1", "m2" }), "oldest first");
+
+        // Asked twice, because a question that consumes its subject gives a different
+        // answer the second time.
+        Assert.That(a.Prunable(keep: 3), Is.EqualTo(new[] { "m1", "m2" }));
+        Assert.That(a.MatchIds(), Is.EquivalentTo(new[] { "m1", "m2", "m3", "m4", "m5" }));
+        Assert.That(File.Exists(Path.Combine(_root, "raw", "m1.json.gz")), Is.True);
+        Assert.That(a.Count, Is.EqualTo(5));
+    }
+
+    /// <summary>Favourites are exempt from the preview exactly as they are from the act.</summary>
+    [Test]
+    public void Prunable_leaves_favourites_out()
+    {
+        var a = new RawArchive(_root);
+        for (var i = 1; i <= 5; i++) a.Write(At($"m{i}", i * 1000));
+        a.SetFavorite("m1", true);
+
+        Assert.That(a.Prunable(keep: 3), Does.Not.Contain("m1"));
+    }
+
     [Test]
     public void Prune_never_removes_a_favourite_however_old()
     {

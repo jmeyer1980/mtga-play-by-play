@@ -176,6 +176,31 @@ public sealed class RawArchive
     /// </summary>
     public IReadOnlyList<string> Prune(int keep)
     {
+        var doomed = Prunable(keep);
+
+        foreach (var id in doomed)
+        {
+            var path = Path.Combine(_rawDir, $"{id}.json.gz");
+            if (File.Exists(path)) File.Delete(path);
+            _ledger.Remove(id);
+        }
+
+        if (doomed.Count > 0) SaveLedger();
+        return doomed;
+    }
+
+    /// <summary>
+    /// Which matches <see cref="Prune"/> would remove, oldest first, without removing
+    /// them. Empty when the cap is off or nothing is over it.
+    /// </summary>
+    /// <remarks>
+    /// Split out from the deletion so a caller can ask what is about to happen before
+    /// it happens. Nothing here is recoverable — the archive is the only copy, and
+    /// File.Delete does not go via the recycle bin — so "how many would go" has to be
+    /// answerable without the answer being "they went" (#133).
+    /// </remarks>
+    public IReadOnlyList<string> Prunable(int keep)
+    {
         if (keep <= 0) return [];
 
         var prunable = _ledger.Values
@@ -193,18 +218,11 @@ public sealed class RawArchive
         var excess = prunable.Count - keep;
         if (excess <= 0) return [];
 
-        var removed = new List<string>();
-        foreach (var entry in prunable.Take(excess))
-        {
-            var path = Path.Combine(_rawDir, $"{entry.MatchId}.json.gz");
-            if (File.Exists(path)) File.Delete(path);
-            _ledger.Remove(entry.MatchId);
-            removed.Add(entry.MatchId);
-        }
-
-        if (removed.Count > 0) SaveLedger();
-        return removed;
+        return prunable.Take(excess).Select(e => e.MatchId).ToList();
     }
+
+    /// <summary>How many matches the archive holds, favourites included.</summary>
+    public int Count => _ledger.Count;
 
     public IReadOnlyList<string> ReadLines(string matchId)
     {
