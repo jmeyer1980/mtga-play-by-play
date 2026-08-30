@@ -18,10 +18,87 @@ public sealed class RawArchive
         _rawDir = Path.Combine(archiveRoot, "raw");
         Directory.CreateDirectory(_rawDir);
         _ledgerPath = Path.Combine(archiveRoot, "index.json");
-        _ledger = File.Exists(_ledgerPath)
-            ? JsonSerializer.Deserialize<Dictionary<string, ArchiveEntry>>(
-                  File.ReadAllText(_ledgerPath)) ?? []
-            : [];
+        _ledger = LoadLedger(_ledgerPath) ?? LoadLedger(_ledgerPath + ".bak") ?? [];
+        Reindex();
+    }
+
+    /// <summary>
+    /// Reads one ledger candidate, or null when it is absent or will not parse.
+    /// </summary>
+    /// <remarks>
+    /// A ledger that will not parse is moved aside rather than abandoned in place,
+    /// for <see cref="InventoryLedger"/>'s reason: overwriting it on the next save
+    /// would destroy the evidence of what went wrong. Unlike the inventory, though,
+    /// losing this file must not lose anything — the backup from the previous save
+    /// and the raw files themselves (see <see cref="Reindex"/>) are always enough to
+    /// keep every match reachable, which is why this returns null and lets the
+    /// constructor fall through instead of starting empty.
+    /// </remarks>
+    private static Dictionary<string, ArchiveEntry>? LoadLedger(string path)
+    {
+        if (!File.Exists(path)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, ArchiveEntry>>(
+                File.ReadAllText(path));
+        }
+        catch (Exception e) when (e is JsonException or IOException)
+        {
+            var aside = path.EndsWith(".bak", StringComparison.Ordinal)
+                ? null                       // an unreadable backup has nothing to prove
+                : path + ".unreadable";
+            try
+            {
+                if (aside is not null)
+                {
+                    File.Move(path, aside, overwrite: true);
+                    Console.Error.WriteLine($"Could not read {path}; kept it as {aside}.");
+                }
+            }
+            catch (IOException)
+            {
+                Console.Error.WriteLine($"Could not read or move {path}; continuing without it.");
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Adds a ledger entry for any raw file that lacks one, so a match is reachable
+    /// as long as its <c>.json.gz</c> survives — whatever happened to the ledger.
+    /// </summary>
+    /// <remarks>
+    /// The filenames are the match ids, which makes the raw directory a ledger of
+    /// last resort. A rebuilt entry claims the least the archive can prove from a
+    /// filename — no gaps, no deck, complete, not a favourite, timestamps from the
+    /// file itself — so the recapture rules in <see cref="Write"/> are free to win
+    /// again and restore the richer metadata where the log still holds it. This runs
+    /// on every open rather than behind a repair command because the failure it heals
+    /// is exactly the one a user cannot be expected to diagnose: every file intact,
+    /// nothing on the report.
+    /// </remarks>
+    private void Reindex()
+    {
+        var added = 0;
+        foreach (var file in Directory.EnumerateFiles(_rawDir, "*.json.gz"))
+        {
+            var matchId = Path.GetFileName(file)[..^".json.gz".Length];
+            if (_ledger.ContainsKey(matchId)) continue;
+
+            var stamp = new DateTimeOffset(File.GetLastWriteTimeUtc(file))
+                .ToUnixTimeMilliseconds();
+            _ledger[matchId] = new ArchiveEntry(
+                matchId, stamp, stamp, Incomplete: false);
+            added++;
+        }
+
+        if (added > 0)
+        {
+            Console.Error.WriteLine(
+                $"{added} archived match(es) were missing from the ledger and were " +
+                "re-indexed from the raw files.");
+            SaveLedger();
+        }
     }
 
     public bool Contains(string matchId) => _ledger.ContainsKey(matchId);
@@ -142,7 +219,24 @@ public sealed class RawArchive
         return lines;
     }
 
-    private void SaveLedger() =>
-        File.WriteAllText(_ledgerPath,
+    /// <summary>
+    /// Saves the ledger so that a crash can never leave it torn.
+    /// </summary>
+    /// <remarks>
+    /// This file is rewritten on every captured match and every star click, and it is
+    /// the only map from match id to metadata — a truncated write used to make every
+    /// archived match unreachable at once (#115). The write goes to a temp file and
+    /// swaps in atomically; the swap keeps the previous generation as
+    /// <c>index.json.bak</c>, which is what the constructor falls back to when the
+    /// main file will not parse. The backup is at most one save stale, and
+    /// <see cref="Reindex"/> covers whatever it misses.
+    /// </remarks>
+    private void SaveLedger()
+    {
+        var tmp = _ledgerPath + ".tmp";
+        File.WriteAllText(tmp,
             JsonSerializer.Serialize(_ledger, new JsonSerializerOptions { WriteIndented = true }));
+        if (File.Exists(_ledgerPath)) File.Replace(tmp, _ledgerPath, _ledgerPath + ".bak");
+        else File.Move(tmp, _ledgerPath);
+    }
 }

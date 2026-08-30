@@ -296,6 +296,98 @@ public class RawArchiveTests
     }
 
     [Test]
+    public void Saving_the_ledger_leaves_no_temp_file_behind()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1"));
+        a.Write(Slice("m2"));
+
+        Assert.That(File.Exists(Path.Combine(_root, "index.json")), Is.True);
+        Assert.That(File.Exists(Path.Combine(_root, "index.json.tmp")), Is.False);
+    }
+
+    [Test]
+    public void Saving_the_ledger_keeps_the_previous_generation_as_a_backup()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1"));   // first save: nothing to back up yet
+        a.Write(Slice("m2"));   // second save: the m1-only ledger becomes the backup
+
+        var bak = Path.Combine(_root, "index.json.bak");
+        Assert.That(File.Exists(bak), Is.True);
+        Assert.That(File.ReadAllText(bak), Does.Contain("m1").And.Not.Contain("m2"));
+    }
+
+    [Test]
+    public void A_corrupt_ledger_falls_back_to_the_backup()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1"));
+        a.Write(Slice("m2"));
+        a.Write(Slice("m3"));   // backup now holds m1+m2
+
+        // A torn write: the power went out mid-WriteAllText.
+        File.WriteAllText(Path.Combine(_root, "index.json"), """{"m1": {"Match""");
+
+        var reopened = new RawArchive(_root);
+
+        // The backup is one save behind, and the sweep below re-indexes anything
+        // it lacks — so every match is present either way.
+        Assert.That(reopened.MatchIds(), Is.EquivalentTo(new[] { "m1", "m2", "m3" }));
+        Assert.That(File.Exists(Path.Combine(_root, "index.json.unreadable")), Is.True,
+            "the torn file is kept for inspection, not overwritten");
+    }
+
+    [Test]
+    public void A_lost_ledger_is_rebuilt_from_the_raw_files_themselves()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1", false, """{"x":1}"""));
+        a.Write(Slice("m2"));
+
+        // Ledger and backup both gone — the raw files are the only survivors.
+        File.Delete(Path.Combine(_root, "index.json"));
+        File.Delete(Path.Combine(_root, "index.json.bak"));
+
+        var reopened = new RawArchive(_root);
+
+        Assert.That(reopened.MatchIds(), Is.EquivalentTo(new[] { "m1", "m2" }));
+        Assert.That(reopened.ReadLines("m1"), Is.EqualTo(new[] { """{"x":1}""" }));
+        Assert.That(reopened.Meta("m1")!.StartedAtMs, Is.Not.Zero,
+            "a re-indexed match still orders somewhere: the file's own timestamp");
+    }
+
+    [Test]
+    public void A_reindexed_match_lets_a_recapture_heal_its_metadata()
+    {
+        new RawArchive(_root).Write(Slice("m1", incomplete: false) with { HasDeck = true });
+        File.Delete(Path.Combine(_root, "index.json"));
+
+        var reopened = new RawArchive(_root);
+
+        // The rebuilt entry claims no deck and no gaps — the least the archive can
+        // prove from a filename — so the standard recapture rules are allowed to
+        // win again and restore what the ledger used to know.
+        Assert.That(reopened.Write(Slice("m1", incomplete: false) with { HasDeck = true }),
+            Is.True);
+    }
+
+    [Test]
+    public void A_backup_one_save_behind_does_not_lose_the_newest_match()
+    {
+        var a = new RawArchive(_root);
+        a.Write(Slice("m1"));
+        a.Write(Slice("m2"));
+        a.Write(Slice("m3"));   // backup holds m1+m2; m3's entry lives only in index.json
+
+        File.WriteAllText(Path.Combine(_root, "index.json"), "not json at all");
+
+        // m3's raw file is on disk, so falling back to the backup must not make the
+        // match invisible — the sweep picks it up alongside the backed-up entries.
+        Assert.That(new RawArchive(_root).Contains("m3"), Is.True);
+    }
+
+    [Test]
     public void Written_payload_is_gzip_compressed()
     {
         var a = new RawArchive(_root);
