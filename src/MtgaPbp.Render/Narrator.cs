@@ -111,7 +111,7 @@ public static class Narrator
 
         var game = 0;
 
-        foreach (var e in FoldControlChanges(t.Events.OrderBy(x => x.Seq).ToList()))
+        foreach (var e in FoldPerPermanent(t.Events.OrderBy(x => x.Seq).ToList()))
         {
             if (multi && e.GameNumber != game)
             {
@@ -180,14 +180,21 @@ public static class Narrator
     /// name the wrong player for half of it.
     /// </para>
     /// </remarks>
-    private static List<GameEvent> FoldControlChanges(IReadOnlyList<GameEvent> events)
+    /// <summary>
+    /// The kinds Arena sends one annotation per permanent for, so one effect touching
+    /// six of them arrives as six events at the same instant.
+    /// </summary>
+    private static readonly HashSet<EventKind> PerPermanent =
+        [EventKind.ControlChanged, EventKind.PhasedOut, EventKind.PhasedIn];
+
+    private static List<GameEvent> FoldPerPermanent(IReadOnlyList<GameEvent> events)
     {
         var folded = new List<GameEvent>(events.Count);
 
         for (var i = 0; i < events.Count; i++)
         {
             var e = events[i];
-            if (e.Kind != EventKind.ControlChanged || e.SourceName is null)
+            if (!PerPermanent.Contains(e.Kind) || e.SourceName is null)
             {
                 folded.Add(e);
                 continue;
@@ -196,7 +203,8 @@ public static class Narrator
             var names = new List<string>();
             var run = 0;
             while (i + run < events.Count
-                   && events[i + run] is { Kind: EventKind.ControlChanged } next
+                   && events[i + run] is { } next
+                   && next.Kind == e.Kind
                    && next.SourceName is not null
                    && next.ActorSeat == e.ActorSeat
                    && next.GameNumber == e.GameNumber
@@ -941,6 +949,14 @@ public static class Narrator
         // effect's trigger or resolution immediately before, so "Loki, Lord of Misrule's
         // ability triggers" is already on the page, and naming it again turns one theft
         // into two sentences that both look like the whole story.
+        // "phases out" for one, "phase out" for a list — the fold puts several
+        // permanents behind one verb and English will not let both readings share it.
+        EventKind.PhasedOut when (e.Detail ?? e.SourceName) is { } gone =>
+            $"{gone} phase{(e.Detail is null ? "s" : "")} out",
+
+        EventKind.PhasedIn when (e.Detail ?? e.SourceName) is { } back =>
+            $"{back} phase{(e.Detail is null ? "s" : "")} in",
+
         EventKind.ControlChanged when (e.Detail ?? e.SourceName) is { } taken =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "gain", "gains", t)} control of {taken}",
 

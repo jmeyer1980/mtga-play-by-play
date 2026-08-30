@@ -1717,6 +1717,34 @@ public sealed class EventExtractor(ICardDb cards)
                     Amount = AmountFor(type, a)
                 };
             }
+            else if (type is "AnnotationType_PhasedOut" or "AnnotationType_PhasedIn")
+            {
+                // Told to the tracker as well as narrated: phasing is not a zone change,
+                // so nothing else in the message says the permanent has stopped being
+                // there, and the board lines read the tracker (#125).
+                var out_ = type == "AnnotationType_PhasedOut";
+                if (FirstAffected(a) is not { } permanent) continue;
+
+                // Named before the flag is set, so this can never come to depend on it.
+                // NameOf reads the object's own name and its source and parent links and
+                // does not consult the board, so the order is not load-bearing today —
+                // but a phase-out asking what it has just removed is the kind of thing
+                // that stops working quietly, and reading first costs nothing.
+                var name = tracker.NameOf(permanent);
+                tracker.SetPhased(permanent, out_);
+
+                // No null check: NameOf answers with a placeholder rather than nothing,
+                // and a line built from one is dropped at render time the way every
+                // other placeholder line is.
+                st.SawCard(name);
+
+                ev = Base(tracker, ts, out_ ? EventKind.PhasedOut : EventKind.PhasedIn) with
+                {
+                    ActorSeat = tracker.Get(permanent)?.ControllerSeat ?? tracker.ActiveSeat,
+                    SourceInstanceId = permanent,
+                    SourceName = name
+                };
+            }
             else if (type == "AnnotationType_ControllerChanged")
             {
                 // The annotation says which permanent moved and what moved it, and

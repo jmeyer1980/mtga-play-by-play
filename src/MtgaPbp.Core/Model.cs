@@ -160,6 +160,15 @@ public enum EventKind
     /// </summary>
     ControlChanged,
 
+    /// <summary>
+    /// A permanent leaving play without leaving the battlefield, and coming back. It is
+    /// not a zone change — Arena announces it by annotation and the object keeps its
+    /// zone — so nothing noticed, and board lines went on printing creatures that could
+    /// not block and could not be targeted (#125).
+    /// </summary>
+    PhasedOut,
+    PhasedIn,
+
     GameEnd,
 
     /// <summary>
