@@ -1537,7 +1537,12 @@ public sealed class EventExtractor(ICardDb cards)
                 var wantsZone = kind
                     is EventKind.ZoneMove or EventKind.Returned or EventKind.StateBasedAction
                     or EventKind.SpellCast;
-                string? Zone(string key) => wantsZone &&
+
+                // ...and its destination is refused, rather than merely unused. Every
+                // spell goes to the stack, so a cast's zone_dest says nothing no reader
+                // wants — and an event carrying a field its own comment says it does not
+                // have is one refactor away from something downstream believing it.
+                string? Zone(string key, bool want) => want &&
                     GameStateTracker.DetailInt(a, key) is { } z &&
                     tracker.ZoneTypes.TryGetValue(z, out var name2) ? name2 : null;
 
@@ -1549,8 +1554,8 @@ public sealed class EventExtractor(ICardDb cards)
                     CauseInstanceId = causeName is null ? null : cause,
                     CauseName = causeName,
                     Detail = category,
-                    FromZone = Zone("zone_src"),
-                    ToZone = Zone("zone_dest")
+                    FromZone = Zone("zone_src", wantsZone),
+                    ToZone = Zone("zone_dest", wantsZone && kind is not EventKind.SpellCast)
                 };
             }
             else if (type == "AnnotationType_AbilityInstanceCreated")

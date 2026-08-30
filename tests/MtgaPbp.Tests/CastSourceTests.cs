@@ -7,8 +7,8 @@ namespace MtgaPbp.Tests;
 /// <summary>
 /// Where a spell was cast from, when that is not where spells come from (#127). A
 /// flashback, an escape, an adventure and a foretell all rendered as an ordinary cast, so
-/// a transcript showed a card being cast that the reader had watched go to the graveyard
-/// — which in singleton Brawl reads as the parser duplicating a line.
+/// the page showed a card being cast whose last reported whereabouts were somewhere it
+/// could not be cast from — which reads as the parser repeating a line.
 /// </summary>
 public class CastSourceTests
 {
@@ -34,6 +34,34 @@ public class CastSourceTests
                 }, Density.Beats)
             .Select(l => l.Text)
             .Single(x => x.Contains("Tenacious Underdog", StringComparison.Ordinal));
+
+    /// <summary>
+    /// A cast's destination is refused, not merely unused: every spell goes to the
+    /// stack, so it says nothing a reader wants, and an event carrying a field its own
+    /// comment says it does not have is one refactor away from being believed.
+    /// </summary>
+    [Test]
+    public void A_cast_carries_where_it_came_from_and_not_where_it_went()
+    {
+        var t = EventExtractorTests.RunFor(EventExtractorTests.Gre("""
+            { "zones": [ { "zoneId": 27, "type": "ZoneType_Graveyard" },
+                         { "zoneId": 31, "type": "ZoneType_Stack" } ],
+              "gameObjects": [
+                { "instanceId": 700, "grpId": 5, "type": "GameObjectType_Card",
+                  "ownerSeatId": 1, "controllerSeatId": 1, "zoneId": 31 } ],
+              "annotations": [
+                { "id": 1, "affectorId": 1, "affectedIds": [700],
+                  "type": ["AnnotationType_ZoneTransfer"],
+                  "details": [
+                    { "key": "category", "type": "EnumValue", "valueString": ["CastSpell"] },
+                    { "key": "zone_src", "type": "int32", "valueInt32": [27] },
+                    { "key": "zone_dest", "type": "int32", "valueInt32": [31] } ] } ] }
+            """));
+
+        var cast = t.Events.Single(e => e.Kind == EventKind.SpellCast);
+        Assert.That(cast.FromZone, Is.EqualTo("ZoneType_Graveyard"));
+        Assert.That(cast.ToZone, Is.Null, "a cast's destination is always the stack");
+    }
 
     [TestCase("ZoneType_Graveyard", "from the graveyard")]
     [TestCase("ZoneType_Exile", "from exile")]

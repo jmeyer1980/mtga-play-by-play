@@ -744,10 +744,16 @@ public static class Narrator
     /// </summary>
     /// <remarks>
     /// A flashback, an escape, an adventure and a foretell all rendered as an ordinary
-    /// cast, so a transcript showed a card being cast that the reader had watched go to
-    /// the graveyard — which in singleton Brawl, where the same card cannot be cast
-    /// twice from hand, reads as the parser duplicating a line rather than as the play
-    /// it was (#127).
+    /// cast, so the page showed a card being cast that the reader had just watched go to
+    /// the graveyard, with nothing in between to account for it. That reads as the
+    /// parser repeating a line rather than as the play it was (#127).
+    /// <para>
+    /// The complaint is about a missing account, not about an impossibility. A card can
+    /// legitimately be cast from hand more than once — anything that returns it there
+    /// does it — and singleton limits how many copies a deck may hold, not how often one
+    /// card may be cast. What made the transcript unreadable was casting a card whose
+    /// last reported whereabouts were somewhere it could not be cast from.
+    /// </para>
     /// <para>
     /// Counted over 1,238 archived matches: 15,632 casts come from hand, and the ones
     /// worth marking are 461 from exile across 206 matches, 107 from a graveyard across
