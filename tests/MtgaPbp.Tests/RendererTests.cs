@@ -752,6 +752,79 @@ public class RendererTests
     }
 
     /// <summary>
+    /// The name leads and the colours follow — issue #120. The clustering already knew
+    /// what to call this deck and the row loop already looked half of it up; the label
+    /// was thrown away and every mono-white deck rendered as an identical "W".
+    /// </summary>
+    [Test]
+    public void Index_leads_the_deck_column_with_the_decks_name()
+    {
+        var html = IndexRenderer.Render(
+            [IndexRenderer.Summarize(Sample(deck: SampleDeck(), colors: "W"))]);
+
+        var cell = MatchTable(Markup.Parse(html)).Descendants("td")
+            .Single(td => td.Attribute("class")?.Value == "deck");
+
+        // "Hare Apparent" is the most-copied nonland in SampleDeck, which is how
+        // DeckIdentity names a deck that carries no commander. Whitespace is collapsed
+        // the way the page's own textContent readers collapse it, which is what makes
+        // this assert the two halves stay SEPARATE: without the newline between the
+        // spans the cell reads back as "Hare ApparentW" and a StartsWith would still
+        // have passed.
+        Assert.That(Collapse(Markup.Clipboard(cell)), Is.EqualTo("Hare Apparent W"));
+
+        // The colours survive as a twin: the eye gets the letter, the ear gets the
+        // word. #34 is the reason the spoken form must not become loose text.
+        Assert.That(Markup.Spoken(cell), Does.Contain("white"));
+        Assert.That(cell.Value, Does.Not.Contain("white"));
+    }
+
+    /// <summary>
+    /// Whitespace collapsed the way the index's own <c>textOf</c> collapses it, so a
+    /// claim about the cell's text is a claim about what a reader copying it gets.
+    /// </summary>
+    private static string Collapse(string s) =>
+        Regex.Replace(s, @"\s+", " ").Trim();
+
+    /// <summary>
+    /// The column sorts by what it visibly leads with. Sorting a name-led column by
+    /// colour letters would order it by something the reader can see but not by the
+    /// thing they are reading.
+    /// </summary>
+    [Test]
+    public void Index_sorts_the_deck_column_by_name_and_falls_back_to_colours()
+    {
+        var named = MatchTable(Markup.Parse(IndexRenderer.Render(
+                [IndexRenderer.Summarize(Sample(deck: SampleDeck(), colors: "W"))])))
+            .Descendants("td").Single(td => td.Attribute("class")?.Value == "deck");
+        Assert.That(named.Attribute("data-key")?.Value, Is.EqualTo("hare apparent"));
+
+        // A row whose colours are known but whose deck was never clustered keeps the
+        // key it has always had, rather than losing its place in the order.
+        var unnamed = MatchTable(Markup.Parse(IndexRenderer.Render(
+                [IndexRenderer.Summarize(Sample(colors: "WU"))])))
+            .Descendants("td").Single(td => td.Attribute("class")?.Value == "deck");
+        Assert.That(unnamed.Attribute("data-key")?.Value, Is.EqualTo("wu"));
+    }
+
+    /// <summary>
+    /// The name in plain words, not only as the slug. "hare apparent" with a space
+    /// matched nothing before this: the haystack carried "deck:hare-apparent", so a
+    /// one-word search worked by accident and a two-word one did not work at all.
+    /// </summary>
+    [Test]
+    public void Index_lets_a_deck_be_searched_by_its_name()
+    {
+        var html = IndexRenderer.Render(
+            [IndexRenderer.Summarize(Sample(deck: SampleDeck(), colors: "W"))]);
+        var haystack = html[html.IndexOf("data-search=\"", StringComparison.Ordinal)..];
+        haystack = haystack[..haystack.IndexOf('"', 13)];
+
+        Assert.That(haystack, Does.Contain("hare apparent"));
+        Assert.That(haystack, Does.Contain("deck:"), "and the filter token still rides along");
+    }
+
+    /// <summary>
     /// 101 of the archived matches predate the deck being captured at all. An empty
     /// cell is the only honest thing to put there — "colourless", a dash or a question
     /// mark would each be a claim about a deck nobody has a record of.
