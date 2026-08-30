@@ -1725,12 +1725,17 @@ public sealed class EventExtractor(ICardDb cards)
                 var out_ = type == "AnnotationType_PhasedOut";
                 if (FirstAffected(a) is not { } permanent) continue;
 
+                // Named before the flag is set, so this can never come to depend on it.
+                // NameOf reads the object's own name and its source and parent links and
+                // does not consult the board, so the order is not load-bearing today —
+                // but a phase-out asking what it has just removed is the kind of thing
+                // that stops working quietly, and reading first costs nothing.
                 var name = tracker.NameOf(permanent);
                 tracker.SetPhased(permanent, out_);
 
-                // Named after the flag is set, so a phase-out reports the permanent it
-                // has just removed rather than being filtered by its own effect.
-                if (name is null) continue;
+                // No null check: NameOf answers with a placeholder rather than nothing,
+                // and a line built from one is dropped at render time the way every
+                // other placeholder line is.
                 st.SawCard(name);
 
                 ev = Base(tracker, ts, out_ ? EventKind.PhasedOut : EventKind.PhasedIn) with
