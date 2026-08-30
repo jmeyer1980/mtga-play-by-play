@@ -771,10 +771,14 @@ public static class Program
                 if (!faces.ContainsKey(name) && cards.FaceForName(name) is { } face)
                     faces[name] = face;
 
+            var textPath = Path.Combine(textDir, $"{matchId}.md");
             File.WriteAllText(gamePath,
                 GamePageRenderer.Render(transcript, NeighboursOf(matchId), faces));
-            File.WriteAllText(Path.Combine(textDir, $"{matchId}.md"),
-                MarkdownRenderer.Render(transcript));
+            File.WriteAllText(textPath, MarkdownRenderer.Render(transcript));
+
+            // Both files carry the match's time rather than the build's, so that a
+            // directory of them sorts the way the report does — see OutputStamp (#147).
+            OutputStamp.MatchTime(archive.Meta(matchId)?.StartedAtMs ?? 0, gamePath, textPath);
             summaries.Add(IndexRenderer.Summarize(transcript) with
             {
                 Favorite = archive.Meta(matchId)?.Favorite ?? false
