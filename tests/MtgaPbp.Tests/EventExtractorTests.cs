@@ -602,7 +602,7 @@ public class EventExtractorTests
     /// concession was announced as the match's ending (#150).
     /// </summary>
     [Test]
-    public void The_match_end_line_reports_how_the_MATCH_ended_not_the_first_game()
+    public void The_match_end_line_reports_how_the_match_ended_not_how_game_one_did()
     {
         var final = """
         { "timestamp": "2000", "matchGameRoomStateChangedEvent": { "gameRoomInfo": {
