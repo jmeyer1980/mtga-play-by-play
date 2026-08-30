@@ -99,11 +99,22 @@ public sealed class Config
             if (!string.IsNullOrWhiteSpace(loaded.LocalPlayerUserId))
                 cfg.LocalPlayerUserId = loaded.LocalPlayerUserId;
             if (loaded.OpenAfterBuild is { } open) cfg.OpenAfterBuild = open;
-            if (loaded.MaxArchivedMatches > 0) cfg.MaxArchivedMatches = loaded.MaxArchivedMatches.Value;
+
+            // Applied whenever the key is present, zero included. Zero is this
+            // setting's way of saying "no limit", so a layer that could not state it
+            // would have no way to lift a cap an earlier layer set — which is the same
+            // hole the bool above had, one type along. A negative is not a smaller
+            // number of matches to keep, it is not a number of matches at all, so it
+            // is ignored rather than clamped to something it did not ask for.
+            if (loaded.MaxArchivedMatches is { } max && max >= 0) cfg.MaxArchivedMatches = max;
         }
         catch (JsonException)
         {
-            Console.Error.WriteLine($"Ignoring malformed {path}; using defaults.");
+            // Not "using defaults": with layers, a file that will not parse costs only
+            // what that file would have said. Everything already in effect — the
+            // built-in defaults, and the shipped layer when it is the user's file that
+            // is broken — is still in effect.
+            Console.Error.WriteLine($"Ignoring malformed {path}; keeping the settings already in effect.");
         }
     }
 

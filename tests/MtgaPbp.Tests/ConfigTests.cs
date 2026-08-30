@@ -108,6 +108,56 @@ public class ConfigTests
         Assert.That(Config.Load(_dir).OpenAfterBuild, Is.True);
     }
 
+    /// <summary>
+    /// Zero is this setting's way of saying "no limit", so a later layer has to be
+    /// able to state it — otherwise a cap set by an earlier layer could never be
+    /// lifted, and the documented contract would be unenforceable.
+    /// </summary>
+    [Test]
+    public void The_user_file_can_lift_a_cap_the_shipped_file_set()
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "MaxArchivedMatches": 60 }""");
+        Assert.That(Config.Load(_dir).MaxArchivedMatches, Is.EqualTo(60));
+
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile),
+            """{ "MaxArchivedMatches": 0 }""");
+        Assert.That(Config.Load(_dir).MaxArchivedMatches, Is.Zero, "zero means no limit");
+    }
+
+    /// <summary>
+    /// A negative is not a smaller number of matches to keep, it is not a number of
+    /// matches at all — and MaxArchivedMatches drives an irreversible delete, so it is
+    /// ignored rather than clamped to something nobody asked for.
+    /// </summary>
+    [Test]
+    public void A_negative_cap_is_ignored()
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "MaxArchivedMatches": 60 }""");
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile),
+            """{ "MaxArchivedMatches": -1 }""");
+
+        Assert.That(Config.Load(_dir).MaxArchivedMatches, Is.EqualTo(60));
+    }
+
+    /// <summary>
+    /// A broken user file costs only what that file would have said. What the shipped
+    /// layer set is still in effect, which is why the message no longer claims
+    /// everything went back to defaults.
+    /// </summary>
+    [Test]
+    public void A_malformed_user_file_leaves_the_shipped_layer_in_effect()
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "OpenAfterBuild": true }""");
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile), "{ not json");
+
+        var c = Config.Load(_dir);
+        Assert.That(c.OpenAfterBuild, Is.True);
+        Assert.That(c.LogPaths, Is.Not.Empty);
+    }
+
     [Test]
     public void Load_survives_a_corrupt_config_file_by_falling_back_to_defaults()
     {

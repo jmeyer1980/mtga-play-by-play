@@ -163,18 +163,32 @@ public static class Program
     /// </remarks>
     private static string? Misplaced(Config cfg)
     {
-        var fallback = Config.Default().ArchiveDir;
-        if (string.IsNullOrWhiteSpace(cfg.ArchiveDir) || Same(fallback, cfg.ArchiveDir)) return null;
+        // Every failure here is silence, never a crash. This is a hint printed beside
+        // a capture that has already succeeded, and there is no version of "could not
+        // read a directory I was only going to count" that is worth costing someone
+        // the run. ArchiveDir is user-supplied and reaches Path.GetFullPath, which
+        // rejects malformed paths; the enumeration below can fail part-way through on
+        // a permission or IO error even after Directory.Exists said yes.
+        try
+        {
+            var fallback = Config.Default().ArchiveDir;
+            if (string.IsNullOrWhiteSpace(cfg.ArchiveDir) || Same(fallback, cfg.ArchiveDir)) return null;
 
-        var raw = Path.Combine(fallback, "raw");
-        if (!Directory.Exists(raw)) return null;
+            var raw = Path.Combine(fallback, "raw");
+            if (!Directory.Exists(raw)) return null;
 
-        var held = Directory.EnumerateFiles(raw, "*.json.gz").Count();
-        if (held == 0) return null;
+            var held = Directory.EnumerateFiles(raw, "*.json.gz").Count();
+            if (held == 0) return null;
 
-        return $"the archive at {cfg.ArchiveDir} is empty, but {fallback} holds " +
-               $"{held} match{(held == 1 ? "" : "es")}. If that is where your history " +
-               $"is, set \"ArchiveDir\" in {Config.UserFile} to point at it.";
+            return $"the archive at {cfg.ArchiveDir} is empty, but {fallback} holds " +
+                   $"{held} match{(held == 1 ? "" : "es")}. If that is where your history " +
+                   $"is, set \"ArchiveDir\" in {Config.UserFile} to point at it.";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                                    or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
 
         static bool Same(string a, string b) =>
             string.Equals(
