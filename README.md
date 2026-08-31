@@ -262,30 +262,44 @@ and anything that began and ended inside that window is not recoverable.
 `watch` re-reads the log every three seconds, so nothing can rotate away behind it.
 Two ways to make that happen without you remembering to.
 
-**A shortcut in your Startup folder.** Build the `watch` shortcut exactly as described
-[above](#a-desktop-shortcut-that-runs-it), then press <kbd>Win</kbd>+<kbd>R</kbd>, run
-`shell:startup`, and drop it in that folder. No quoting to get wrong, and it runs as
-you, so its window is where you can see it.
+**A shortcut in your Startup folder** — the one to reach for first. Build the `watch`
+shortcut exactly as described [above](#a-desktop-shortcut-that-runs-it), then press
+<kbd>Win</kbd>+<kbd>R</kbd>, run `shell:startup`, and drop it in that folder. No
+quoting to get wrong, no administrator rights, and it runs as you, so its window is
+where you can see it.
 
 **Or a scheduled task**, if you would rather manage it from the command line than by
 remembering which folder a shortcut is in — it can be inspected, replaced and removed
-by name, and it survives a tidy-up of your Startup folder. One line, in **Command
-Prompt** — no administrator needed:
+by name, and it survives a tidy-up of your Startup folder. One line, in a **Command
+Prompt opened with "Run as administrator"**:
 
 ```bat
 schtasks /create /tn "mtga-pbp watch" /tr "\"C:\path\to\mtga-pbp\mtga-pbp.exe\" watch" /sc onlogon /it /f
 ```
 
+- **Elevation is not optional here.** Scheduling a task is an administrator operation
+  on Windows however ordinary the program is — Microsoft's own
+  [schtasks reference](https://learn.microsoft.com/windows-server/administration/windows-commands/schtasks#required-permissions)
+  puts it plainly, and an unelevated prompt answers `ERROR: Access is denied.` with no
+  hint as to why. This is the whole reason the Startup folder is listed first.
 - The `\"` around the program path are deliberate. `/tr` takes the whole command as one
   string, so the path has to be quoted *inside* it, and those inner quotes have to be
   escaped from the shell. Type this one in `cmd`, not PowerShell, which quotes
-  differently and will not pass it through intact.
+  differently and will not pass it through intact. If your path has no spaces in it you
+  can drop the `\"` and the escaping question with them.
 - `/sc onlogon` runs it when you log in, `/it` runs it as you and interactively so it
   has a window, and `/f` replaces an existing task of the same name — so re-running the
   line is also how you update the path.
 
-`schtasks /query /tn "mtga-pbp watch"` shows whether it took, and
-`schtasks /delete /tn "mtga-pbp watch" /f` removes it.
+Check that it stored the command you meant, which is the part most likely to go wrong:
+
+```bat
+schtasks /query /tn "mtga-pbp watch" /v /fo list
+```
+
+`Task To Run` should read `"C:\path\to\mtga-pbp\mtga-pbp.exe" watch`, with the quotes
+around the path and nothing around the argument. `schtasks /delete /tn "mtga-pbp watch"
+/f` removes it again.
 
 Either way you get a visible `watch` window at every logon — that is what `/it` is for
 above, and it is deliberate: the window is the scoreboard, and a `watch` running where
