@@ -284,11 +284,12 @@ schtasks /create /tn "mtga-pbp watch" /tr "\"C:\path\to\mtga-pbp\mtga-pbp.exe\" 
   hint as to why. This is the whole reason the Startup folder is listed first.
 - The `\"` around the program path are deliberate. `/tr` takes the whole command as one
   string, so the path has to be quoted *inside* it, and those inner quotes have to be
-  escaped from the shell. Type this one in `cmd`, not PowerShell, which quotes
-  differently and will not pass it through intact. Use it exactly as written whatever
-  your path looks like — the outer quotes are not optional even when the path has no
-  spaces, because the command inside them does (the one before `watch`), and the inner
-  pair costs nothing when it turns out not to have been needed.
+  escaped from the shell. Type it in `cmd` — it is written for `cmd`'s escaping rules
+  and was checked there, and PowerShell applies its own rules to the arguments it hands
+  a native program. Use it exactly as written whatever your path looks like: the outer
+  quotes are not optional even when the path has no spaces, because the command inside
+  them contains one (before `watch`), and the inner pair costs nothing when it turns
+  out not to have been needed.
 - `/sc onlogon` runs it when you log in, `/it` runs it as you and interactively so it
   has a window, and `/f` replaces an existing task of the same name — so re-running the
   line is also how you update the path.
@@ -300,7 +301,10 @@ schtasks /query /tn "mtga-pbp watch" /v /fo list
 ```
 
 `Task To Run` should read `"C:\path\to\mtga-pbp\mtga-pbp.exe" watch`, with the quotes
-around the path and nothing around the argument. To remove it again:
+around the path and nothing around the argument — that is what the line above stores
+on Windows 11, checked against a path with a space in it. `Logon Mode` should say
+`Interactive only` and `Run As User` should be you, which together are what give it a
+window. To remove it again:
 
 ```bat
 schtasks /delete /tn "mtga-pbp watch" /f
