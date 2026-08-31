@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
@@ -49,10 +49,10 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
 
     /// <summary>How many pages are currently subscribed to the change stream.</summary>
     /// <remarks>
-    /// Here for the test that pins the reaping in <see cref="Subscribe"/>: a leak whose
-    /// only symptom is a number that quietly climbs all evening cannot be caught by
-    /// asserting on anything the pages receive, because every page still receives
-    /// everything. The count is the symptom, so the count is what is checked.
+    /// Here for the test that pins <see cref="Reap"/>: a leak whose only symptom is a
+    /// number quietly climbing all evening cannot be caught by asserting on anything
+    /// the pages receive, because every page still receives everything. The count is
+    /// the symptom, so the count is what is checked.
     /// </remarks>
     public int Subscribers { get { lock (_subscribers) return _subscribers.Count; } }
 
