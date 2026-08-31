@@ -244,6 +244,50 @@ previous session survives in `Player-prev.log`. If Arena restarts twice before y
 run the tool, those matches are gone. Capture is idempotent, so running it often
 costs nothing.
 
+The tool no longer leaves that to this paragraph. When a capture finds matches in
+`Player-prev.log` that it did not already have, it says so — those were one restart
+from being lost:
+
+```
+warning: 3 matches were recovered from a log Arena had already rotated out — one
+more restart and they would have been gone for good.
+```
+
+And when it notices that the session which was open at the last capture is no longer
+in either log, it says that too. Arena has then restarted more than once in between,
+and anything that began and ended inside that window is not recoverable.
+
+### Never think about it again: start `watch` at logon
+
+`watch` re-reads the log every three seconds, so nothing can rotate away behind it.
+Two ways to make that happen without you remembering to.
+
+**A shortcut in your Startup folder.** Build the `watch` shortcut exactly as described
+[above](#a-desktop-shortcut-that-runs-it), then press <kbd>Win</kbd>+<kbd>R</kbd>, run
+`shell:startup`, and drop it in that folder. No quoting to get wrong, and it runs as
+you, so its window is where you can see it.
+
+**Or a scheduled task**, if you would rather not have a window at all in your face.
+One line, in **Command Prompt** — no administrator needed:
+
+```bat
+schtasks /create /tn "mtga-pbp watch" /tr "\"C:\path\to\mtga-pbp\mtga-pbp.exe\" watch" /sc onlogon /it /f
+```
+
+- The `\"` around the program path are deliberate. `/tr` takes the whole command as one
+  string, so the path has to be quoted *inside* it, and those inner quotes have to be
+  escaped from the shell. Type this one in `cmd`, not PowerShell, which quotes
+  differently and will not pass it through intact.
+- `/sc onlogon` runs it when you log in, `/it` runs it as you and interactively so it
+  has a window, and `/f` replaces an existing task of the same name — so re-running the
+  line is also how you update the path.
+
+`schtasks /query /tn "mtga-pbp watch"` shows whether it took, and
+`schtasks /delete /tn "mtga-pbp watch" /f` removes it.
+
+Either way, `watch` opens your browser on the report when it starts, every time —
+`"OpenAfterBuild"` does not currently apply to it.
+
 ## Configuration
 
 Optional `mtga-pbp.json` beside the executable:
