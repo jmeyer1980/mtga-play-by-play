@@ -180,6 +180,21 @@ public sealed class RawArchive
         lock (_ledgerLock)
         {
             _ledger.TryGetValue(slice.MatchId, out var existing);
+
+            // A stored copy that is empty is not a stored copy. Without this the
+            // comparisons below consulted only the ledger — never the file — so a match
+            // whose slice had been lost was defended by its own metadata: the entry said
+            // complete, with a deck and no gaps, and a re-capture carrying the whole
+            // match in hand was refused. The lines were still in the log and the match
+            // could never heal (#131).
+            //
+            // Length rather than a decompress: this runs for every match the log still
+            // holds, on every capture and every three seconds under `watch`, and reading
+            // fifty slices to find out whether any is broken would cost more than the
+            // problem. A torn-but-nonempty file is caught at build time instead, which
+            // says which file to delete.
+            if (existing is not null && !HasContent(slice.MatchId)) existing = null;
+
             if (existing is not null)
             {
                 // Never trade a finished capture for a partial one, whatever else it found.
@@ -194,12 +209,35 @@ public sealed class RawArchive
             // Re-capturing a match must not silently unfavourite it.
             var favorite = existing?.Favorite ?? false;
 
+            // Written beside the real file and swapped in, never over it. File.Create
+            // truncates first, so a crash partway through used to leave a torn slice
+            // where a whole match had been — and the ledger entry below, which is what
+            // makes the match reachable, lands after the write and would then point at
+            // it. The ledger has been written this way since #115; the matches it maps
+            // to had not caught up (#131).
             var path = Path.Combine(_rawDir, $"{slice.MatchId}.json.gz");
-            using (var fs = File.Create(path))
-            using (var gz = new GZipStream(fs, CompressionLevel.Optimal))
-            using (var w = new StreamWriter(gz))
+            var tmp = path + ".tmp";
+
+            try
             {
-                foreach (var line in slice.RawLines) w.WriteLine(line);
+                using (var fs = File.Create(tmp))
+                using (var gz = new GZipStream(fs, CompressionLevel.Optimal))
+                using (var w = new StreamWriter(gz))
+                {
+                    foreach (var line in slice.RawLines) w.WriteLine(line);
+                }
+
+                File.Move(tmp, path, overwrite: true);
+            }
+            catch
+            {
+                // Swept up the way SaveLedger sweeps up its own, and for the same
+                // reason: a swap that failed leaves a temp file holding nothing the
+                // next capture will not write again from the log, so it is removed
+                // rather than left in raw/ to accumulate and to look like something
+                // worth recovering.
+                try { File.Delete(tmp); } catch (IOException) { /* the next write overwrites it */ }
+                throw;
             }
 
             _ledger[slice.MatchId] = new ArchiveEntry(
@@ -288,6 +326,30 @@ public sealed class RawArchive
     }
 
     /// <summary>
+    /// Whether a match's slice exists and holds anything at all.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not a read. It answers the one question that can be answered without
+    /// decompressing — is there a file, and is there anything in it — because it is asked
+    /// about every match the log still carries, every capture.
+    /// </remarks>
+    private bool HasContent(string matchId)
+    {
+        try
+        {
+            var file = new FileInfo(Path.Combine(_rawDir, $"{matchId}.json.gz"));
+            return file.Exists && file.Length > 0;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                                    or ArgumentException or NotSupportedException)
+        {
+            // Unknowable, so treated as present: refusing to rewrite is the safe half of
+            // this decision, and a build will say so if the file really is broken.
+            return true;
+        }
+    }
+
+    /// <summary>
     /// The size and last-write time of a match's archived slice, or null when there is
     /// no file — the cheapest honest answer to "has this changed since last time".
     /// </summary>
@@ -317,16 +379,75 @@ public sealed class RawArchive
         }
     }
 
+    /// <summary>
+    /// A match's lines, or why they could not be had.
+    /// </summary>
+    /// <param name="Lines">The archived lines, empty when <paramref name="Damage"/> is set.</param>
+    /// <param name="Damage">
+    /// A short reason the slice could not be read, or null when it was. Words rather
+    /// than an exception because it is printed: every caller that has one wants to name
+    /// the match and carry on.
+    /// </param>
+    public readonly record struct SliceRead(IReadOnlyList<string> Lines, string? Damage);
+
+    /// <summary>
+    /// Reads a slice without making the caller decide what a damaged one means.
+    /// </summary>
+    /// <remarks>
+    /// One damaged match should cost one match, and that has to be true of every command
+    /// that walks the archive rather than only of <c>build</c> — a single torn slice used
+    /// to end <c>stats</c> and <c>why</c> on a stack trace as well. Centralised so the
+    /// next command to read the archive inherits the guard instead of forgetting it.
+    /// </remarks>
+    public SliceRead TryRead(string matchId)
+    {
+        try
+        {
+            var lines = ReadLines(matchId);
+            return new SliceRead(lines, lines.Count == 0 && Contains(matchId) ? "no lines" : null);
+        }
+        catch (Exception e) when (e is InvalidDataException or IOException
+                                    or UnauthorizedAccessException)
+        {
+            return new SliceRead([], e.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// A match's archived lines, or empty when there is no file.
+    /// </summary>
+    /// <remarks>
+    /// Throws <see cref="InvalidDataException"/> when the slice is damaged, and that
+    /// includes the quiet case. A gzip stream cut off partway does not always complain
+    /// — .NET's decompressor can simply stop, handing back nothing — so a file with
+    /// bytes in it that yields no lines is treated as damage rather than as a match that
+    /// had nothing to say. Every archived match has lines; that is what makes it a match.
+    /// <para>
+    /// The distinction is the whole point. "No lines" was indistinguishable from "no
+    /// file", so a truncated slice vanished from the report without a word, and the
+    /// ledger went on insisting the match was complete (#131).
+    /// </para>
+    /// </remarks>
     public IReadOnlyList<string> ReadLines(string matchId)
     {
         var path = Path.Combine(_rawDir, $"{matchId}.json.gz");
         if (!File.Exists(path)) return [];
-        using var fs = File.OpenRead(path);
-        using var gz = new GZipStream(fs, CompressionMode.Decompress);
-        using var r = new StreamReader(gz);
+
+        var onDisk = new FileInfo(path).Length;
         var lines = new List<string>();
-        while (r.ReadLine() is { } line)
-            if (line.Length > 0) lines.Add(line);
+
+        using (var fs = File.OpenRead(path))
+        using (var gz = new GZipStream(fs, CompressionMode.Decompress))
+        using (var r = new StreamReader(gz))
+        {
+            while (r.ReadLine() is { } line)
+                if (line.Length > 0) lines.Add(line);
+        }
+
+        if (lines.Count == 0 && onDisk > 0)
+            throw new InvalidDataException(
+                $"{matchId}.json.gz holds {onDisk} bytes but no readable lines");
+
         return lines;
     }
 
