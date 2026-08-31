@@ -63,6 +63,29 @@ public class MultiGameTests
         Assert.That(raw, Does.Contain(GoldenFileTests.Bo3MatchId));
     }
 
+    /// <summary>
+    /// And so does the document rendered from it, which is the copy a person actually
+    /// reads.
+    /// </summary>
+    /// <remarks>
+    /// Checked separately from the fixture rather than inferred from it. The scrub above
+    /// proves the traffic is clean; this proves the file beside it in the same directory
+    /// is, and those come apart the moment someone regenerates one of the two — which is
+    /// the whole reason the fixture's own scrub is asserted instead of trusted.
+    /// </remarks>
+    [Test]
+    public void The_bo3_golden_file_carries_no_trace_of_either_player()
+    {
+        var golden = File.ReadAllText(GoldenFileTests.GoldenPath(GoldenFileTests.Bo3Golden));
+
+        Assert.That(golden, Does.Contain("PlayerTwo vs PlayerOne"));
+        Assert.That(golden, Does.Not.Contain("1b35a013"));
+
+        // A rendered transcript names no file, so a drive letter in one means a path
+        // from the machine that generated it has reached a public repository.
+        Assert.That(golden, Does.Not.Contain(@"C:\"));
+    }
+
     [Test]
     public void The_bo3_fixture_really_is_two_games_of_one_match()
     {
