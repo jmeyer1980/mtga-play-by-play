@@ -231,4 +231,60 @@ public class LiveServerTests
         while ((line = reader.ReadLine()) is not null && line != "event: changed") { }
         Assert.That(line, Is.EqualTo("event: changed"));
     }
+
+    /// <summary>
+    /// Subscribes and returns once the server has said <c>: connected</c>, which it
+    /// writes only after the subscriber is in the list — so a caller may look at the
+    /// count without racing the accept.
+    /// </summary>
+    private (TcpClient Client, StreamReader Reader) OpenStream()
+    {
+        var client = new TcpClient();
+        client.Connect("127.0.0.1", _server.Port);
+        client.ReceiveTimeout = 5000;
+        var stream = client.GetStream();
+        var request = Encoding.UTF8.GetBytes(
+            $"GET /api/events HTTP/1.1\r\nHost: 127.0.0.1:{_server.Port}\r\n\r\n");
+        stream.Write(request, 0, request.Length);
+
+        var reader = new StreamReader(stream);
+        string? line;
+        while ((line = reader.ReadLine()) is not null && line != ": connected") { }
+        Assert.That(line, Is.EqualTo(": connected"), "subscription handshake");
+        return (client, reader);
+    }
+
+    [Test]
+    public void Reloading_the_page_does_not_leave_a_socket_behind_each_time()
+    {
+        // Ten reloads. Before the reaping, the list was pruned only by a write that
+        // failed, so on an evening with nothing to notify all ten stayed in it and the
+        // count below was eleven (#132).
+        for (var i = 0; i < 10; i++) OpenStream().Client.Close();
+
+        // The tab that stays open. Its own subscribe is what drops the ten before it —
+        // all but possibly the last, whose close may still be in flight on the wire,
+        // which is the one thing this count is allowed to be uncertain about.
+        using var live = OpenStream().Client;
+
+        Assert.That(_server.Subscribers, Is.LessThanOrEqualTo(2));
+    }
+
+    [Test]
+    public void Reaping_leaves_a_page_that_is_still_open_alone()
+    {
+        var (live, reader) = OpenStream();
+        using (live)
+        {
+            // This subscribe reaps, and must find nothing to reap.
+            using var other = OpenStream().Client;
+
+            _server.NotifyChanged();
+
+            string? line;
+            while ((line = reader.ReadLine()) is not null && line != "event: changed") { }
+            Assert.That(line, Is.EqualTo("event: changed"),
+                "a page nobody closed still gets its notifications");
+        }
+    }
 }

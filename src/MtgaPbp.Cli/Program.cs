@@ -556,47 +556,98 @@ public static class Program
         var stop = new ManualResetEventSlim(false);
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Set(); };
 
-        var sizes = new Dictionary<string, long>();
+        var logs = new LogGrowth();
+        // A rebuild the archive has earned and the loop has not managed to run yet.
+        // Kept across polls because a capture only reports each match once: if the
+        // rebuild after it fails, the retried capture finds nothing new to write and
+        // would leave the page showing a match the archive already has.
+        var owed = false;
+        // The kind of failure the last poll hit, or null while polls are landing. Held
+        // so the recovery line below can only be said after a failure was announced.
+        string? failing = null;
         while (!stop.Wait(interval))
         {
-            var grew = false;
-            foreach (var log in cfg.LogPaths.Where(File.Exists))
+            if (!logs.Measure(cfg.LogPaths)) continue;
+
+            try
             {
-                var length = new FileInfo(log).Length;
-                if (sizes.TryGetValue(log, out var was) && was == length) continue;
-                sizes[log] = length;
-                grew = true;
+                // Rebuild when the archive was written to, not when it got bigger. A
+                // match that started mid-poll is archived incomplete and rewritten once
+                // it ends, and that rewrite leaves the count unchanged — which is
+                // exactly the update worth showing, since only then does the transcript
+                // know how it finished.
+                var (exit, written, drift, pruned) = CaptureCore(cfg, quiet: true, prune, archive);
+
+                // Said through the board so it scrolls above the pinned block and stays.
+                // Once per watch session: the counts in the message grow every poll, so
+                // deduplicating on the text itself would say it every three seconds —
+                // and a drift that persists is one fact, not a stream of them.
+                if (drift is not null && said.Add("format-drift"))
+                    board.Say($"[{DateTime.Now:HH:mm:ss}] ** {drift}");
+
+                // Through the board for the same reason, and deduplicated for the same
+                // reason: a cap that is too small is one standing fact, and a watch polling
+                // every three seconds would otherwise repeat it forever. Matches actually
+                // leaving is an event rather than a state, so only the refusal is held to
+                // once — under the guard an automatic prune is small and rare anyway.
+                if (pruned is { } pruneReport && (!pruneReport.Held || said.Add("prune-held")))
+                    board.Say($"[{DateTime.Now:HH:mm:ss}] ** {pruneReport.Message}");
+
+                if (exit == 0 && written > 0) owed = true;
+                if (owed)
+                {
+                    // Notified outside the gate for the favorite handler's reason: a page
+                    // that has stopped reading must not hold the next rebuild hostage.
+                    rebuilds.Run(() => Build(cfg, open: false, quiet: true, observed: Repaint,
+                                             shared: archive));
+                    server.NotifyChanged();
+                    owed = false;
+                }
+
+                // Last, so that reaching it means "this poll finished" and nothing
+                // weaker. Every way out of the block above short of a throw arrives
+                // here, including a capture that returned an error code — it has already
+                // said so, and running it again on the next tick would only say it
+                // again. A throw does not arrive here, which is what leaves the growth
+                // to be measured a second time and the capture to be retried.
+                logs.Commit();
+
+                if (failing is not null && said.Add("poll-recovered"))
+                    board.Say($"[{DateTime.Now:HH:mm:ss}] ** reading the log again. " +
+                              "Nothing was skipped; the update that failed has been redone.");
+                failing = null;
             }
-            if (!grew) continue;
-
-            // Rebuild when the archive was written to, not when it got bigger. A match
-            // that started mid-poll is archived incomplete and rewritten once it ends,
-            // and that rewrite leaves the count unchanged — which is exactly the update
-            // worth showing, since only then does the transcript know how it finished.
-            var (exit, written, drift, pruned) = CaptureCore(cfg, quiet: true, prune, archive);
-
-            // Said through the board so it scrolls above the pinned block and stays.
-            // Once per watch session: the counts in the message grow every poll, so
-            // deduplicating on the text itself would say it every three seconds —
-            // and a drift that persists is one fact, not a stream of them.
-            if (drift is not null && said.Add("format-drift"))
-                board.Say($"[{DateTime.Now:HH:mm:ss}] ** {drift}");
-
-            // Through the board for the same reason, and deduplicated for the same
-            // reason: a cap that is too small is one standing fact, and a watch polling
-            // every three seconds would otherwise repeat it forever. Matches actually
-            // leaving is an event rather than a state, so only the refusal is held to
-            // once — under the guard an automatic prune is small and rare anyway.
-            if (pruned is { } pruneReport && (!pruneReport.Held || said.Add("prune-held")))
-                board.Say($"[{DateTime.Now:HH:mm:ss}] ** {pruneReport.Message}");
-
-            if (exit != 0 || written == 0) continue;
-
-            // Notified outside the gate for the favorite handler's reason: a page
-            // that has stopped reading must not hold the next rebuild hostage.
-            rebuilds.Run(() => Build(cfg, open: false, quiet: true, observed: Repaint,
-                                     shared: archive));
-            server.NotifyChanged();
+            catch (Exception e)
+            {
+                // A poll is one attempt at a job that repeats every three seconds, so a
+                // failed one is a skipped iteration and never a shutdown. There is no
+                // exception here whose right answer is to stop watching: the log going
+                // missing mid-read is Arena restarting, and a restart is precisely when
+                // an unattended `watch` is the only thing between the player and the
+                // two-restart window that loses matches for good (#132, README).
+                //
+                // Said once per kind of failure, because the poll repeats and a disk
+                // that is full stays full. Keyed on the exception's type rather than its
+                // text, which carries a path — one message per file would not be one
+                // fact, and that is the deduplication PruneReport already learned to
+                // keep off the wording.
+                failing = e.GetType().Name;
+                if (said.Add($"poll-failed:{failing}"))
+                {
+                    // Guarded in its turn, because the most likely reason the poll threw
+                    // is a disk with nothing left on it — and under `watch > log.txt`
+                    // that is the same disk this line is going to. Failing to report a
+                    // failure must not be the thing that finally ends `watch`; the
+                    // capturing is what matters, and it keeps running unwatched.
+                    try
+                    {
+                        board.Say($"[{DateTime.Now:HH:mm:ss}] ** could not read the log " +
+                                  $"or write the report just now: {e.Message} — still " +
+                                  "watching, and it will try the same update again.");
+                    }
+                    catch (IOException) { /* nowhere to say it */ }
+                }
+            }
         }
 
         Console.WriteLine();

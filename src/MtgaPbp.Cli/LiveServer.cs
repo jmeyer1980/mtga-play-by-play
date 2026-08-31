@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
@@ -29,7 +29,7 @@ namespace MtgaPbp.Cli;
 public sealed class LiveServer(string rootDirectory, int port) : IDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, port);
-    private readonly List<StreamWriter> _subscribers = [];
+    private readonly List<Subscriber> _subscribers = [];
     private readonly CancellationTokenSource _cts = new();
 
     /// <summary>The port actually bound — asked of the listener because a requested
@@ -47,20 +47,34 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
         _ = Task.Run(AcceptLoop);
     }
 
-    /// <summary>Tells every open page that the archive changed.</summary>
+    /// <summary>How many pages are currently subscribed to the change stream.</summary>
     /// <remarks>
-    /// The writes happen outside the lock: they block until the peer accepts the
-    /// bytes, and holding the lock through that would let one stalled page make
-    /// every other caller queue behind it. The socket send timeout set in
-    /// <see cref="Serve"/> bounds how long a dead subscriber can stall this call
-    /// itself before it is noticed and dropped.
+    /// Here for the test that pins the reaping in <see cref="Subscribe"/>: a leak whose
+    /// only symptom is a number that quietly climbs all evening cannot be caught by
+    /// asserting on anything the pages receive, because every page still receives
+    /// everything. The count is the symptom, so the count is what is checked.
     /// </remarks>
-    public void NotifyChanged()
+    public int Subscribers { get { lock (_subscribers) return _subscribers.Count; } }
+
+    /// <summary>Tells every open page that the archive changed.</summary>
+    public void NotifyChanged() => Deliver("event: changed\ndata: 1\n\n");
+
+    /// <summary>
+    /// Writes one frame to every subscriber, and drops the ones it cannot reach.
+    /// </summary>
+    /// <remarks>
+    /// The writes happen outside the list lock: they block until the peer accepts the
+    /// bytes, and holding the lock through that would let one stalled page make every
+    /// other caller queue behind it. The socket send timeout set in <see cref="Serve"/>
+    /// bounds how long a dead subscriber can stall this call itself before it is
+    /// noticed and dropped.
+    /// </remarks>
+    private void Deliver(string frame)
     {
-        StreamWriter[] targets;
+        Subscriber[] targets;
         lock (_subscribers) targets = [.. _subscribers];
 
-        List<StreamWriter>? dead = null;
+        List<Subscriber>? dead = null;
         foreach (var s in targets)
         {
             try
@@ -68,10 +82,10 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
                 // Per-writer lock: two overlapping notifications must not interleave
                 // bytes inside one subscriber's stream. The list lock above guards
                 // membership only, so this is the only thing serializing the writes.
-                lock (s)
+                lock (s.Writer)
                 {
-                    s.Write("event: changed\ndata: 1\n\n");
-                    s.Flush();
+                    s.Writer.Write(frame);
+                    s.Writer.Flush();
                 }
             }
             catch
@@ -81,9 +95,83 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
             }
         }
 
-        if (dead is null) return;
+        Drop(dead);
+    }
+
+    /// <summary>Forgets and closes subscribers that are no longer worth writing to.</summary>
+    private void Drop(List<Subscriber>? dead)
+    {
+        if (dead is null || dead.Count == 0) return;
         lock (_subscribers)
             foreach (var s in dead) _subscribers.Remove(s);
+        foreach (var s in dead) s.Dispose();
+    }
+
+    /// <summary>
+    /// Drops every subscriber whose page has gone away.
+    /// </summary>
+    /// <remarks>
+    /// Until now the list was pruned only by a write that failed, so on an evening with
+    /// no matches — no captures, no rebuilds, nothing to notify — every reload left its
+    /// socket in the list and took another, and a tab opened and closed a dozen times
+    /// was still counted a dozen times (#132).
+    /// <para>
+    /// Asked of the socket rather than answered by writing to it. Measured against a
+    /// closed loopback peer: the first write after the close succeeds and only the
+    /// second fails, so a write-probe would reap every connection exactly one round
+    /// late — and it would cost every live page a wakeup to learn something about the
+    /// dead ones. Readable with nothing to read is the peer's FIN instead, and it is
+    /// true immediately; an <c>EventSource</c> sends nothing after its request, so
+    /// anything actually readable is a page talking, which is not this.
+    /// </para>
+    /// </remarks>
+    private void Reap()
+    {
+        Subscriber[] targets;
+        lock (_subscribers) targets = [.. _subscribers];
+
+        List<Subscriber>? dead = null;
+        foreach (var s in targets)
+            if (s.HasGoneAway) (dead ??= []).Add(s);
+
+        Drop(dead);
+    }
+
+    /// <summary>One page holding the change stream open.</summary>
+    /// <remarks>
+    /// The client travels with the writer because both are needed to let a subscriber
+    /// go: the socket is what can be asked whether the page is still there, and the
+    /// writer is what owns it once it is not. Keeping only the writer is why a dropped
+    /// subscriber used to hold its handle until a garbage collection noticed — the same
+    /// leak by a slower route.
+    /// </remarks>
+    private sealed record Subscriber(TcpClient Client, StreamWriter Writer) : IDisposable
+    {
+        public bool HasGoneAway
+        {
+            get
+            {
+                // Any failure to ask counts as an answer: a socket that cannot say
+                // whether it is still there is one nothing will be written to again.
+                try
+                {
+                    return !Client.Connected ||
+                           (Client.Client.Poll(0, SelectMode.SelectRead) && Client.Available == 0);
+                }
+                catch
+                {
+                    return true;
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            // Same per-writer lock as Deliver, so a close cannot land in the middle of
+            // a notification's write.
+            try { lock (Writer) Writer.Dispose(); } catch { /* gone */ }
+            try { Client.Dispose(); } catch { /* gone */ }
+        }
     }
 
     private async Task AcceptLoop()
@@ -229,6 +317,11 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
     /// </remarks>
     private void Subscribe(TcpClient client, StreamWriter writer)
     {
+        // Every page that has gone away is dropped here, before this one joins them.
+        // A reload is a close and a subscribe, so this is the moment that comes around
+        // on the quiet evenings when nothing else prunes the list.
+        Reap();
+
         lock (writer)
         {
             writer.Write("HTTP/1.1 200 OK\r\n");
@@ -238,7 +331,7 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
             writer.Flush();
         }
 
-        lock (_subscribers) _subscribers.Add(writer);
+        lock (_subscribers) _subscribers.Add(new Subscriber(client, writer));
 
         lock (writer)
         {
@@ -246,8 +339,8 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
             writer.Flush();
         }
 
-        // The socket stays open; NotifyChanged writes to it and drops it when it dies.
-        _ = client;
+        // The socket stays open, held by the Subscriber added above — which is also
+        // what closes it, once a write fails or Reap finds the page gone.
     }
 
     private void ServeFile(StreamWriter writer, string path)
@@ -299,12 +392,7 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
         try { _listener.Stop(); } catch { /* already stopped */ }
         lock (_subscribers)
         {
-            foreach (var s in _subscribers)
-            {
-                // Same per-writer lock as NotifyChanged, so a dispose cannot land
-                // in the middle of a notification's write.
-                try { lock (s) s.Dispose(); } catch { /* gone */ }
-            }
+            foreach (var s in _subscribers) s.Dispose();
             _subscribers.Clear();
         }
         _cts.Dispose();
