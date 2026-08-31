@@ -222,8 +222,12 @@ public static class Program
     /// <c>Prune</c> is the retention cap's account of itself and travels for the same
     /// reason — null when the cap is off or had nothing to do, and otherwise carrying
     /// both what to say and whether it is reporting a deletion or refusing one.
+    /// <c>Logs</c> is what this capture noticed about the rolling buffer it read from —
+    /// matches rescued from an already-rotated log, and rotations that happened while
+    /// nothing was watching — and travels for the third time for the same reason (#135).
     /// </returns>
-    private static (int Exit, int Written, string? Drift, PruneReport? Prune) CaptureCore(
+    private static (int Exit, int Written, string? Drift, PruneReport? Prune,
+                    IReadOnlyList<string> Logs) CaptureCore(
         Config cfg, bool quiet, bool prune, RawArchive? shared = null)
     {
         // One ledger per archive, when the caller has one to lend. `watch` runs a poll
@@ -244,13 +248,36 @@ public static class Program
         var slices = 0;
         var sawAnyLog = false;
 
-        foreach (var log in cfg.LogPaths.Where(File.Exists))
+        // Asked before a line is read, because the question is what the logs held when
+        // this capture began — once the run is over, the record has been replaced.
+        var sessions = new LogSessions(cfg.ArchiveDir);
+        var rotated = sessions.Observe(cfg.LogPaths);
+        var recovered = 0;
+
+        for (var i = 0; i < cfg.LogPaths.Length; i++)
         {
+            var log = cfg.LogPaths[i];
+            if (!File.Exists(log)) continue;
+
             sawAnyLog = true;
+
+            // Everything past the first entry is a log Arena has already rotated out of
+            // use, so a match found there and not already archived was one restart from
+            // being gone — see LogSessions for why the ordering carries that meaning.
+            var alreadyRotated = i > 0;
+
             foreach (var slice in MatchSlicer.Slice(Offering(LogScanner.Scan(log, stats), ledger)))
             {
                 slices++;
-                if (archive.Write(slice)) written++;
+
+                // Asked before the write, not after it. Write returns true for a match
+                // it added AND for one it improved — a re-capture that finally carries
+                // the decklist, say — and an improvement is not a rescue.
+                var isNew = !archive.Contains(slice.MatchId);
+
+                if (!archive.Write(slice)) continue;
+                written++;
+                if (alreadyRotated && isNew) recovered++;
             }
         }
 
@@ -265,7 +292,7 @@ public static class Program
                 "error: no Arena log found. Looked for:\n  " +
                 string.Join("\n  ", cfg.LogPaths) +
                 "\nSet \"LogPaths\" in mtga-pbp.json if Arena is installed elsewhere.");
-            return (2, 0, null, null);
+            return (2, 0, null, null, []);
         }
 
         if (!quiet)
@@ -298,9 +325,29 @@ public static class Program
                 "marked as missing data in the report.");
         }
 
+        // Recorded only now, so that a capture which threw part-way leaves the previous
+        // record standing and the rotation it was about to report is reported by the
+        // next run instead of being swallowed by a half-finished one.
+        sessions.Commit();
+
+        var logs = new List<string>();
+
+        // Said first because it is the concrete one: these matches exist, they are in
+        // the archive now, and the only reason they are is that this run happened
+        // before the next restart did.
+        if (recovered > 0)
+            logs.Add(
+                $"{recovered} match{(recovered == 1 ? " was" : "es were")} recovered " +
+                $"from a log Arena had already rotated out — one more restart and " +
+                $"{(recovered == 1 ? "it" : "they")} would have been gone for good. " +
+                "Capture more often, or leave `mtga-pbp watch` running while you play.");
+
+        if (rotated is not null) logs.Add(rotated);
+
         var pruned = Prune(cfg, archive, prune);
         if (!quiet && pruned is { } report) Console.WriteLine(report.Message);
-        return (0, written, drift, pruned);
+        if (!quiet) foreach (var notice in logs) Console.WriteLine($"warning: {notice}");
+        return (0, written, drift, pruned, logs);
     }
 
     /// <summary>
@@ -576,7 +623,8 @@ public static class Program
                 // it ends, and that rewrite leaves the count unchanged — which is
                 // exactly the update worth showing, since only then does the transcript
                 // know how it finished.
-                var (exit, written, drift, pruned) = CaptureCore(cfg, quiet: true, prune, archive);
+                var (exit, written, drift, pruned, logNotices) =
+                    CaptureCore(cfg, quiet: true, prune, archive);
 
                 // Said through the board so it scrolls above the pinned block and stays.
                 // Once per watch session: the counts in the message grow every poll, so
@@ -592,6 +640,14 @@ public static class Program
                 // once — under the guard an automatic prune is small and rare anyway.
                 if (pruned is { } pruneReport && (!pruneReport.Held || said.Add("prune-held")))
                     board.Say($"[{DateTime.Now:HH:mm:ss}] ** {pruneReport.Message}");
+
+                // Through the board like the two above, and NOT deduplicated, because
+                // unlike a drift or a cap these are events rather than standing
+                // conditions and each one is a different set of matches. They cannot
+                // repeat on their own either: a rescued match is archived and stops
+                // being new, and a noticed rotation is recorded and stops being news.
+                foreach (var notice in logNotices)
+                    board.Say($"[{DateTime.Now:HH:mm:ss}] ** {notice}");
 
                 if (exit == 0 && written > 0) owed = true;
                 if (owed)
