@@ -55,6 +55,10 @@ public class GoldenFileTests
     internal const string Bo3Fixture = "bo3-match.json.gz";
     internal const string Bo3MatchId = "sample-bo3-0001";
 
+    /// <summary>The rendered documents each fixture is pinned against.</summary>
+    internal const string SampleGolden = "sample-match.expected.md";
+    internal const string Bo3Golden = "bo3-match.expected.md";
+
     internal static string[] ReadFixture(string fileName = SampleFixture)
     {
         using var fs = File.OpenRead(Path.Combine(FixtureDir, fileName));
@@ -75,11 +79,35 @@ public class GoldenFileTests
         new EventExtractor(FixtureCardDb.Load(FixtureDir))
             .Extract(matchId, ReadFixture(fileName));
 
-    // The golden file lives beside the source, not in the copied output directory,
-    // so regenerating it updates the checked-in copy.
-    private static string GoldenPath => Path.Combine(
+    // Golden files live beside the source, not in the copied output directory, so
+    // regenerating one updates the checked-in copy.
+    internal static string GoldenPath(string name) => Path.Combine(
         TestContext.CurrentContext.TestDirectory,
-        "..", "..", "..", "Fixtures", "sample-match.expected.md");
+        "..", "..", "..", "Fixtures", name);
+
+    /// <summary>
+    /// Compares a rendered document against its checked-in copy.
+    /// </summary>
+    /// <remarks>
+    /// The first run writes the file and fails on purpose. A golden file regenerated
+    /// without being read stops being a test, and failing is what makes somebody look —
+    /// CONTRIBUTING spells the two-run flow out for exactly that reason.
+    /// </remarks>
+    private static void AssertMatchesGolden(string name, string rendered)
+    {
+        var path = GoldenPath(name);
+        var actual = rendered.ReplaceLineEndings("\n");
+
+        if (!File.Exists(path))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, actual);
+            Assert.Fail($"Golden file created at {Path.GetFullPath(path)}. " +
+                        "Review it for sanity, then re-run.");
+        }
+
+        Assert.That(actual, Is.EqualTo(File.ReadAllText(path).ReplaceLineEndings("\n")));
+    }
 
     /// <summary>
     /// Runs against the checked-in card-name fixture rather than Arena's 237 MB
@@ -147,20 +175,31 @@ public class GoldenFileTests
     }
 
     [Test]
-    public void Rendered_markdown_matches_the_golden_file()
-    {
-        var actual = MarkdownRenderer.Render(Extract()).ReplaceLineEndings("\n");
+    public void Rendered_markdown_matches_the_golden_file() =>
+        AssertMatchesGolden(SampleGolden, MarkdownRenderer.Render(Extract()));
 
-        if (!File.Exists(GoldenPath))
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(GoldenPath)!);
-            File.WriteAllText(GoldenPath, actual);
-            Assert.Fail($"Golden file created at {Path.GetFullPath(GoldenPath)}. " +
-                        "Review it for sanity, then re-run.");
-        }
-
-        Assert.That(actual, Is.EqualTo(File.ReadAllText(GoldenPath).ReplaceLineEndings("\n")));
-    }
+    /// <summary>
+    /// The same document check over the Bo3, which had none.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="MultiGameTests"/> asks the multi-game path about twenty specific
+    /// questions and gets twenty right answers, but nothing has ever read the whole
+    /// rendered match as one document. Everything between the assertions is therefore
+    /// unpinned: the order the two games appear in, the blank lines around each game
+    /// heading, where a game's result line sits relative to the next game's opening,
+    /// and what the subtitle says once there is more than one game to count. Any of
+    /// those could change today and the suite would stay green (#136).
+    /// <para>
+    /// It is the cheapest coverage in the project — the fixture, the extraction and the
+    /// environment pinning were all already here, so this is one method and one checked
+    /// -in file — and it covers precisely the part the targeted assertions cannot,
+    /// because a targeted assertion only sees what somebody already thought to ask.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void Rendered_bo3_markdown_matches_the_golden_file() =>
+        AssertMatchesGolden(Bo3Golden,
+            MarkdownRenderer.Render(ExtractFixture(Bo3Fixture, Bo3MatchId)));
 
     /// <summary>
     /// The sample match is the case the land rule exists for: a mono-white deck whose
