@@ -65,7 +65,7 @@
 - You cast Elspeth's Smite (declare attackers), targeting Hinterland Sanctifier
 - Elspeth's Smite deals 3 damage to Hinterland Sanctifier
 - Elspeth's Smite resolves
-- Hinterland Sanctifier is put into the graveyard
+- Hinterland Sanctifier is exiled
   *Opponent controls: Ajani's Pridemate 3/3*
 
 ## Turn 4 — You  (You 20 · Opponent 21)

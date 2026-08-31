@@ -784,6 +784,29 @@ public static class Narrator
         _ => ""
     };
 
+    /// <summary>
+    /// Where a destroyed or sacrificed permanent actually went, when a replacement effect
+    /// sent it somewhere other than the graveyard.
+    /// </summary>
+    /// <remarks>
+    /// "destroys X" and "sacrifices X" both name the act and leave the outcome to the
+    /// reader, who takes it as a burial — so a Rest in Peace effect turning a death into
+    /// an exile made every later graveyard interaction stop making sense with nothing on
+    /// the page to explain it (#126).
+    /// <para>
+    /// Only the graveyard is silent, because only the graveyard is what the verb already
+    /// implies. Counted over 1,242 matches: 1,653 destroys and 1,690 sacrifices end in a
+    /// graveyard, against 3 and 5 that end in exile — so this is quiet on all but eight
+    /// lines in the archive, and those eight were wrong.
+    /// </para>
+    /// </remarks>
+    private static string Instead(GameEvent e) => e.ToZone switch
+    {
+        "ZoneType_Exile" => " — exiled instead",
+        "ZoneType_Command" => " — it goes to the command zone instead",
+        _ => ""
+    };
+
     private static string? Phrase(GameEvent e, Transcript t, Density density) => e.Kind switch
     {
         EventKind.TurnStart =>
@@ -818,9 +841,9 @@ public static class Narrator
         // Naming what caused it is the difference between a list of things that
         // happened and a transcript you can follow.
         EventKind.Destroyed when e.SourceName is not null =>
-            e.CauseName is not null
+            (e.CauseName is not null
                 ? $"{e.CauseName} destroys {e.SourceName}"
-                : $"{e.SourceName} is destroyed",
+                : $"{e.SourceName} is destroyed") + Instead(e),
 
         EventKind.Exiled when e.SourceName is not null =>
             e.CauseName is not null
@@ -833,7 +856,8 @@ public static class Narrator
                 : $"{e.SourceName} returns{ReturnedTo(e)}",
 
         EventKind.Sacrificed when e.SourceName is not null =>
-            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "sacrifice", "sacrifices", t)} {e.SourceName}",
+            $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "sacrifice", "sacrifices", t)} "
+            + e.SourceName + Instead(e),
 
         EventKind.Milled when e.SourceName is not null =>
             e.CauseName is not null
@@ -849,10 +873,22 @@ public static class Narrator
         // on one line ("is put into the graveyard ×2", #18). An unrecorded destination
         // keeps the graveyard wording, because it is the right guess for every SBA
         // this has ever been measured against.
-        EventKind.StateBasedAction when e.SourceName is not null =>
-            e.ToZone == "ZoneType_Command"
-                ? $"{e.SourceName} returns to the command zone"
-                : $"{e.SourceName} is put into the graveyard",
+        EventKind.StateBasedAction when e.SourceName is not null => e.ToZone switch
+        {
+            "ZoneType_Command" => $"{e.SourceName} returns to the command zone",
+
+            // A creature that died to damage while something was replacing deaths with
+            // exile went to exile, and this said it was buried. 92 of them, across 71
+            // matches, one of them an opponent's commander — the difference between
+            // gone and recurrable (#126).
+            "ZoneType_Exile" => $"{e.SourceName} is exiled",
+
+            // Everything else, which the archive says is always the graveyard: of 6,090
+            // state-based deaths, the only destinations ever seen are the graveyard, the
+            // command zone and exile. A destination the log did not name lands here too,
+            // where it always used to.
+            _ => $"{e.SourceName} is put into the graveyard"
+        },
 
         // Zero is not a small amount of damage, it is none — a 0/4 blocker deals no
         // damage at all under the rules, and "Gleaming Barrier deals 0 damage to Hare
