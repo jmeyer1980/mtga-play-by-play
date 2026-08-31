@@ -80,10 +80,15 @@ cd C:\path\to\mtga-pbp
 .\mtga-pbp.exe watch
 ```
 
-Leave that running and the report updates itself as you play. It opens
-`http://127.0.0.1:8787/`, polls the log, re-captures when a match ends, and pushes a
-refresh to the open page. Your scroll position and whatever is in the search box both
-survive the update — it swaps the rows rather than reloading.
+Leave that running and the report updates itself as you play. It serves
+`http://127.0.0.1:8787/` — the address is printed on startup — polls the log,
+re-captures when a match ends, and pushes a refresh to the open page. Your scroll
+position and whatever is in the search box both survive the update — it swaps the rows
+rather than reloading.
+
+It does not open a browser for you unless you ask. Add `--open` for this run, or set
+`"OpenAfterBuild": true` in `mtga-pbp.json` to have every run do it — the same setting
+the other commands honour.
 
 Pass a different port if 8787 is taken: `.\mtga-pbp.exe watch 9000`. It listens on
 loopback only, so nothing outside your machine can reach it.
@@ -311,10 +316,13 @@ schtasks /delete /tn "mtga-pbp watch" /f
 ```
 
 Either way you get a visible `watch` window at every logon — that is what `/it` is for
-above, and it is deliberate: the window is the scoreboard, and a `watch` running where
-you cannot see it also cannot open a browser for you. And either way it does open your
-browser on the report each time it starts; `"OpenAfterBuild"` does not currently apply
-to `watch`.
+above, and it is deliberate: the window is the scoreboard, and a `watch` started where
+you cannot see it is a `watch` you cannot tell is running.
+
+It will **not** open a browser at every logon. `watch` opens the report only when
+`"OpenAfterBuild"` is on, the same setting the other commands use, and it is off unless
+you turned it on. The window prints the address on its second line either way, so the
+report is always one click from the scoreboard.
 
 ## Configuration
 
