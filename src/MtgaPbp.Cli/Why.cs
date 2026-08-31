@@ -102,7 +102,18 @@ public static class Why
             return 4;
         }
 
-        var raw = archive.ReadLines(matchId);
+        // Named rather than thrown: `why` is a diagnostic, and a stack trace is the
+        // least diagnostic thing it could print about a file it cannot read (#131).
+        var read = archive.TryRead(matchId);
+        if (read.Damage is { } why)
+        {
+            Console.Error.WriteLine($"the archived slice for {matchId} could not be read ({why})");
+            Console.Error.WriteLine(
+                "deleting it lets a later capture rewrite it, if the match is still in an Arena log");
+            return 4;
+        }
+
+        var raw = read.Lines;
         using var cards = OpenCards(cfg);
         var transcript = new EventExtractor(cards).Extract(matchId, raw);
         var lines = Narrator.Narrate(transcript, Density.Verbose);

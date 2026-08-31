@@ -842,31 +842,15 @@ public static class Program
             // no guard, so a single torn file left the other twelve hundred pages
             // unwritten and the build dead on an unhandled exception (#131). The archive
             // is the product; one damaged match must cost one match.
-            IReadOnlyList<string> lines;
-            try
+            var read = archive.TryRead(matchId);
+            if (read.Damage is { } why)
             {
-                lines = archive.ReadLines(matchId);
-            }
-            catch (Exception e) when (e is InvalidDataException or IOException
-                                        or UnauthorizedAccessException)
-            {
-                // Named, and with the way out, because there is one: the slice is
-                // derived from a log Arena may still be holding, so deleting the file
-                // lets the next capture write it again from source. Silence here is what
-                // made the archive's one unrecoverable failure mode unrecoverable.
-                Damaged(matchId, e.GetType().Name);
+                Damaged(matchId, why);
                 continue;
             }
 
-            // Zero lines is damage too, not an empty match. Every id in this loop comes
-            // from the ledger, so the archive is claiming the match exists — a slice
-            // that is missing, or that is there and holds nothing, is the quiet half of
-            // #131 and used to be skipped without a word.
-            if (lines.Count == 0)
-            {
-                Damaged(matchId, "no lines");
-                continue;
-            }
+            var lines = read.Lines;
+            if (lines.Count == 0) continue;
 
             var transcript = extractor.Extract(matchId, lines);
 
@@ -980,9 +964,21 @@ public static class Program
         var gaps = new List<LogGap>();
         var matchesWithGaps = 0;
 
+        var unreadable = 0;
         foreach (var matchId in archive.MatchIds())
         {
-            var lines = archive.ReadLines(matchId);
+            // A damaged slice costs one match here too. `stats` walks the whole archive
+            // to report what the parser could not account for, and dying on the first
+            // torn file would be the loudest possible way to report nothing (#131).
+            var read = archive.TryRead(matchId);
+            if (read.Damage is { } why)
+            {
+                unreadable++;
+                Console.Error.WriteLine($"warning: could not read {matchId}.json.gz ({why})");
+                continue;
+            }
+
+            var lines = read.Lines;
             if (lines.Count == 0) continue;
             matches++;
             var t = extractor.Extract(matchId, lines);
@@ -996,7 +992,8 @@ public static class Program
             gaps.AddRange(t.Gaps);
         }
 
-        Console.WriteLine($"{matches} match(es) in archive\n");
+        Console.WriteLine($"{matches} match(es) in archive"
+                          + (unreadable > 0 ? $", {unreadable} unreadable" : "") + "\n");
         ReportGaps(gaps, matchesWithGaps, matches);
         Console.WriteLine("unhandled annotation types:");
         foreach (var (k, v) in unknown.OrderByDescending(x => x.Value))

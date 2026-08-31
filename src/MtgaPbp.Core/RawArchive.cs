@@ -218,14 +218,27 @@ public sealed class RawArchive
             var path = Path.Combine(_rawDir, $"{slice.MatchId}.json.gz");
             var tmp = path + ".tmp";
 
-            using (var fs = File.Create(tmp))
-            using (var gz = new GZipStream(fs, CompressionLevel.Optimal))
-            using (var w = new StreamWriter(gz))
+            try
             {
-                foreach (var line in slice.RawLines) w.WriteLine(line);
-            }
+                using (var fs = File.Create(tmp))
+                using (var gz = new GZipStream(fs, CompressionLevel.Optimal))
+                using (var w = new StreamWriter(gz))
+                {
+                    foreach (var line in slice.RawLines) w.WriteLine(line);
+                }
 
-            File.Move(tmp, path, overwrite: true);
+                File.Move(tmp, path, overwrite: true);
+            }
+            catch
+            {
+                // Swept up the way SaveLedger sweeps up its own, and for the same
+                // reason: a swap that failed leaves a temp file holding nothing the
+                // next capture will not write again from the log, so it is removed
+                // rather than left in raw/ to accumulate and to look like something
+                // worth recovering.
+                try { File.Delete(tmp); } catch (IOException) { /* the next write overwrites it */ }
+                throw;
+            }
 
             _ledger[slice.MatchId] = new ArchiveEntry(
                 slice.MatchId, slice.StartedAtMs, slice.EndedAtMs, slice.Incomplete, favorite,
@@ -363,6 +376,40 @@ public sealed class RawArchive
             // ACL or an odd path must not be able to abort a build over a number that
             // only decides whether some work can be skipped.
             return null;
+        }
+    }
+
+    /// <summary>
+    /// A match's lines, or why they could not be had.
+    /// </summary>
+    /// <param name="Lines">The archived lines, empty when <paramref name="Damage"/> is set.</param>
+    /// <param name="Damage">
+    /// A short reason the slice could not be read, or null when it was. Words rather
+    /// than an exception because it is printed: every caller that has one wants to name
+    /// the match and carry on.
+    /// </param>
+    public readonly record struct SliceRead(IReadOnlyList<string> Lines, string? Damage);
+
+    /// <summary>
+    /// Reads a slice without making the caller decide what a damaged one means.
+    /// </summary>
+    /// <remarks>
+    /// One damaged match should cost one match, and that has to be true of every command
+    /// that walks the archive rather than only of <c>build</c> — a single torn slice used
+    /// to end <c>stats</c> and <c>why</c> on a stack trace as well. Centralised so the
+    /// next command to read the archive inherits the guard instead of forgetting it.
+    /// </remarks>
+    public SliceRead TryRead(string matchId)
+    {
+        try
+        {
+            var lines = ReadLines(matchId);
+            return new SliceRead(lines, lines.Count == 0 && Contains(matchId) ? "no lines" : null);
+        }
+        catch (Exception e) when (e is InvalidDataException or IOException
+                                    or UnauthorizedAccessException)
+        {
+            return new SliceRead([], e.GetType().Name);
         }
     }
 
