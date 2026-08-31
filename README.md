@@ -285,8 +285,10 @@ schtasks /create /tn "mtga-pbp watch" /tr "\"C:\path\to\mtga-pbp\mtga-pbp.exe\" 
 - The `\"` around the program path are deliberate. `/tr` takes the whole command as one
   string, so the path has to be quoted *inside* it, and those inner quotes have to be
   escaped from the shell. Type this one in `cmd`, not PowerShell, which quotes
-  differently and will not pass it through intact. If your path has no spaces in it you
-  can drop the `\"` and the escaping question with them.
+  differently and will not pass it through intact. Use it exactly as written whatever
+  your path looks like — the outer quotes are not optional even when the path has no
+  spaces, because the command inside them does (the one before `watch`), and the inner
+  pair costs nothing when it turns out not to have been needed.
 - `/sc onlogon` runs it when you log in, `/it` runs it as you and interactively so it
   has a window, and `/f` replaces an existing task of the same name — so re-running the
   line is also how you update the path.
@@ -298,8 +300,11 @@ schtasks /query /tn "mtga-pbp watch" /v /fo list
 ```
 
 `Task To Run` should read `"C:\path\to\mtga-pbp\mtga-pbp.exe" watch`, with the quotes
-around the path and nothing around the argument. `schtasks /delete /tn "mtga-pbp watch"
-/f` removes it again.
+around the path and nothing around the argument. To remove it again:
+
+```bat
+schtasks /delete /tn "mtga-pbp watch" /f
+```
 
 Either way you get a visible `watch` window at every logon — that is what `/it` is for
 above, and it is deliberate: the window is the scoreboard, and a `watch` running where
