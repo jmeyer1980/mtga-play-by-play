@@ -44,7 +44,7 @@ public static class Program
                 "capture" => Capture(cfg, prune),
                 "build" => Build(cfg, open, rebuild: rebuild),
                 "stats" => Stats(cfg),
-                "watch" => Watch(cfg, operands, prune, rebuild),
+                "watch" => Watch(cfg, operands, open, prune, rebuild),
                 "collection" => ImportCollection(cfg, operands.FirstOrDefault()),
                 "why" => Why.Run(cfg, operands.FirstOrDefault(), operands.Skip(1).ToArray()),
                 "keep" => Favorite(cfg, operands.FirstOrDefault(), on: true),
@@ -441,7 +441,17 @@ public static class Program
     /// so change notifications fire continuously and tell us nothing useful. Length is
     /// the honest signal, and a shrink means Arena restarted and truncated the log.
     /// </remarks>
-    private static int Watch(Config cfg, string[] operands, bool prune, bool rebuild)
+    /// <param name="open">
+    /// Whether to show the report in a browser once there is one to show. Comes from
+    /// the same <c>OpenAfterBuild</c>-or-<c>--open</c> answer every other command uses:
+    /// `watch` opened a browser unconditionally and consulted neither, which was
+    /// invisible while it was a thing people started by hand — you ran it BECAUSE you
+    /// wanted the report — and stopped being invisible the moment the README started
+    /// recommending it at logon, where it means a tab every morning and a setting that
+    /// looks like it should stop that and does nothing (#170).
+    /// </param>
+    private static int Watch(
+        Config cfg, string[] operands, bool open, bool prune, bool rebuild)
     {
         var port = int.TryParse(operands.FirstOrDefault(), out var p) ? p : 8787;
         var interval = TimeSpan.FromSeconds(3);
@@ -504,12 +514,19 @@ public static class Program
 
         Console.WriteLine($"watching {cfg.LogPaths.FirstOrDefault()}");
 
+        // Said at once, and said whether or not a browser is coming. The board carries
+        // the address too, but not until the first build has something to draw, and on
+        // a large archive that is half a minute of a running program not saying where
+        // it can be reached. That silence did not matter while a browser always opened
+        // on top of it; it is the whole experience for anyone who has turned that off.
+        Console.WriteLine($"serving  {server.Url}");
+
         // On anything but a first run there is a report to show right now. A first
         // run has nothing yet — opening the browser onto a 404 with no script in it
         // would strand the user there, because a 404 cannot subscribe to the change
         // stream that would have refreshed it — so the open waits for the build.
         var hadReport = File.Exists(Path.Combine(cfg.OutputDir, "index.html"));
-        if (hadReport) OpenInBrowser(server.Url);
+        if (open && hadReport) OpenInBrowser(server.Url);
 
         Capture(cfg, prune, archive);
 
@@ -536,7 +553,7 @@ public static class Program
         // Any page that connected during the build gets the fresh rows now — and a
         // first run finally has something worth opening a browser onto.
         server.NotifyChanged();
-        if (!hadReport) OpenInBrowser(server.Url);
+        if (open && !hadReport) OpenInBrowser(server.Url);
 
         // The standing state is drawn once and repainted; only the notable lines scroll.
         // See LiveBoard for why that split exists — 41 lines an evening saying "report
