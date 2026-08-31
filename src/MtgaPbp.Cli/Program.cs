@@ -772,6 +772,21 @@ public static class Program
         // What the last build already worked out. The card database is part of the
         // question because every name, face and ability on a page comes out of it.
         var cache = BuildCache.Load(cfg.OutputDir, ignore: rebuild);
+        var damaged = new List<string>();
+
+        // Named, and with the way out, because there is one: the slice is derived from a
+        // log Arena may still be holding, so deleting the file lets the next capture
+        // write it again from source. Silence is what made the archive's one
+        // unrecoverable failure unrecoverable.
+        void Damaged(string id, string why)
+        {
+            damaged.Add(id);
+            if (quiet) return;
+            Console.Error.WriteLine(
+                $"warning: could not read {id}.json.gz ({why}). That match is left out " +
+                "of this build. Deleting the file lets a later capture rewrite it, if " +
+                "the match is still in an Arena log.");
+        }
         var cardStamp = CardDbStamp(dbPath);
         var reused = 0;
 
@@ -823,8 +838,35 @@ public static class Program
                 continue;
             }
 
-            var lines = archive.ReadLines(matchId);
-            if (lines.Count == 0) continue;
+            // One unreadable slice used to take the whole report with it: this loop had
+            // no guard, so a single torn file left the other twelve hundred pages
+            // unwritten and the build dead on an unhandled exception (#131). The archive
+            // is the product; one damaged match must cost one match.
+            IReadOnlyList<string> lines;
+            try
+            {
+                lines = archive.ReadLines(matchId);
+            }
+            catch (Exception e) when (e is InvalidDataException or IOException
+                                        or UnauthorizedAccessException)
+            {
+                // Named, and with the way out, because there is one: the slice is
+                // derived from a log Arena may still be holding, so deleting the file
+                // lets the next capture write it again from source. Silence here is what
+                // made the archive's one unrecoverable failure mode unrecoverable.
+                Damaged(matchId, e.GetType().Name);
+                continue;
+            }
+
+            // Zero lines is damage too, not an empty match. Every id in this loop comes
+            // from the ledger, so the archive is claiming the match exists — a slice
+            // that is missing, or that is there and holds nothing, is the quiet half of
+            // #131 and used to be skipped without a word.
+            if (lines.Count == 0)
+            {
+                Damaged(matchId, "no lines");
+                continue;
+            }
 
             var transcript = extractor.Extract(matchId, lines);
 
@@ -892,7 +934,8 @@ public static class Program
         {
             Console.WriteLine(
                 $"built {summaries.Count} game(s)"
-                + (reused > 0 ? $" ({reused} unchanged, left alone)" : ""));
+                + (reused > 0 ? $" ({reused} unchanged, left alone)" : "")
+                + (damaged.Count > 0 ? $", {damaged.Count} unreadable" : ""));
             Console.WriteLine();
             Console.WriteLine($"  report:  {indexPath}");
             Console.WriteLine($"  cards:   {dbPath}");

@@ -67,6 +67,84 @@ public class RawArchiveTests
     private static MatchSlice At(string id, long started) =>
         new(id, started, started + 100, ["""{"a":1}"""], false);
 
+    /// <summary>
+    /// The archive's one unrecoverable failure: a slice that lost its contents was
+    /// defended by its own ledger entry. The comparisons consulted only the metadata —
+    /// which said complete, with a deck and no gaps — so a re-capture carrying the whole
+    /// match was refused, and the match could never heal (#131).
+    /// </summary>
+    [Test]
+    public void A_match_whose_slice_was_emptied_is_written_again()
+    {
+        var a = new RawArchive(_root);
+        a.Write(new MatchSlice("m1", 100, 200, ["""{"x":1}"""], false));
+
+        // What a crash mid-write used to leave behind.
+        File.WriteAllBytes(Path.Combine(_root, "raw", "m1.json.gz"), []);
+
+        Assert.That(a.Write(new MatchSlice("m1", 100, 200, ["""{"x":1}"""], false)), Is.True,
+            "the stored copy has nothing in it, so there is nothing to defend");
+        Assert.That(a.ReadLines("m1"), Is.EqualTo(new[] { """{"x":1}""" }));
+    }
+
+    /// <summary>
+    /// And a slice that is intact is still defended — a re-offer with nothing new in it
+    /// is refused, which is what keeps a capture from rewriting the whole archive.
+    /// </summary>
+    [Test]
+    public void An_intact_match_is_still_not_rewritten_for_nothing()
+    {
+        var a = new RawArchive(_root);
+        a.Write(new MatchSlice("m1", 100, 200, ["""{"x":1}"""], false));
+
+        Assert.That(a.Write(new MatchSlice("m1", 100, 200, ["""{"x":1}"""], false)), Is.False);
+    }
+
+    /// <summary>
+    /// The write goes through a temp file and swaps in, so a crash cannot leave a torn
+    /// slice where a whole match was. Asserted on the leftovers rather than by crashing:
+    /// nothing may be left behind beside the file.
+    /// </summary>
+    [Test]
+    public void Writing_a_slice_leaves_no_temporary_file_behind()
+    {
+        var a = new RawArchive(_root);
+        a.Write(new MatchSlice("m1", 100, 200, ["""{"x":1}"""], false));
+
+        var raw = Path.Combine(_root, "raw");
+        Assert.That(Directory.GetFiles(raw), Has.Exactly(1).Items);
+        Assert.That(Directory.GetFiles(raw, "*.tmp"), Is.Empty);
+    }
+
+    /// <summary>
+    /// A torn slice is an error and not an empty match. The caller has to be able to
+    /// tell "this match is damaged" from "there is no file", because only one of those
+    /// is worth telling anybody about — and the quiet case is the dangerous one: .NET's
+    /// decompressor does not always complain about a stream cut short, it just stops.
+    /// </summary>
+    [Test]
+    public void A_torn_slice_is_an_error_and_not_an_empty_match()
+    {
+        var a = new RawArchive(_root);
+        a.Write(new MatchSlice("m1", 100, 200, ["""{"x":1}"""], false));
+
+        // A gzip header and nothing after it: bytes on disk, no lines out, no complaint
+        // from the decompressor. This is the shape that used to make a match disappear.
+        File.WriteAllBytes(Path.Combine(_root, "raw", "m1.json.gz"), [0x1f, 0x8b, 0x08, 0x00, 0x99]);
+        Assert.That(() => a.ReadLines("m1"), Throws.InstanceOf<InvalidDataException>());
+
+        // And outright rubbish, which the decompressor does object to.
+        File.WriteAllText(Path.Combine(_root, "raw", "m1.json.gz"), "not a gzip file at all");
+        Assert.That(() => a.ReadLines("m1"), Throws.InstanceOf<InvalidDataException>());
+    }
+
+    /// <summary>No file is still no match, and says so without raising anything.</summary>
+    [Test]
+    public void A_match_with_no_file_reads_as_empty_rather_than_damaged()
+    {
+        Assert.That(new RawArchive(_root).ReadLines("never-archived"), Is.Empty);
+    }
+
     [Test]
     public void Prune_removes_the_oldest_until_the_cap_is_met()
     {
