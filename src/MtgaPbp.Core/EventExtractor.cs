@@ -1534,9 +1534,13 @@ public sealed class EventExtractor(ICardDb cards)
                 // FROM is the whole of a flashback, an escape or an adventure, and
                 // without it those read as an ordinary cast of a card that should not
                 // have been available (#127).
+                // Destroyed and Sacrificed join them because a death does not always
+                // end in a graveyard: measured over 1,242 matches, 3 destroys, 5
+                // sacrifices and 97 state-based deaths sent the card to exile instead,
+                // and every one of them was reported as a burial (#126).
                 var wantsZone = kind
                     is EventKind.ZoneMove or EventKind.Returned or EventKind.StateBasedAction
-                    or EventKind.SpellCast;
+                    or EventKind.SpellCast or EventKind.Destroyed or EventKind.Sacrificed;
 
                 // ...and its destination is refused, rather than merely unused. Every
                 // spell goes to the stack, so a cast's zone_dest says nothing no reader
