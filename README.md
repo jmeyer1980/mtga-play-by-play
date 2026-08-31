@@ -267,8 +267,10 @@ Two ways to make that happen without you remembering to.
 `shell:startup`, and drop it in that folder. No quoting to get wrong, and it runs as
 you, so its window is where you can see it.
 
-**Or a scheduled task**, if you would rather not have a window at all in your face.
-One line, in **Command Prompt** — no administrator needed:
+**Or a scheduled task**, if you would rather manage it from the command line than by
+remembering which folder a shortcut is in — it can be inspected, replaced and removed
+by name, and it survives a tidy-up of your Startup folder. One line, in **Command
+Prompt** — no administrator needed:
 
 ```bat
 schtasks /create /tn "mtga-pbp watch" /tr "\"C:\path\to\mtga-pbp\mtga-pbp.exe\" watch" /sc onlogon /it /f
@@ -285,8 +287,11 @@ schtasks /create /tn "mtga-pbp watch" /tr "\"C:\path\to\mtga-pbp\mtga-pbp.exe\" 
 `schtasks /query /tn "mtga-pbp watch"` shows whether it took, and
 `schtasks /delete /tn "mtga-pbp watch" /f` removes it.
 
-Either way, `watch` opens your browser on the report when it starts, every time —
-`"OpenAfterBuild"` does not currently apply to it.
+Either way you get a visible `watch` window at every logon — that is what `/it` is for
+above, and it is deliberate: the window is the scoreboard, and a `watch` running where
+you cannot see it also cannot open a browser for you. And either way it does open your
+browser on the report each time it starts; `"OpenAfterBuild"` does not currently apply
+to `watch`.
 
 ## Configuration
 
