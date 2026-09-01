@@ -90,11 +90,22 @@ public static class SessionCoach
     /// next morning greeting somebody with "you are 0-3" is describing a night that
     /// finished hours ago. Omit it to ask about the archive rather than about now.
     /// </param>
+    /// <param name="suggestRotation">
+    /// Whether the rotation rule may speak at all. False switches off <see
+    /// cref="NudgeKind.Rotate"/> for good rather than for one deck for one evening,
+    /// which is what <paramref name="silenced"/> does. The two are different answers to
+    /// different questions: "not this deck tonight" and "never, I am playing the deck I
+    /// play". A player who has decided which deck is theirs is not choosing between
+    /// decks, and to them a rotation suggestion is not advice, it is a losing streak
+    /// read back to them by their own tools. The verdict is unaffected — see the
+    /// fall-through below.
+    /// </param>
     public static Nudge? Check(
         IReadOnlyList<MatchSummary> rows,
         IndexStats stats,
         IReadOnlySet<string>? silenced = null,
-        long? nowMs = null)
+        long? nowMs = null,
+        bool suggestRotation = true)
     {
         var labelOf = stats.ByDeck
             .Where(d => d.Slug is not null)
@@ -133,7 +144,7 @@ public static class SessionCoach
             streak++;
         }
 
-        if (streak >= RotateAfter && silenced?.Contains(slug) != true)
+        if (suggestRotation && streak >= RotateAfter && silenced?.Contains(slug) != true)
         {
             var next = NextUp(stats, slug);
             return new Nudge(

@@ -32,6 +32,11 @@ In order of how often it is the cause:
   `"OpenAfterBuild": true` so the report opens by itself; if you are running your own
   build, either add that setting to `mtga-pbp.json`, run it from a terminal, or use
   `watch`, which stays open.
+- **The report suggested you switch decks and you do not want it to.** Set
+  `"SuggestDeckRotation": false` in `mtga-pbp.json`. That silences both the nudge and
+  the `next up if you switch:` line on the `watch` board, permanently and across
+  upgrades — the shipped config is a separate file and cannot turn it back on. The
+  30-game verdict is a different rule and stays.
 - **You set `MaxArchivedMatches` and nothing was deleted.** That is the guard, not a
   bug. A cap that would remove more than a tenth of the archive — and more than ten
   matches — is not applied on its own, because the archive is the only copy and there is

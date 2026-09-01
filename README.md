@@ -347,6 +347,15 @@ settings in `mtga-pbp.json`.**
 Paths are discovered automatically for a Steam install; set these only if Arena
 lives somewhere unusual.
 
+`"SuggestDeckRotation": false` switches off the one thing the tool volunteers an
+opinion about: the line that suggests rotating after three straight losses with one
+deck. It takes both halves of it — the `** … Want to switch it up?` nudge above the
+scoreboard and in the report, and the standing `next up if you switch:` line `watch`
+draws. On by default. If you play one deck on purpose, "switch it up" is not advice,
+it is your losing streak read back to you, so turn it off and the report goes back to
+saying what happened rather than what to do. Everything else stays: the once-per-deck
+line at 30 games is a record of a rate, not a suggestion, and it is unaffected.
+
 ## What it can and cannot tell you
 
 The log records only what your client was told, so a transcript is fog-of-war by
