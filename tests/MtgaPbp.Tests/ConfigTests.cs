@@ -183,6 +183,32 @@ public class ConfigTests
     }
 
     [Test]
+    public void Rotation_suggestions_are_on_until_the_user_says_otherwise()
+    {
+        Assert.That(Config.Default().SuggestDeckRotation, Is.True);
+
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile),
+            """{ "SuggestDeckRotation": false }""");
+        Assert.That(Config.Load(_dir).SuggestDeckRotation, Is.False);
+    }
+
+    /// <summary>
+    /// The point of switching it off is not hearing it again, so an upgrade must not
+    /// be able to undo that. The shipped layer is rewritten by every release and the
+    /// user layer is not, which is what makes the silence stick.
+    /// </summary>
+    [Test]
+    public void An_upgrade_cannot_switch_rotation_suggestions_back_on()
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile),
+            """{ "SuggestDeckRotation": false }""");
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "OpenAfterBuild": true }""");
+
+        Assert.That(Config.Load(_dir).SuggestDeckRotation, Is.False);
+    }
+
+    [Test]
     public void Load_keeps_defaults_for_fields_the_config_omits()
     {
         File.WriteAllText(Path.Combine(_dir, "mtga-pbp.json"), """

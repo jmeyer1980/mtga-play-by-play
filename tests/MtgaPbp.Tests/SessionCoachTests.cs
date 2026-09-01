@@ -277,6 +277,42 @@ public class SessionCoachTests
         if (n.Kind == NudgeKind.Verdict) Assert.That(n.Text, Does.Contain("rebuild"));
     }
 
+    // ---------- switched off ----------
+
+    /// <summary>
+    /// The rotation line is a suggestion, and a player who has already heard it and
+    /// decided is entitled to stop hearing it. Off is silence rather than a lower
+    /// volume: this is the one line that reaches the report and the live board both.
+    /// </summary>
+    [Test]
+    public void Rotation_suggestions_can_be_switched_off_entirely()
+    {
+        var rows = Run(Alpha, "Lost 0-1", "Lost 0-1", "Lost 0-1");
+        Assert.That(SessionCoach.Check(rows, IndexStats.From(rows), suggestRotation: false), Is.Null);
+    }
+
+    /// <summary>
+    /// Off silences the suggestion, not the coach. A verdict is a fact about a record
+    /// rather than an instruction, and the game that crosses the mark still states it —
+    /// so the switch must fall through to it instead of returning early.
+    /// </summary>
+    [Test]
+    public void Switching_rotation_off_still_lets_the_verdict_through()
+    {
+        // Alternating, then three straight losses to finish: a streak the rule would
+        // fire on, on the game that also reaches the evaluation mark.
+        var results = Enumerable.Range(0, SessionCoach.EvaluationAt)
+            .Select(i => i < SessionCoach.EvaluationAt - 3 && i % 2 == 0 ? "Won 1-0" : "Lost 0-1")
+            .ToArray();
+        var rows = Run(Alpha, results);
+        var stats = IndexStats.From(rows);
+
+        Assert.That(SessionCoach.Check(rows, stats)!.Kind, Is.EqualTo(NudgeKind.Rotate),
+            "there is a streak here to be silenced");
+        Assert.That(SessionCoach.Check(rows, stats, suggestRotation: false)!.Kind,
+            Is.EqualTo(NudgeKind.Verdict));
+    }
+
     // ---------- staying quiet when the night is over ----------
 
     /// <summary>

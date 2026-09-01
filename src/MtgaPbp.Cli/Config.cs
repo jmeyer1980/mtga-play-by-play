@@ -18,6 +18,20 @@ public sealed class Config
     public bool OpenAfterBuild { get; set; }
 
     /// <summary>
+    /// Whether the report and the live board may suggest rotating off a deck after a
+    /// losing streak. On by default; set it to false to never see the line again.
+    /// </summary>
+    /// <remarks>
+    /// It is a suggestion, and a suggestion nobody wants is just a losing streak read
+    /// back to them by their own tools — the player who has one deck they play is not
+    /// choosing between decks, so there is nothing for the line to be useful about. Only
+    /// the rotation line goes quiet: the once-per-deck verdict at
+    /// <see cref="MtgaPbp.Render.SessionCoach.EvaluationAt"/> games is a record, not
+    /// advice, and stays.
+    /// </remarks>
+    public bool SuggestDeckRotation { get; set; } = true;
+
+    /// <summary>
     /// Keep at most this many matches, dropping the oldest as new ones arrive.
     /// Favourites never count against it and are never dropped. Zero means no limit,
     /// which is the default — deleting someone's match history on the first run after
@@ -100,6 +114,12 @@ public sealed class Config
                 cfg.LocalPlayerUserId = loaded.LocalPlayerUserId;
             if (loaded.OpenAfterBuild is { } open) cfg.OpenAfterBuild = open;
 
+            // The one setting whose default is true, which is why it is stated the same
+            // way rather than as "if it says true". A layer has to be able to say false,
+            // or switching the suggestion off would be undone by the next release
+            // rewriting the shipped file.
+            if (loaded.SuggestDeckRotation is { } rotate) cfg.SuggestDeckRotation = rotate;
+
             // Applied whenever the key is present, zero included. Zero is this
             // setting's way of saying "no limit", so a layer that could not state it
             // would have no way to lift a cap an earlier layer set — which is the same
@@ -130,6 +150,7 @@ public sealed class Config
         public string? OutputDir { get; set; }
         public string? LocalPlayerUserId { get; set; }
         public bool? OpenAfterBuild { get; set; }
+        public bool? SuggestDeckRotation { get; set; }
         public int? MaxArchivedMatches { get; set; }
     }
 }

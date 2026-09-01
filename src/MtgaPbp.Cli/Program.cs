@@ -596,10 +596,14 @@ public static class Program
 
             // The same recommendation the nudge would make, standing rather than said
             // once: the answer to "which one next" has to be there when the question is
-            // asked, not only at the moment a rule happened to trip.
+            // asked, not only at the moment a rule happened to trip. Which is also why
+            // SuggestDeckRotation takes it away — a standing line is the loudest form
+            // of a suggestion, so silencing the said-once one and leaving this drawn on
+            // every repaint would silence nothing.
             var slug = newest is null ? null : st.DeckOf.GetValueOrDefault(newest.MatchId);
             board.Draw(Scoreboard.Lines(
-                tonight, beats, playing, SessionCoach.NextUp(st, slug),
+                tonight, beats, playing,
+                cfg.SuggestDeckRotation ? SessionCoach.NextUp(st, slug) : null,
                 server.Url, DateTime.Now, board.Width, board.Height));
         }
 
@@ -1021,7 +1025,8 @@ public static class Program
         var stats = IndexStats.From(summaries);
         var nudge = SessionCoach.Check(
             summaries, stats,
-            silenced: null, nowMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            silenced: null, nowMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            suggestRotation: cfg.SuggestDeckRotation);
 
         var indexPath = Path.GetFullPath(Path.Combine(cfg.OutputDir, "index.html"));
         // Read rather than carried through from capture: `build` re-derives the whole
