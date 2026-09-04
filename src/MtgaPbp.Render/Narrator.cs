@@ -1060,6 +1060,11 @@ public static class Narrator
         // names only the permanent, as both its affector and its affected.
         EventKind.Regenerated when e.SourceName is not null => $"{e.SourceName} regenerates",
 
+        // Riot's two modes read as one sentence because the choice is made as the
+        // creature arrives — there is no moment between entering and having chosen.
+        EventKind.ModeChosen when e.SourceName is not null && e.Detail is not null =>
+            $"{e.SourceName} enters with {e.Detail}",
+
         EventKind.TokenCreated when e.TargetName is not null =>
             $"{e.SourceName ?? "An effect"} creates {e.TargetName}"
             + (e.DiedImmediately ? ", which immediately dies" : ""),

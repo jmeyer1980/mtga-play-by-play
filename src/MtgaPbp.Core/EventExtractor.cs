@@ -1499,7 +1499,67 @@ public sealed class EventExtractor(ICardDb cards)
 
             GameEvent? ev;
 
-            if (type == "AnnotationType_TokenImmediatelyDied")
+            if (type == "AnnotationType_AbilityWordActive")
+            {
+                // Arena reports 120 ability words on the persistent surface, almost all
+                // of them a recalculated count — devotion, storm, delirium — which is
+                // state rather than an event and is left to `mtga-pbp stats`. Only two
+                // reach the ordinary annotation surface: Convoke, which carries nothing
+                // beyond its own name, and Riot, which carries the choice.
+                //
+                // Riot is the one worth a line. The creature enters with a +1/+1 counter
+                // or with haste, the player picks, and which they picked decides whether
+                // it can attack that turn — 9 haste and 10 counter across the archive, so
+                // neither is the assumable default (#193).
+                var word = GameStateTracker.DetailString(a, "AbilityWordName");
+                if (word != "Riot") continue;
+                if (GameStateTracker.DetailString(a, "choice") is not { } picked) continue;
+                if (FirstAffected(a) is not { } entering) continue;
+
+                var chosen = picked switch
+                {
+                    "haste" => "haste",
+                    "counter" => "a +1/+1 counter",
+                    _ => null
+                };
+                if (chosen is null) continue;
+
+                // Every one of the archive's nineteen names the creature directly, so
+                // that is tried first. The fallback is for an annotation that names the
+                // ability object instead, where the permanent it belongs to is what a
+                // reader needs.
+                //
+                // The id and the name must describe the same thing. AbilitySource can
+                // answer with a name and no instance — it falls back to objectSourceGrpId
+                // when the parent cannot be named — and taking that name while keeping
+                // the ability's id would hand NamePermanents an id that is not a
+                // permanent, so it could not letter two copies apart. Where there is no
+                // instance to point at, the line carries the name and no id rather than
+                // the wrong one.
+                var enteringName = tracker.NameOf(entering);
+                int? subject = entering;
+
+                if (CardNames.IsPlaceholder(enteringName))
+                {
+                    var (ownerId, ownerName) = tracker.AbilitySource(entering);
+                    if (CardNames.IsPlaceholder(ownerName)) continue;
+                    enteringName = ownerName;
+                    subject = ownerId;
+                }
+                st.SawCard(enteringName);
+
+                // Added here and skipped, like the other standalone branches above:
+                // the if/else chain further down ends in an else that would otherwise
+                // overwrite this with an Unknown.
+                st.Add(Base(tracker, ts, EventKind.ModeChosen) with
+                {
+                    SourceInstanceId = subject,
+                    SourceName = enteringName,
+                    Detail = chosen
+                });
+                continue;
+            }
+            else if (type == "AnnotationType_TokenImmediatelyDied")
             {
                 // No line of its own — it is the same sentence as the creation, and a
                 // second line would report a death the reader was never told to expect.
