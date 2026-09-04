@@ -211,6 +211,12 @@ public sealed class EventExtractor(ICardDb cards)
             ["AnnotationType_CounterRemoved"] = EventKind.CounterChanged,
             ["AnnotationType_RevealedCardCreated"] = EventKind.Revealed,
             ["AnnotationType_ManaPaid"] = EventKind.ManaPaid,
+
+            // Its payload is empty and its name is the whole fact. Unlike the other
+            // empty-payload annotations, which are dropped, this one reports something a
+            // reader would otherwise have to infer from a creature that took lethal
+            // damage and is still standing (#195).
+            ["AnnotationType_PermanentRegenerated"] = EventKind.Regenerated,
             // PhaseOrStepModified is handled separately — its phase and step come
             // from the annotation's own details, not from tracker state.
         };
