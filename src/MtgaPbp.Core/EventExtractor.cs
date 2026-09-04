@@ -1524,17 +1524,28 @@ public sealed class EventExtractor(ICardDb cards)
                 };
                 if (chosen is null) continue;
 
-                // The annotation names the ability object, not the creature — Arena
-                // often never describes that object, so NameOf answers with a
-                // placeholder. The permanent it belongs to is what a reader needs.
-                var (ownerId, enteringName) = tracker.AbilitySource(entering);
+                // Every one of the archive's nineteen names the creature directly, so
+                // that is tried first. The fallback is for an annotation that names the
+                // ability object instead, where the permanent it belongs to is what a
+                // reader needs.
+                //
+                // The id and the name must describe the same thing. AbilitySource can
+                // answer with a name and no instance — it falls back to objectSourceGrpId
+                // when the parent cannot be named — and taking that name while keeping
+                // the ability's id would hand NamePermanents an id that is not a
+                // permanent, so it could not letter two copies apart. Where there is no
+                // instance to point at, the line carries the name and no id rather than
+                // the wrong one.
+                var enteringName = tracker.NameOf(entering);
+                int? subject = entering;
+
                 if (CardNames.IsPlaceholder(enteringName))
                 {
-                    enteringName = tracker.NameOf(entering);
-                    ownerId = entering;
+                    var (ownerId, ownerName) = tracker.AbilitySource(entering);
+                    if (CardNames.IsPlaceholder(ownerName)) continue;
+                    enteringName = ownerName;
+                    subject = ownerId;
                 }
-                if (CardNames.IsPlaceholder(enteringName)) continue;
-                entering = ownerId ?? entering;
                 st.SawCard(enteringName);
 
                 // Added here and skipped, like the other standalone branches above:
@@ -1542,7 +1553,7 @@ public sealed class EventExtractor(ICardDb cards)
                 // overwrite this with an Unknown.
                 st.Add(Base(tracker, ts, EventKind.ModeChosen) with
                 {
-                    SourceInstanceId = entering,
+                    SourceInstanceId = subject,
                     SourceName = enteringName,
                     Detail = chosen
                 });
