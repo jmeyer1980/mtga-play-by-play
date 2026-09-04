@@ -1497,13 +1497,16 @@ public class EventExtractorTests
           "type": [ "AnnotationType_AbilityInstanceCreated" ] } ] }
     """);
 
-    private static string ActivationMessage(int abilityInstance, int actionType = 2) => Gre($$"""
+    // abilityGrpId defaults to 7, the grpId ActivationObjects gives instance 900, so an
+    // activation is about that ability unless a test deliberately says otherwise.
+    private static string ActivationMessage(
+        int abilityInstance, int actionType = 2, int abilityGrpId = 7) => Gre($$"""
     { "type": "GameStateType_Full",
       "annotations": [
         { "id": 42, "affectorId": 2, "affectedIds": [ {{abilityInstance}} ],
           "type": [ "AnnotationType_UserActionTaken" ], "details": [
             { "key": "actionType", "valueInt32": [ {{actionType}} ] },
-            { "key": "abilityGrpId", "valueInt32": [ 7 ] } ] } ] }
+            { "key": "abilityGrpId", "valueInt32": [ {{abilityGrpId}} ] } ] } ] }
     """);
 
     /// <summary>
@@ -1648,17 +1651,152 @@ public class EventExtractorTests
     }
 
     /// <summary>
-    /// Only actionType 2 is an activation — 1 is a cast, 3 a land drop, 4 a mana
-    /// ability. A mana ability's UserActionTaken naming the same instance must not
-    /// turn a genuine trigger into a claim the player activated it.
+    /// A mana ability is an activated ability, so actionType 4 corrects the verb the
+    /// same way actionType 2 does. It used to be excluded, on the reasoning that a mana
+    /// tap is not worth a line — but excluding it never removed a line, it only left
+    /// "Nykthos, Shrine to Nyx's ability triggers" on the page, which is not something
+    /// that happened (#177).
     /// </summary>
     [Test]
-    public void A_user_action_that_is_not_an_activation_leaves_the_trigger_alone()
+    public void A_mana_ability_is_reported_as_an_activation()
     {
         var t = Run(RoomLine, MulliganLine, CreationMessage,
             ActivationMessage(900, actionType: 4));
 
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Triggered), Is.False,
+            "a mana ability is activated, never triggered");
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Activated).SourceName,
+            Is.EqualTo("Llanowar Elves"));
+    }
+
+    /// <summary>
+    /// A cast and a land drop are not activations, and must not take an ability's
+    /// trigger line with them — 1 is a cast, 3 a land drop.
+    /// </summary>
+    [TestCase(1)]
+    [TestCase(3)]
+    public void A_user_action_that_is_not_an_activation_leaves_the_trigger_alone(
+        int actionType)
+    {
+        var t = Run(RoomLine, MulliganLine, CreationMessage,
+            ActivationMessage(900, actionType));
+
         Assert.That(t.Events.Any(x => x.Kind == EventKind.Activated), Is.False);
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Triggered).SourceName,
+            Is.EqualTo("Llanowar Elves's ability"));
+    }
+
+    /// <summary>
+    /// Arena hands one ability instance id to a second, unrelated ability inside a game.
+    /// Instance 715 of match 005e282a is Arcane Signet's mana ability in one message and
+    /// Fountainport's treasure ability in the next; keyed by the id alone, whichever
+    /// activation was recorded last renamed the other ability's trigger line and carried
+    /// its seat across with it. An activation may only speak for its own ability.
+    /// </summary>
+    [Test]
+    public void An_activation_of_another_ability_sharing_the_id_leaves_the_trigger_alone()
+    {
+        var t = Run(RoomLine, MulliganLine, CreationMessage,
+            ActivationMessage(900, abilityGrpId: 174175));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Activated), Is.False,
+            "an activation of a different ability must not claim this trigger");
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Triggered).SourceName,
+            Is.EqualTo("Llanowar Elves's ability"));
+    }
+
+    /// <summary>
+    /// One instance id carrying two activations — its own ability's and one from the
+    /// ability that inherited the id. Only the matching record may rename, whichever
+    /// arrived first, and the other's seat must not come with it.
+    /// </summary>
+    [TestCase(true)]
+    [TestCase(false)]
+    public void Only_the_matching_activation_renames_when_one_id_carries_two(
+        bool foreignFirst)
+    {
+        var foreign = Gre("""
+        { "type": "GameStateType_Full",
+          "annotations": [
+            { "id": 44, "affectorId": 1, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_UserActionTaken" ], "details": [
+                { "key": "actionType", "valueInt32": [ 2 ] },
+                { "key": "abilityGrpId", "valueInt32": [ 174175 ] } ] } ] }
+        """);
+        var mine = ActivationMessage(900);
+
+        var t = foreignFirst
+            ? Run(RoomLine, MulliganLine, CreationMessage, foreign, mine)
+            : Run(RoomLine, MulliganLine, CreationMessage, mine, foreign);
+
+        var activated = t.Events.Single(x => x.Kind == EventKind.Activated);
+        Assert.That(activated.SourceName, Is.EqualTo("Llanowar Elves"));
+        Assert.That(activated.ActorSeat, Is.EqualTo(2),
+            "the foreign activation's seat must not ride along");
+    }
+
+    /// <summary>
+    /// Arena re-sends a creation in the next message having revised the ability's grpId
+    /// — instance 921 of match 0b7e43ba is Elspeth's ability as 188701 and then as
+    /// 188700, one ability under one owner, and the activation names the second. Keyed
+    /// on the grpId alone the first event stopped matching, putting the wrong verb back
+    /// on 17 archive lines that were already right.
+    /// </summary>
+    [Test]
+    public void A_revised_ability_grpid_still_matches_its_activation()
+    {
+        var revised = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 800, "grpId": 5, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 },
+            { "instanceId": 900, "grpId": 8, "parentId": 800,
+              "type": "GameObjectType_Ability", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 43, "affectorId": 800, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_AbilityInstanceCreated" ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, CreationMessage, revised,
+            ActivationMessage(900, abilityGrpId: 8));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Triggered), Is.False,
+            "both creations are the same ability under one owner");
+        Assert.That(t.Events.Count(x => x.Kind == EventKind.Activated), Is.EqualTo(2));
+    }
+
+    /// <summary>
+    /// Neither side named an ability: the object carries no grpId, so the tracker reports
+    /// 0, and the activation has no abilityGrpId detail. Stored as 0 those two would
+    /// compare equal and match, which is the id-only rule this exists to prevent, so
+    /// absent stays absent and matches nothing. The wrong verb beats the wrong ability.
+    /// </summary>
+    [Test]
+    public void An_activation_with_no_ability_named_matches_nothing()
+    {
+        var nameless = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 800, "grpId": 5, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 },
+            { "instanceId": 901, "parentId": 800,
+              "type": "GameObjectType_Ability", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 45, "affectorId": 800, "affectedIds": [ 901 ],
+              "type": [ "AnnotationType_AbilityInstanceCreated" ] } ] }
+        """);
+        var bare = Gre("""
+        { "type": "GameStateType_Full",
+          "annotations": [
+            { "id": 46, "affectorId": 2, "affectedIds": [ 901 ],
+              "type": [ "AnnotationType_UserActionTaken" ], "details": [
+                { "key": "actionType", "valueInt32": [ 2 ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, nameless, bare);
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Activated), Is.False,
+            "two unknown grpIds must not match each other");
         Assert.That(t.Events.Single(x => x.Kind == EventKind.Triggered).SourceName,
             Is.EqualTo("Llanowar Elves's ability"));
     }
