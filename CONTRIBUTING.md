@@ -198,6 +198,45 @@ the reasoning is in the commit history:
   `ModifiedType`
 - `TimerStateMessage` think-time — unreported on a third of turns, and about half the
   wall clock when present, so the transcript reports wall clock instead
+- A card database fetched from Scryfall or MTGJSON — see below
+
+### Fetching a card database from Scryfall or MTGJSON
+
+Investigated and dropped on 2026-09-04 (#182). The appeal is obvious — stop depending on
+the `Raw_CardDatabase_*.mtga` inside an Arena install — and it does not survive contact
+with the data.
+
+**Tokens have no Arena id at all.** Scryfall carries token objects and assigns them no
+`arena_id`: 0 of the 118 token grpIds in a 150-match sample resolve. Every Rabbit,
+Soldier, Monk, Treasure and Shrine would render unnamed, and one archived match ends with
+51 Monks and 14 Shrines on the board.
+
+**Arena-only reprints have no id either.** Not a printing-selection problem; the ids do
+not exist. Eternal Witness has 30 printings on Scryfall and zero with an `arena_id`,
+while Arena carries it as grpId 87809. Mana Vault: 24 printings, zero. Wrenn and Six:
+nine, zero.
+
+Best case is 90.8% of non-token cards and 0% of tokens, from `default_cards` at 78 MB.
+Against Arena's full database it is 75.1%, missing 6,607 grpIds. And there is no second
+source to patch it with: **MTGJSON's `mtgArenaId` set is byte-identical to Scryfall's
+`arena_id` set** — 19,974 ids each, none in one and not the other, because they share an
+upstream mapping.
+
+Three of `ICardDb`'s four methods are unreachable this way regardless. `NameForLocId`,
+`EnumName` and `AbilityText` are Arena-internal, and issues #5 and #7 depend on
+`AbilityText`.
+
+The premise is also weaker than it looks. This tool parses Arena's `Player.log`, so
+anyone with a log to parse has Arena installed, and the card database ships in that same
+install. The only case a fetched database would serve is reading someone else's archive
+on a machine without Arena — which sharing the rendered HTML already serves better, and
+without a network call.
+
+A narrower version could still be defensible: Scryfall for what Arena genuinely lacks —
+oracle text, format legality, printing history — feeding a deck-analysis surface rather
+than naming permanents in a transcript. That is a different feature and wants its own
+issue. Note that it would be the tool's first outbound request, and the README promises
+twice that there are none.
 
 `AddAbility` is mined as of issue #5: grants render as "Enter the Avatar State gives
 Llanowar Elves 2/2 first strike", via the card database's `Abilities` table. Grants that
