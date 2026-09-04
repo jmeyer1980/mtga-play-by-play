@@ -1,3 +1,4 @@
+using System.Linq;
 using MtgaPbp.Core;
 using MtgaPbp.Render;
 using NUnit.Framework;
@@ -1144,5 +1145,44 @@ public class NarratorTests
                 }).ToArray()), Density.Beats);
 
         Assert.That(lines.Single().Text, Is.EqualTo("3× Soldier 1/1 gets +2/+1"));
+    }
+
+    // ---------- Issue 179: the per-phase mana ledger ----------
+
+    private static System.Collections.Generic.List<string> Ledger(bool on) =>
+        Narrator.Narrate(T(
+                E(EventKind.PhaseChange, 0) with { Detail = "1st Main" },
+                E(EventKind.ManaPaid, 1) with
+                { ActorSeat = 1, SourceName = "Plains", Detail = "W" },
+                E(EventKind.ManaPaid, 2) with
+                { ActorSeat = 1, SourceName = "Plains", Detail = "W" },
+                E(EventKind.ManaPaid, 3) with
+                { ActorSeat = 1, SourceName = "Nykthos, Shrine to Nyx", Detail = "C" },
+                E(EventKind.ManaPaid, 4) with
+                { ActorSeat = 2, SourceName = "Island", Detail = "U" },
+                E(EventKind.TurnStart, 5) with { Turn = 2 }),
+            Density.Beats, manaLedger: on)
+            .Select(l => l.Text).ToList();
+
+    /// <summary>
+    /// The receipt closes the phase it covers, names the player who paid, and keeps the
+    /// sources in the order they were tapped (#179).
+    /// </summary>
+    [Test]
+    public void The_mana_ledger_reports_what_each_player_spent()
+    {
+        var lines = Ledger(on: true);
+
+        Assert.That(lines, Has.Some.EqualTo(
+            "You pay in 1st Main: {W}{W}{C} — Plains ×2, Nykthos, Shrine to Nyx"));
+        Assert.That(lines, Has.Some.EqualTo(
+            "Opponent pays in 1st Main: {U} — Island"));
+    }
+
+    /// <summary>Off unless asked for: the archive holds 57,000 payments.</summary>
+    [Test]
+    public void The_mana_ledger_is_absent_unless_asked_for()
+    {
+        Assert.That(Ledger(on: false), Has.None.Contains("pay in 1st Main"));
     }
 }

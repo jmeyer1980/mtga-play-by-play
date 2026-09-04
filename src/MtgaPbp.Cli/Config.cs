@@ -18,6 +18,13 @@ public sealed class Config
     public bool OpenAfterBuild { get; set; }
 
     /// <summary>
+    /// Close every phase in which mana was spent with a receipt naming the colours and
+    /// the permanents that produced them. Off by default: the archive holds some 57,000
+    /// payments, which is a diagnostic view of a match rather than a reading one.
+    /// </summary>
+    public bool ManaLedger { get; set; }
+
+    /// <summary>
     /// Whether the report and the live board may suggest rotating off a deck after a
     /// losing streak. On by default; set it to false to never see the line again.
     /// </summary>
@@ -113,6 +120,7 @@ public sealed class Config
             if (!string.IsNullOrWhiteSpace(loaded.LocalPlayerUserId))
                 cfg.LocalPlayerUserId = loaded.LocalPlayerUserId;
             if (loaded.OpenAfterBuild is { } open) cfg.OpenAfterBuild = open;
+            if (loaded.ManaLedger is { } ledger) cfg.ManaLedger = ledger;
 
             // The one setting whose default is true, which is why it is stated the same
             // way rather than as "if it says true". A layer has to be able to say false,
@@ -150,6 +158,7 @@ public sealed class Config
         public string? OutputDir { get; set; }
         public string? LocalPlayerUserId { get; set; }
         public bool? OpenAfterBuild { get; set; }
+        public bool? ManaLedger { get; set; }
         public bool? SuggestDeckRotation { get; set; }
         public int? MaxArchivedMatches { get; set; }
     }

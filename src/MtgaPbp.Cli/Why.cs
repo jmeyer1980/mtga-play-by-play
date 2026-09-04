@@ -116,7 +116,7 @@ public static class Why
         var raw = read.Lines;
         using var cards = OpenCards(cfg);
         var transcript = new EventExtractor(cards).Extract(matchId, raw);
-        var lines = Narrator.Narrate(transcript, Density.Verbose);
+        var lines = Narrator.Narrate(transcript, Density.Verbose, cfg.ManaLedger);
 
         var headers = lines.Where(l => l.IsTurnHeader && l.Turn > 0).ToList();
         var plan = Plan(turnArgs, headers.Select(l => l.Turn).ToHashSet());

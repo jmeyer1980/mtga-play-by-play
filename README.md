@@ -356,6 +356,17 @@ it is your losing streak read back to you, so turn it off and the report goes ba
 saying what happened rather than what to do. Everything else stays: the once-per-deck
 line at 30 games is a record of a rate, not a suggestion, and it is unaffected.
 
+`"ManaLedger": true` closes every phase in which mana was spent with a receipt:
+
+```
+You pay in 1st Main: {W}{W}{W}{W}{W}{W}{W}{W} — Plains, Arcane Signet, Nykthos, Shrine to Nyx ×6
+```
+
+One line per player per phase, naming the colours and the permanents that produced
+them, so a devotion turn or a colour screw reads at a glance. Off by default — the
+archive holds some 57,000 mana payments, and on every phase of every game that is a
+diagnostic view rather than a reading one.
+
 ## What it can and cannot tell you
 
 The log records only what your client was told, so a transcript is fog-of-war by

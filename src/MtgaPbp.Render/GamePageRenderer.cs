@@ -9,7 +9,7 @@ namespace MtgaPbp.Render;
 public static partial class GamePageRenderer
 {
     public static string Render(Transcript t, Neighbours? nav = null,
-        IReadOnlyDictionary<string, CardFace>? faces = null)
+        IReadOnlyDictionary<string, CardFace>? faces = null, bool manaLedger = false)
     {
         var sb = new StringBuilder();
         sb.Append($"""
@@ -55,8 +55,8 @@ public static partial class GamePageRenderer
 
         AppendDeck(sb, t, faces);
         AppendOpponentCards(sb, t, faces);
-        AppendSection(sb, t, Density.Beats);
-        AppendSection(sb, t, Density.Verbose);
+        AppendSection(sb, t, Density.Beats, manaLedger);
+        AppendSection(sb, t, Density.Verbose, manaLedger);
 
         sb.Append($"""
             </main>
@@ -243,7 +243,8 @@ public static partial class GamePageRenderer
     /// summary stays inside the list — it is the last thing that happened — so a turn
     /// is always exactly one list, whatever order the extractor emits.
     /// </summary>
-    private static void AppendSection(StringBuilder sb, Transcript t, Density density)
+    private static void AppendSection(
+        StringBuilder sb, Transcript t, Density density, bool manaLedger = false)
     {
         var beats = density == Density.Beats;
         var slug = beats ? "beats" : "verbose";
@@ -261,7 +262,7 @@ public static partial class GamePageRenderer
             """);
 
         var open = false;
-        foreach (var line in Narrator.Narrate(t, density))
+        foreach (var line in Narrator.Narrate(t, density, manaLedger))
         {
             if (line.IsTurnHeader)
             {
