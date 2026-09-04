@@ -22,7 +22,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # collection.txt says which cards one Arena account owns, and this repository is
       # public. It is committed empty and .gitattributes binds it to a clean filter that
@@ -46,7 +46,7 @@ jobs:
           }
           Write-Host "collection.txt is committed empty"
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
 
@@ -64,6 +64,7 @@ jobs:
           dotnet test --no-build --configuration Release
           --logger "trx;LogFileName=results.trx"
           --logger "console;verbosity=normal"
+          --collect:"XPlat Code Coverage"
           --results-directory artifacts/test-results
 
       # A few tests cannot run here, and this fails the build if that set ever grows.
@@ -90,14 +91,37 @@ jobs:
           }
           Write-Host "guard ok"
 
+      # `dotnet list package` exits 0 whether or not it finds anything, so reading the
+      # output is the whole check — without it this step could only ever pass, which is
+      # the same as not having it.
       - name: Audit dependencies
+        shell: pwsh
         run: |
-          dotnet list package --vulnerable --include-transitive
-          dotnet list package --deprecated
+          $vulnerable = dotnet list package --vulnerable --include-transitive 2>&1 | Out-String
+          Write-Host $vulnerable
+          if ($vulnerable -match 'has the following vulnerable packages') {
+            Write-Host "::error::a dependency has a known vulnerability"
+            throw "vulnerable packages found - see the table above"
+          }
 
-      - name: Upload test results
+          # Deprecated is a warning and not a failure: a package can sit deprecated for
+          # a long time with nothing wrong with it, and failing the build on someone
+          # else's release schedule stops work that has no bug in it.
+          $deprecated = dotnet list package --deprecated 2>&1 | Out-String
+          Write-Host $deprecated
+          if ($deprecated -match 'has the following deprecated packages') {
+            Write-Host "::warning::a dependency is deprecated"
+          }
+          Write-Host "audit ok"
+
+      # coverlet writes coverage.cobertura.xml under a per-run guid folder inside the
+      # results directory, so it rides along with the trx rather than needing its own
+      # upload. The hand-built list of zero-reference types this was asked for -
+      # LiveServer, LiveBoard, Banner, Program - is what reading this file answers
+      # without anyone hand-building it again.
+      - name: Upload test results and coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
           path: artifacts/test-results

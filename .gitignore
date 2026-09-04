@@ -14,3 +14,8 @@ archive/
 # published artifacts
 dist/
 CLAUDE.md
+
+# test results and coverage
+# Coverage collection names a directory after the OS user and the machine that ran
+# it — <user>_<MACHINE>_<timestamp> — which this repository must never carry.
+artifacts/
