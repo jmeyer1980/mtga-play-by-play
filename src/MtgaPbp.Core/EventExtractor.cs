@@ -1741,6 +1741,21 @@ public sealed class EventExtractor(ICardDb cards)
             }
             else if (SimpleAnnotationKinds.TryGetValue(type, out var simple))
             {
+                // A generic pip can be paid without mana: Improvise taps an artifact,
+                // Convoke taps a creature, Delve exiles a card from the graveyard. Arena
+                // reports all three as ManaPaid, but they carry substitution_grpid where
+                // a real payment carries the manaId it spent — 91 of these in the
+                // archive, and all 91 carry it while a real payment never does. The
+                // affector is the tapped or exiled card, so the page was saying "taps
+                // Wrath of God for mana" about a sorcery lying in a graveyard (#184).
+                //
+                // Keyed on the field and not on the colour: seven of them wear a
+                // coloured code, which is Convoke tapping a coloured creature to pay a
+                // coloured pip. Still not mana.
+                if (simple == EventKind.ManaPaid &&
+                    GameStateTracker.DetailInt(a, "substitution_grpid") is not null)
+                    continue;
+
                 var affector = Json.Int(a, "affectorId");
                 var affected = FirstAffected(a);
 
