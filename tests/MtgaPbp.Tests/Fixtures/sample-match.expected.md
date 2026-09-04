@@ -42,6 +42,7 @@
 ## Opening
 - Opponent wins the die roll 19 to 11 and plays first
 - Both players keep seven
+- You keep Carrot Cake · Elspeth's Smite · Ethereal Armor · Overlord of the Mistmoors · Plains · Temple of Enlightenment · Toby, Beastie Befriender
 
 ## Turn 1 — Opponent  (You 20 · Opponent 20)
 - Opponent plays Plains
@@ -167,6 +168,7 @@
 - Ajani's Pridemate 5/5 gets 1 +1/+1 counter
   *You control: Rabbit 1/1*
   *Opponent controls: Ajani's Pridemate 6/6, Rabbit 1/1, Rabbit 1/1, Leonin Vanguard 2/2, Crowd of True Believers 1/2*
+- You end holding Ghostly Dancers · Overlord of the Mistmoors · Toby, Beastie Befriender
 - You concede — opponent wins the match
 
 ---

@@ -43,7 +43,14 @@ public sealed record Opening(
     /// Null for a first game, and for any later game whose predecessor has no recorded
     /// winner — the choice was still made, but by nobody this log can name.
     /// </summary>
-    int? ChoosingSeat = null)
+    int? ChoosingSeat = null,
+
+    /// <summary>
+    /// The hand the local player kept, after mulligans and after bottoming. Null when
+    /// the log joined too late to have watched it, and never populated for the opponent:
+    /// Arena does not send their hand at all, so fog of war holds by construction.
+    /// </summary>
+    IReadOnlyList<string>? Hand = null)
 {
     /// <summary>
     /// Cards dealt at the start of a game, and after each mulligan. Seven in every

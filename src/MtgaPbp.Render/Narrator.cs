@@ -158,14 +158,31 @@ public static class Narrator
                 }
             }
 
+            // Said as the game closes and before the line saying how it closed, because
+            // it is evidence about the ending rather than a footnote after it: "conceded
+            // holding removal and three lands" only reads that way in that order.
+            if (e.Kind == EventKind.GameEnd &&
+                Held(t.Games.FirstOrDefault(g => g.Number == e.GameNumber)?.FinalHand)
+                    is { } lastSeen)
+                lines.Add(new Line(e.Turn, 1, $"You end holding {lastSeen}",
+                    IsTurnHeader: false, Game: e.GameNumber));
+
             if (multi && e.GameNumber != game)
             {
                 // The game that just ended says how it ended, where it ended. Only a game
                 // with another after it ever reaches here, which is exactly right: the
                 // last game's ending is the match's ending, and the match-end event says
                 // it a few lines later.
-                if (t.Games.FirstOrDefault(g => g.Number == game)?.ResultLine is { } ending)
-                    lines.Add(new Line(0, 1, ending, IsTurnHeader: false, Game: game));
+                // Filed under the game's last turn, not turn zero. Both lines describe
+                // how that turn ended, and a turn-filtered view — `mtga-pbp why 13` —
+                // could not reach them while they sat on a turn the game never had.
+                var closing = t.Games.FirstOrDefault(g => g.Number == game);
+                var last = closing?.Turns ?? 0;
+                if (Held(closing?.FinalHand) is { } held)
+                    lines.Add(new Line(last, 1, $"You end holding {held}",
+                        IsTurnHeader: false, Game: game));
+                if (closing?.ResultLine is { } ending)
+                    lines.Add(new Line(last, 1, ending, IsTurnHeader: false, Game: game));
 
                 game = e.GameNumber;
                 var record = t.Games.FirstOrDefault(g => g.Number == game);
@@ -542,6 +559,7 @@ public static class Narrator
         }
 
         lines.AddRange(HandLines(o, t));
+        if (Held(o.Hand) is { } kept) lines.Add($"You keep {kept}");
         return lines;
     }
 
@@ -582,6 +600,34 @@ public static class Narrator
                 ? $"{Who(seat, t)} {Verb(seat, "keep", "keeps", t)} {CardCounts[o.Kept(seat)]}"
                 : $"{Who(seat, t)} {Verb(seat, "mulligan", "mulligans", t)} " +
                   $"to {CardCounts[o.Kept(seat)]}";
+    }
+
+    /// <summary>
+    /// A hand as a reader would say it: grouped by card, the repeats counted, the
+    /// commonest first. Null for a hand there is nothing to say about.
+    /// </summary>
+    /// <remarks>
+    /// Grouped rather than listed in the order Arena numbered them. That order is the
+    /// shuffle, which is not information — while "3x Plains" is the shape of the keep,
+    /// and the shape is the whole reason to print it. Ties break by name so two readings
+    /// of the same hand cannot disagree.
+    /// </remarks>
+    private static string? Held(IReadOnlyList<string>? hand)
+    {
+        if (hand is null || hand.Count == 0) return null;
+
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var card in hand)
+            counts[card] = counts.GetValueOrDefault(card) + 1;
+
+        // Separated by a middle dot, not a comma. Card names carry commas of their own
+        // — "Ghostly Dancers, Overlord of the Mistmoors, Toby, Beastie Befriender" is
+        // three cards and reads as four — and this is the same separator the life score
+        // already uses, so the page has one meaning for it.
+        return string.Join(" · ", counts
+            .OrderByDescending(c => c.Value)
+            .ThenBy(c => c.Key, StringComparer.Ordinal)
+            .Select(c => c.Value > 1 ? $"{c.Value}x {c.Key}" : c.Key));
     }
 
     /// <summary>Life totals entering the turn, always ordered you-first.</summary>
