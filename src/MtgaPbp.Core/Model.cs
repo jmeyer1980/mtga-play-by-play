@@ -243,6 +243,20 @@ public sealed record GameEvent
     public int? SourceAbilityOwnerId { get; init; }
 
     /// <summary>
+    /// A token that state-based actions removed before it had been anything. Only set on
+    /// <see cref="EventKind.TokenCreated"/>; false is the ordinary case, not a gap.
+    /// </summary>
+    /// <remarks>
+    /// A Zombie Army enters as a 0/0 and lives on its counters, so one that arrives
+    /// carrying -2/-2 is dead on arrival. Arena says so with
+    /// <c>AnnotationType_TokenImmediatelyDied</c> and nothing else: no zone change, no
+    /// destroy, no death. Without this the transcript said a token was created and never
+    /// mentioned it again, leaving the reader counting a body the rules had already
+    /// removed (#129).
+    /// </remarks>
+    public bool DiedImmediately { get; init; }
+
+    /// <summary>
     /// Where a zone transfer went, and where it came from, as Arena's zone type names.
     /// Only set on <see cref="EventKind.ZoneMove"/> — every other transfer category
     /// already says where it went by being a destroy, an exile, a draw or a mill.
