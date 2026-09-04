@@ -1,0 +1,13 @@
+# A collection export is personal data — which cards this machine's Arena account
+# owns — and this repository is public. The file is committed empty so that its
+# presence is documented rather than mysterious, and a clean filter guarantees it
+# stays that way: `git add` runs the working copy through `true`, which produces
+# nothing, so whatever is in the working tree never reaches a commit.
+#
+# The filter needs one local setting, because git does not take a filter command
+# from a repository (that would let a clone run arbitrary code):
+#
+#   git config filter.strip-collection.clean true
+#
+# Without it the file is committed verbatim, so CONTRIBUTING lists it in setup.
+/collection.txt filter=strip-collection

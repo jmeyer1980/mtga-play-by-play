@@ -18,12 +18,26 @@ existing example in `MultiGameTests.The_bo3_fixture_carries_no_trace_of_either_p
 it checks the fixture rather than trusting whoever made it, because a fixture is exactly
 the kind of file someone regenerates later without knowing the rule.
 
+A collection export is personal data too: it says which cards one Arena account owns.
+`collection.txt` is committed **empty**, so that the file's presence is documented rather
+than mysterious, and `.gitattributes` binds it to a clean filter that empties it on the
+way into a commit. Your working copy keeps whatever is in it; git only ever sees nothing.
+The filter needs the one-time setting below, because git will not take a filter command
+from a repository — that would let a clone run arbitrary code on checkout. CI checks the
+committed size regardless, so a missing filter fails the build rather than leaking.
+
 ## Building and testing
 
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). MTG Arena
 does **not** need to be installed to build or test — only to run.
 
-Run everything from the repository root, the folder holding `MtgaPbp.slnx`:
+Once per clone, turn on the filter that keeps `collection.txt` out of commits:
+
+```powershell
+git config filter.strip-collection.clean true
+```
+
+Run everything else from the repository root, the folder holding `MtgaPbp.slnx`:
 
 ```powershell
 dotnet build

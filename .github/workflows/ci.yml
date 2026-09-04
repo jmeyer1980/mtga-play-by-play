@@ -24,6 +24,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # collection.txt says which cards one Arena account owns, and this repository is
+      # public. It is committed empty and .gitattributes binds it to a clean filter that
+      # empties it on the way into a commit — but git will not take a filter command
+      # from a repository, so a fresh clone does not have it. Checked here rather than
+      # trusted, for the same reason the fixture scrub is asserted in a test: it is
+      # exactly the kind of file someone repopulates later without knowing the rule.
+      - name: Guard the committed collection stays empty
+        shell: pwsh
+        run: |
+          $size = git cat-file -s HEAD:collection.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "collection.txt is not committed. It must exist and be empty."
+          }
+          if ([int]$size -ne 0) {
+            Write-Host "::error file=collection.txt::collection.txt is $size bytes; it must be committed empty."
+            Write-Host "Set the strip filter, then re-commit the file:"
+            Write-Host "  git config filter.strip-collection.clean true"
+            Write-Host "  git rm --cached collection.txt; git add collection.txt"
+            throw "collection.txt carries card ownership and this repository is public."
+          }
+          Write-Host "collection.txt is committed empty"
+
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
