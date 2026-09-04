@@ -199,6 +199,13 @@ the reasoning is in the commit history:
 - `TimerStateMessage` think-time — unreported on a third of turns, and about half the
   wall clock when present, so the transcript reports wall clock instead
 - A card database fetched from Scryfall or MTGJSON — see below
+- Eleven annotation types, each dropped with its payload read rather than its name —
+  `LayeredEffect`, `RemainingSelections`, `TurnPermanent`, `CastingTimeOption`,
+  `HighlightReason`, `DieRoll`, `ModifiedPower`, `RemoveAttachment`, `SelectNDecoration`,
+  `AddAbility` (the straggler, not the mined path), `ModifiedColor`. Reasons per type are
+  in `docs/superpowers/specs/2026-09-04-annotation-triage.md`; the short version is that
+  five carry an empty or uninterpretable payload, four say something the transcript
+  already says by another route, and two are client UI state rather than game events.
 
 ### Fetching a card database from Scryfall or MTGJSON
 
