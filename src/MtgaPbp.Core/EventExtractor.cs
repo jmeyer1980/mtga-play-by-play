@@ -490,6 +490,13 @@ public sealed class EventExtractor(ICardDb cards)
         public readonly Dictionary<int, List<(int Seat, int? AbilityGrpId)>> Activations = [];
 
         /// <summary>
+        /// Token instances Arena reported as dying the moment they were made, under the
+        /// id in use at the time. Resolved at game close for the same reason
+        /// <see cref="Activations"/> is.
+        /// </summary>
+        public readonly HashSet<int> DiedOnArrival = [];
+
+        /// <summary>
         /// The last statline seen for each permanent, so a change that no annotation
         /// explains can be noticed. Per game, because instance ids are handed out again.
         /// </summary>
@@ -861,6 +868,7 @@ public sealed class EventExtractor(ICardDb cards)
         foreach (var g in games)
         {
             MarkActivations(g.Tracker, st, g);
+            MarkTokensDeadOnArrival(g.Tracker, st, g);
             NameResolutions(g.Tracker, st, g);
             var labels = PermanentLabels.Build(g.Tracker, cards, Boundaries(st, g));
             NamePermanents(g.Tracker, labels, st, g);
@@ -1433,6 +1441,16 @@ public sealed class EventExtractor(ICardDb cards)
             if (type is null || Ignored.Contains(type)) continue;
 
             GameEvent? ev;
+
+            if (type == "AnnotationType_TokenImmediatelyDied")
+            {
+                // No line of its own — it is the same sentence as the creation, and a
+                // second line would report a death the reader was never told to expect.
+                // The annotation carries nothing but the token naming itself as both
+                // affector and affected, so all there is to keep is the id.
+                if (FirstAffected(a) is { } dead) game.DiedOnArrival.Add(dead);
+                continue;
+            }
 
             if (type == "AnnotationType_GainDesignation")
             {
@@ -2236,6 +2254,40 @@ public sealed class EventExtractor(ICardDb cards)
                 CauseInstanceId = null,
                 CauseName = null
             };
+        }
+    }
+
+    /// <summary>
+    /// Marks the creations of tokens that state-based actions removed on arrival.
+    /// </summary>
+    /// <remarks>
+    /// Said on the creation line rather than as a death of its own. Arena reports the
+    /// death with <c>AnnotationType_TokenImmediatelyDied</c> and nothing else — no zone
+    /// change, no destroy — so there is no second moment to report, and a line saying a
+    /// token died would be the first the reader had heard of it existing.
+    /// <para>
+    /// What killed it is not in the log. All six of the archive's cases carry only the
+    /// creation, this, and an id change; none carries an ability, a counter or a stat
+    /// modification. The token's own power and toughness are on its game object, so a
+    /// -1/-1 is already printed beside the name, and a Zombie Army that arrives as the
+    /// 0/0 it is prints no statline at all — which is exactly the case that needs the
+    /// clause, since nothing else on the page says the body is gone (#129).
+    /// </para>
+    /// </remarks>
+    private static void MarkTokensDeadOnArrival(GameStateTracker tracker, Emit st, GameRun g)
+    {
+        if (g.DiedOnArrival.Count == 0) return;
+
+        var dead = g.DiedOnArrival.Select(tracker.Resolve).ToHashSet();
+
+        for (var i = g.FirstSeq; i < g.EndSeq; i++)
+        {
+            var e = st.Events[i];
+            if (e.Kind != EventKind.TokenCreated || e.TargetInstanceId is not { } token)
+                continue;
+            if (!dead.Contains(tracker.Resolve(token))) continue;
+
+            st.Events[i] = e with { DiedImmediately = true };
         }
     }
 

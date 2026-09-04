@@ -14,6 +14,10 @@ public class EventExtractorTests
             1001 => "Llanowar Elves",
             1002 => "Elspeth, Storm Slayer",
 
+            // A 0/0 that lives on its counters, so one that arrives without them is
+            // dead on arrival — the #129 case, and the real card behind it.
+            1003 => "Zombie Army",
+
             // The two faces of one Adventure card. Both are locIds, like everything
             // else in this table: the grpIds that go with them are in the game objects
             // the #71 test builds, and are what Arena swaps as the spell leaves the
@@ -1648,6 +1652,65 @@ public class EventExtractorTests
         Assert.That(activated.SourceName, Is.Not.Null,
             "copy B's activation must survive copy A's level-up");
         Assert.That(activated.SourceInstanceId, Is.EqualTo(750));
+    }
+
+    /// <summary>
+    /// A token state-based actions removed before it had been anything. Arena reports it
+    /// with <c>AnnotationType_TokenImmediatelyDied</c> and nothing else — no zone change,
+    /// no destroy — so the transcript said a token was created and never mentioned it
+    /// again, leaving the reader counting a body the rules had already taken away (#129).
+    /// </summary>
+    [Test]
+    public void A_token_that_dies_on_arrival_says_so_on_its_creation_line()
+    {
+        var made = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 700, "grpId": 5, "name": 1000,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 },
+            { "instanceId": 701, "grpId": 6, "name": 1003,
+              "type": "GameObjectType_Token", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 61, "affectorId": 700, "affectedIds": [ 701 ],
+              "type": [ "AnnotationType_TokenCreated" ] },
+            { "id": 62, "affectorId": 701, "affectedIds": [ 701 ],
+              "type": [ "AnnotationType_TokenImmediatelyDied" ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, made);
+
+        var token = t.Events.Single(x => x.Kind == EventKind.TokenCreated);
+        Assert.That(token.TargetName, Is.EqualTo("Zombie Army"));
+        Assert.That(token.DiedImmediately, Is.True);
+
+        // No line of its own: the death and the creation are one moment.
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False,
+            "the annotation must be recognised, not reported as unhandled");
+    }
+
+    /// <summary>
+    /// A token that survives says nothing extra, so the clause is a fact about the token
+    /// and not decoration on every creation line.
+    /// </summary>
+    [Test]
+    public void A_token_that_survives_carries_no_death_clause()
+    {
+        var made = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 700, "grpId": 5, "name": 1000,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 },
+            { "instanceId": 701, "grpId": 6, "name": 1003,
+              "type": "GameObjectType_Token", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 61, "affectorId": 700, "affectedIds": [ 701 ],
+              "type": [ "AnnotationType_TokenCreated" ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, made);
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.TokenCreated).DiedImmediately,
+            Is.False);
     }
 
     /// <summary>

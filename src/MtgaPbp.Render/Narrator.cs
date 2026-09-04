@@ -905,8 +905,13 @@ public static class Narrator
             $"{Verb(e.TargetSeat, e.Amount > 0 ? "gain" : "lose", e.Amount > 0 ? "gains" : "loses", t)} " +
             $"{Math.Abs(e.Amount)} life",
 
+        // The clause, not a second line: the death and the creation are one moment, and
+        // a death line would be the first the reader heard the token existed. What
+        // killed it is not claimed, because the log does not say — see
+        // MarkTokensDeadOnArrival.
         EventKind.TokenCreated when e.TargetName is not null =>
-            $"{e.SourceName ?? "An effect"} creates {e.TargetName}",
+            $"{e.SourceName ?? "An effect"} creates {e.TargetName}"
+            + (e.DiedImmediately ? ", which immediately dies" : ""),
 
         // The permanent is named at the size it was changed from, so "Tifa Lockhart 1/2
         // gets +1/+0" carries both ends of the change in one line.
