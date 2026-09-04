@@ -173,12 +173,16 @@ public static class Narrator
                 // with another after it ever reaches here, which is exactly right: the
                 // last game's ending is the match's ending, and the match-end event says
                 // it a few lines later.
+                // Filed under the game's last turn, not turn zero. Both lines describe
+                // how that turn ended, and a turn-filtered view — `mtga-pbp why 13` —
+                // could not reach them while they sat on a turn the game never had.
                 var closing = t.Games.FirstOrDefault(g => g.Number == game);
+                var last = closing?.Turns ?? 0;
                 if (Held(closing?.FinalHand) is { } held)
-                    lines.Add(new Line(0, 1, $"You end holding {held}",
+                    lines.Add(new Line(last, 1, $"You end holding {held}",
                         IsTurnHeader: false, Game: game));
                 if (closing?.ResultLine is { } ending)
-                    lines.Add(new Line(0, 1, ending, IsTurnHeader: false, Game: game));
+                    lines.Add(new Line(last, 1, ending, IsTurnHeader: false, Game: game));
 
                 game = e.GameNumber;
                 var record = t.Games.FirstOrDefault(g => g.Number == game);

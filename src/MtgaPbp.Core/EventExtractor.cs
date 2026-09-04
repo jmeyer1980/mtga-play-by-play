@@ -731,6 +731,16 @@ public sealed class EventExtractor(ICardDb cards)
                 // seven and then bottoms, so only the last look before turn one is the
                 // hand actually kept. Costs nothing after that: the guard is false for
                 // the rest of the game.
+                //
+                // Reading Turn *after* Apply means the message that first carries turn
+                // one is skipped, and 15 of 60 archived matches sampled on 2026-09-04 do
+                // put hand objects in that message. Nothing is lost by it: across all 59
+                // of that sample with a hand zone, the hand is the same size before and
+                // after that message — it re-states a hand already settled rather than
+                // bottoming a card or drawing one. Reading Turn before Apply instead
+                // would admit whatever that message carries, which is the same hand
+                // today and would be the turn-one draw the moment Arena batches it
+                // differently.
                 if (tracker.Turn == 0)
                     for (var held = 1; held <= 2; held++)
                         game.OpeningHands[held] = tracker.HandOf(held);
