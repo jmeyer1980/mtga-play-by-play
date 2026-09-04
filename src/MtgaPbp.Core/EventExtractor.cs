@@ -1741,6 +1741,21 @@ public sealed class EventExtractor(ICardDb cards)
             }
             else if (SimpleAnnotationKinds.TryGetValue(type, out var simple))
             {
+                // A generic pip can be paid without mana: Improvise taps an artifact,
+                // Convoke taps a creature, Delve exiles a card from the graveyard. Arena
+                // reports all three as ManaPaid, but they carry substitution_grpid where
+                // a real payment carries the manaId it spent — 91 of these in the
+                // archive, and all 91 carry it while a real payment never does. The
+                // affector is the tapped or exiled card, so the page was saying "taps
+                // Wrath of God for mana" about a sorcery lying in a graveyard (#184).
+                //
+                // Keyed on the field and not on the colour: seven of them wear a
+                // coloured code, which is Convoke tapping a coloured creature to pay a
+                // coloured pip. Still not mana.
+                if (simple == EventKind.ManaPaid &&
+                    GameStateTracker.DetailInt(a, "substitution_grpid") is not null)
+                    continue;
+
                 var affector = Json.Int(a, "affectorId");
                 var affected = FirstAffected(a);
 
@@ -1758,10 +1773,17 @@ public sealed class EventExtractor(ICardDb cards)
                 };
 
                 // Arena numbers counter kinds; the card database names them, so a
-                // planeswalker gains "1 Loyalty counter" rather than "1 counter".
-                var counterName = simple == EventKind.CounterChanged
-                    ? cards.EnumName("CounterType", GameStateTracker.DetailInt(a, "counter_type") ?? 0)
-                    : null;
+                // planeswalker gains "1 Loyalty counter" rather than "1 counter". Mana
+                // colours are numbered too, but by an enum the database does not carry
+                // — see ManaSymbol.
+                var counterName = simple switch
+                {
+                    EventKind.CounterChanged => cards.EnumName(
+                        "CounterType", GameStateTracker.DetailInt(a, "counter_type") ?? 0),
+                    EventKind.ManaPaid => ManaSymbol(
+                        GameStateTracker.DetailInt(a, "color") ?? 0),
+                    _ => null
+                };
 
                 ev = Base(tracker, ts, simple) with
                 {
@@ -1893,6 +1915,34 @@ public sealed class EventExtractor(ICardDb cards)
     /// triggering objects are that case, so the check is most of what makes the remaining
     /// 1,398 worth printing.
     /// </remarks>
+    /// <summary>
+    /// The mana symbol a <c>ManaPaid</c> colour code names, or null for a code this does
+    /// not know.
+    /// </summary>
+    /// <remarks>
+    /// A table here rather than a database lookup, because Arena's card database carries
+    /// no ManaColor enum at all: its <c>Color</c> type stops at 5, and its
+    /// <c>CardColor</c> type is a different enum whose 0 is Colorless — the wrong answer
+    /// for 12, and confidently wrong, which is worse.
+    /// <para>
+    /// The values were read out of the log instead. A <c>ManaPaid</c>'s <c>id</c> detail
+    /// is the manaId of an entry in the player's <c>manaPool</c>, and the pool names its
+    /// colour in words; joining the two across the archive gives 1,477 agreements and no
+    /// conflicts. These six codes are all that occur — 7 is Generic and never reaches
+    /// here, because a generic pip is paid by substitution and is filtered before this.
+    /// </para>
+    /// </remarks>
+    private static string? ManaSymbol(int code) => code switch
+    {
+        1 => "W",
+        2 => "U",
+        3 => "B",
+        4 => "R",
+        5 => "G",
+        12 => "C",
+        _ => null
+    };
+
     private static (int? Id, string? Name) TriggerCause(
         GameStateTracker tracker, int? abilityId, int? sourceId)
     {

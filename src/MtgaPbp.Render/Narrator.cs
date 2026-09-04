@@ -88,9 +88,23 @@ public static class Narrator
     /// game but the last stated where that game ends — the match-end line already says
     /// how the last one went.
     /// </summary>
-    public static IReadOnlyList<Line> Narrate(Transcript t, Density density)
+    /// <param name="manaLedger">
+    /// Closes every phase in which mana was spent with a receipt, in place of the
+    /// per-payment lines verbose would otherwise print. Off unless asked for, because
+    /// the archive's 57,000 payments are a diagnostic view and not a reading one.
+    /// </param>
+    public static IReadOnlyList<Line> Narrate(
+        Transcript t, Density density, bool manaLedger = false)
     {
         var lines = new List<Line>();
+
+        // Payments seen since the phase they belong to began, and where that was. The
+        // ledger is a receipt: it is written when the phase closes, which is the first
+        // event of the next one.
+        var paid = new List<GameEvent>();
+        var paidAt = (Game: -1, Turn: -1, Phase: -1);
+        string? paidIn = null;
+        string? phase = null;
 
         // More than one game is what changes the shape of the page, so it is what the
         // extra structure keys off. A Bo3 that only ever reached game one is a
@@ -113,6 +127,37 @@ public static class Narrator
 
         foreach (var e in FoldPerPermanent(t.Events.OrderBy(x => x.Seq).ToList()))
         {
+            if (manaLedger)
+            {
+                // Flushed before anything this event brings with it — its own line, and
+                // any turn or game heading — so the receipt closes the phase it covers
+                // rather than opening the one after it.
+                var here = (e.GameNumber, e.Turn, e.Phase);
+                if (paid.Count > 0 && here != paidAt)
+                {
+                    AppendManaLedger(lines, t, paid, paidAt, paidIn);
+                    paid.Clear();
+                }
+
+                // The phase's own name, as its PhaseChange gave it. Read from the stream
+                // rather than the event's Phase number, which is an ordinal the renderer
+                // has no table for.
+                if (e.Kind == EventKind.PhaseChange && !string.IsNullOrWhiteSpace(e.Detail))
+                    phase = e.Detail;
+
+                if (e.Kind == EventKind.ManaPaid)
+                {
+                    if (paid.Count == 0) { paidAt = here; paidIn = phase; }
+                    paid.Add(e);
+
+                    // The receipt replaces these rather than joining them. Verbose would
+                    // otherwise print the tap and then count it again a few lines later,
+                    // and the noise those per-payment lines make is the reason the
+                    // ledger exists.
+                    continue;
+                }
+            }
+
             if (multi && e.GameNumber != game)
             {
                 // The game that just ended says how it ended, where it ended. Only a game
@@ -154,7 +199,63 @@ public static class Narrator
                 Level: under,
                 Accrues: Accumulates(e.Kind) ? e.TargetInstanceId ?? e.SourceInstanceId : null));
         }
+
+        // The last phase closes with the match, and its receipt is owed like any other.
+        if (paid.Count > 0) AppendManaLedger(lines, t, paid, paidAt, paidIn);
+
         return Collapse(lines);
+    }
+
+    /// <summary>
+    /// One line per player who spent mana in a phase: what they spent and which
+    /// permanents produced it.
+    /// </summary>
+    /// <remarks>
+    /// Per player, because a phase can hold both sides paying and one line covering both
+    /// would credit a land to whoever happened to be listed first. Sources are kept in
+    /// the order they were first tapped, since the question a reader has is which
+    /// permanents did the work, not which sorts alphabetically.
+    /// <para>
+    /// The colours come from <see cref="GameEvent.Detail"/>. Where a payment has none —
+    /// a colour code the extractor does not know — the count carries the line instead,
+    /// so an unknown colour costs the symbols and not the fact that mana was spent.
+    /// </para>
+    /// </remarks>
+    private static void AppendManaLedger(
+        List<Line> lines, Transcript t, List<GameEvent> paid,
+        (int Game, int Turn, int Phase) at, string? phase)
+    {
+        foreach (var seat in paid.Select(e => e.ActorSeat).Distinct())
+        {
+            var mine = paid.Where(e => e.ActorSeat == seat).ToList();
+            if (mine.Count == 0) continue;
+
+            var sources = new List<(string Name, int Count)>();
+            foreach (var e in mine)
+            {
+                var name = e.SourceName ?? "an unnamed source";
+                var at2 = sources.FindIndex(s => s.Name == name);
+                if (at2 < 0) sources.Add((name, 1));
+                else sources[at2] = (name, sources[at2].Count + 1);
+            }
+
+            // All or nothing. Naming the colours of only the payments that had one
+            // would print three symbols for four mana and call it the total, which is
+            // a quieter lie than saying nothing about colour at all.
+            var spent = mine.All(e => e.Detail is not null)
+                ? string.Concat(mine.Select(e => $"{{{e.Detail}}}"))
+                : $"{mine.Count} mana";
+
+            var from = string.Join(", ", sources.Select(
+                s => s.Count > 1 ? $"{s.Name} ×{s.Count}" : s.Name));
+
+            var where = string.IsNullOrWhiteSpace(phase) ? "" : $" in {phase}";
+
+            lines.Add(new Line(
+                at.Turn, 1,
+                $"{Who(seat, t)} {Verb(seat, "pay", "pays", t)}{where}: {spent} — {from}",
+                IsTurnHeader: false, Game: at.Game));
+        }
     }
 
     /// <summary>

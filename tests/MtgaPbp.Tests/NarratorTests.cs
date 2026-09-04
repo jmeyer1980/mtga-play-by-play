@@ -1,3 +1,4 @@
+using System.Linq;
 using MtgaPbp.Core;
 using MtgaPbp.Render;
 using NUnit.Framework;
@@ -1144,5 +1145,92 @@ public class NarratorTests
                 }).ToArray()), Density.Beats);
 
         Assert.That(lines.Single().Text, Is.EqualTo("3× Soldier 1/1 gets +2/+1"));
+    }
+
+    // ---------- Issue 179: the per-phase mana ledger ----------
+
+    private static System.Collections.Generic.List<string> Ledger(bool on) =>
+        Narrator.Narrate(T(
+                E(EventKind.PhaseChange, 0) with { Detail = "1st Main" },
+                E(EventKind.ManaPaid, 1) with
+                { ActorSeat = 1, SourceName = "Plains", Detail = "W" },
+                E(EventKind.ManaPaid, 2) with
+                { ActorSeat = 1, SourceName = "Plains", Detail = "W" },
+                E(EventKind.ManaPaid, 3) with
+                { ActorSeat = 1, SourceName = "Nykthos, Shrine to Nyx", Detail = "C" },
+                E(EventKind.ManaPaid, 4) with
+                { ActorSeat = 2, SourceName = "Island", Detail = "U" },
+                E(EventKind.TurnStart, 5) with { Turn = 2 }),
+            Density.Beats, manaLedger: on)
+            .Select(l => l.Text).ToList();
+
+    /// <summary>
+    /// The receipt closes the phase it covers, names the player who paid, and keeps the
+    /// sources in the order they were tapped (#179).
+    /// </summary>
+    [Test]
+    public void The_mana_ledger_reports_what_each_player_spent()
+    {
+        var lines = Ledger(on: true);
+
+        Assert.That(lines, Has.Some.EqualTo(
+            "You pay in 1st Main: {W}{W}{C} — Plains ×2, Nykthos, Shrine to Nyx"));
+        Assert.That(lines, Has.Some.EqualTo(
+            "Opponent pays in 1st Main: {U} — Island"));
+    }
+
+    /// <summary>Off unless asked for: the archive holds 57,000 payments.</summary>
+    [Test]
+    public void The_mana_ledger_is_absent_unless_asked_for()
+    {
+        Assert.That(Ledger(on: false), Has.None.Contains("pay in 1st Main"));
+    }
+
+    /// <summary>
+    /// A payment whose colour code the extractor does not know must not silently shrink
+    /// the total: three symbols for four mana reads as a count, and is wrong.
+    /// </summary>
+    [Test]
+    public void The_mana_ledger_falls_back_to_a_count_when_a_colour_is_unknown()
+    {
+        var lines = Narrator.Narrate(T(
+                E(EventKind.PhaseChange, 0) with { Detail = "1st Main" },
+                E(EventKind.ManaPaid, 1) with
+                { ActorSeat = 1, SourceName = "Plains", Detail = "W" },
+                E(EventKind.ManaPaid, 2) with
+                { ActorSeat = 1, SourceName = "Weird Land", Detail = null },
+                E(EventKind.TurnStart, 3) with { Turn = 2 }),
+            Density.Beats, manaLedger: true)
+            .Select(l => l.Text).ToList();
+
+        Assert.That(lines, Has.Some.EqualTo(
+            "You pay in 1st Main: 2 mana — Plains, Weird Land"));
+        Assert.That(lines, Has.None.Contains("{W}"),
+            "naming only the colour that was known would under-report the total");
+    }
+
+    /// <summary>
+    /// The receipt replaces the per-payment lines rather than joining them — counting
+    /// the same tap twice on one page is the noise the ledger exists to remove.
+    /// </summary>
+    [Test]
+    public void The_mana_ledger_replaces_the_per_payment_lines_in_verbose()
+    {
+        var events = new[]
+        {
+            E(EventKind.PhaseChange, 0) with { Detail = "1st Main" },
+            E(EventKind.ManaPaid, 1) with
+                { ActorSeat = 1, SourceName = "Plains", Detail = "W" },
+            E(EventKind.TurnStart, 2) with { Turn = 2 }
+        };
+
+        var without = Narrator.Narrate(T(events), Density.Verbose)
+            .Select(l => l.Text).ToList();
+        var with = Narrator.Narrate(T(events), Density.Verbose, manaLedger: true)
+            .Select(l => l.Text).ToList();
+
+        Assert.That(without, Has.Some.Contains("for mana"));
+        Assert.That(with, Has.None.Contains("for mana"));
+        Assert.That(with, Has.Some.Contains("You pay in 1st Main"));
     }
 }

@@ -5,7 +5,7 @@ namespace MtgaPbp.Render;
 
 public static class MarkdownRenderer
 {
-    public static string Render(Transcript t)
+    public static string Render(Transcript t, bool manaLedger = false)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# {TranscriptSummary.Title(t)}");
@@ -51,7 +51,7 @@ public static class MarkdownRenderer
             sb.AppendLine().AppendLine($"*{TranscriptSummary.OpponentNote}*");
         }
 
-        foreach (var line in Narrator.Narrate(t, Density.Beats))
+        foreach (var line in Narrator.Narrate(t, Density.Beats, manaLedger))
         {
             if (line.IsTurnHeader)
                 sb.AppendLine().AppendLine($"{new string('#', line.Level)} {line.Text}");

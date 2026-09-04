@@ -1655,6 +1655,90 @@ public class EventExtractorTests
     }
 
     /// <summary>
+    /// Improvise, Convoke and Delve pay a generic pip by tapping or exiling a permanent
+    /// or card, and Arena reports all three with <c>AnnotationType_ManaPaid</c>. The
+    /// affector is the tapped or exiled card, so counting it said "taps Wrath of God for
+    /// mana" about a sorcery lying in a graveyard (#184). A real payment names the manaId
+    /// it spent; a substitution names the keyword instead.
+    /// </summary>
+    [Test]
+    public void A_pip_paid_by_substitution_is_not_a_mana_payment()
+    {
+        var paid = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 800, "grpId": 5, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 71, "affectorId": 800, "affectedIds": [ 810 ],
+              "type": [ "AnnotationType_ManaPaid" ], "details": [
+                { "key": "substitution_grpid", "valueInt32": [ 67 ] },
+                { "key": "color", "valueInt32": [ 7 ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, paid);
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.ManaPaid), Is.False,
+            "a Delve exile is not a mana source");
+    }
+
+    /// <summary>
+    /// And a real payment still is one, so the guard reads the substitution rather than
+    /// silencing mana wholesale.
+    /// </summary>
+    [Test]
+    public void A_real_mana_payment_is_still_reported()
+    {
+        var paid = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 800, "grpId": 5, "name": 648,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 72, "affectorId": 800, "affectedIds": [ 810 ],
+              "type": [ "AnnotationType_ManaPaid" ], "details": [
+                { "key": "id", "valueInt32": [ 4211 ] },
+                { "key": "color", "valueInt32": [ 1 ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, paid);
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.ManaPaid).SourceName,
+            Is.EqualTo("Plains"));
+    }
+
+    /// <summary>
+    /// The colour a payment spent. Read from a table rather than the card database,
+    /// which carries no ManaColor enum — its Color type stops at 5 and its CardColor
+    /// type is a different enum whose 0 is Colorless, so 12 has no answer there (#179).
+    /// </summary>
+    [TestCase(1, "W")]
+    [TestCase(2, "U")]
+    [TestCase(3, "B")]
+    [TestCase(4, "R")]
+    [TestCase(5, "G")]
+    [TestCase(12, "C")]
+    public void A_mana_payment_carries_the_colour_it_spent(int code, string symbol)
+    {
+        var paid = Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 800, "grpId": 5, "name": 648,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 73, "affectorId": 800, "affectedIds": [ 810 ],
+              "type": [ "AnnotationType_ManaPaid" ], "details": [
+                { "key": "id", "valueInt32": [ 4211 ] },
+                { "key": "color", "valueInt32": [ {{code}} ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, paid);
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.ManaPaid).Detail,
+            Is.EqualTo(symbol));
+    }
+
+    /// <summary>
     /// A token state-based actions removed before it had been anything. Arena reports it
     /// with <c>AnnotationType_TokenImmediatelyDied</c> and nothing else — no zone change,
     /// no destroy — so the transcript said a token was created and never mentioned it
