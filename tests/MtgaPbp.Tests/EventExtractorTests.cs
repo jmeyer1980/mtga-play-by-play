@@ -2974,4 +2974,31 @@ public class EventExtractorTests
         Assert.That(t.Opening?.Hand, Has.None.EqualTo("Llanowar Elves"),
             "the opponent's hand must not reach the transcript even when the log carries it");
     }
+
+    /// <summary>
+    /// A creature that took lethal damage and is still standing needs a line saying why,
+    /// or the board contradicts the damage above it. The annotation's payload is empty —
+    /// its name is the whole fact — which is why it is narrated where the other
+    /// empty-payload types are dropped (#195).
+    /// </summary>
+    [Test]
+    public void A_permanent_that_regenerated_says_so()
+    {
+        var regen = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 820, "grpId": 5, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 1 } ],
+          "annotations": [
+            { "id": 81, "affectorId": 820, "affectedIds": [ 820 ],
+              "type": [ "AnnotationType_PermanentRegenerated" ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, regen);
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Regenerated).SourceName,
+            Is.EqualTo("Llanowar Elves"));
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False,
+            "the annotation must be recognised, not reported as unhandled");
+    }
 }

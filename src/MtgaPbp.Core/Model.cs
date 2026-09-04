@@ -150,7 +150,7 @@ public enum EventKind
     StateBasedAction, ZoneMove, Milled, Surveilled, StatsModified, StatsExpired, DoorUnlocked,
     Damage, LifeChanged, TokenCreated, CounterChanged,
     Scry, Revealed, ManaPaid, Attack, Block, BoardSnapshot, Triggered, Activated,
-    Attached, LevelUp, AbilityGained, AbilityExpired, Copied,
+    Attached, LevelUp, AbilityGained, AbilityExpired, Copied, Regenerated,
 
     /// <summary>
     /// A permanent changed hands. Every line after one of these is about a creature the

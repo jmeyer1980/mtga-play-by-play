@@ -1056,6 +1056,10 @@ public static class Narrator
         // a death line would be the first the reader heard the token existed. What
         // killed it is not claimed, because the log does not say — see
         // MarkTokensDeadOnArrival.
+        // Said of the permanent rather than of whoever regenerated it: the annotation
+        // names only the permanent, as both its affector and its affected.
+        EventKind.Regenerated when e.SourceName is not null => $"{e.SourceName} regenerates",
+
         EventKind.TokenCreated when e.TargetName is not null =>
             $"{e.SourceName ?? "An effect"} creates {e.TargetName}"
             + (e.DiedImmediately ? ", which immediately dies" : ""),
