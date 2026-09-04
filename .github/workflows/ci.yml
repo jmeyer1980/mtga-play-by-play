@@ -31,15 +31,20 @@ jobs:
       # trusted, for the same reason the fixture scrub is asserted in a test: it is
       # exactly the kind of file someone repopulates later without knowing the rule.
       - name: Guard the committed collection stays empty
+        shell: pwsh
         run: |
-          size=$(git cat-file -s HEAD:collection.txt)
-          if [ "$size" != "0" ]; then
-            echo "::error file=collection.txt::collection.txt is $size bytes; it must be committed empty."
-            echo "Set the strip filter and re-commit it:"
-            echo "  git config filter.strip-collection.clean true"
-            echo "  git rm --cached collection.txt && git add collection.txt"
-            exit 1
-          fi
+          $size = git cat-file -s HEAD:collection.txt
+          if ($LASTEXITCODE -ne 0) {
+            throw "collection.txt is not committed. It must exist and be empty."
+          }
+          if ([int]$size -ne 0) {
+            Write-Host "::error file=collection.txt::collection.txt is $size bytes; it must be committed empty."
+            Write-Host "Set the strip filter, then re-commit the file:"
+            Write-Host "  git config filter.strip-collection.clean true"
+            Write-Host "  git rm --cached collection.txt; git add collection.txt"
+            throw "collection.txt carries card ownership and this repository is public."
+          }
+          Write-Host "collection.txt is committed empty"
 
       - uses: actions/setup-dotnet@v6
         with:
