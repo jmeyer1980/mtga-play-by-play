@@ -216,6 +216,20 @@ public sealed record GameEvent
     public string? CauseName { get; init; }
 
     /// <summary>
+    /// Which ability this is, as Arena's ability grpId, read at the moment the
+    /// <c>AbilityInstanceCreated</c> arrived. Only set on <see cref="EventKind.Triggered"/>.
+    /// </summary>
+    /// <remarks>
+    /// Arena hands the same ability instance id to a second, unrelated ability later in
+    /// the same game, so an instance id alone cannot say which ability an activation
+    /// record belongs to. The grpId can, but only if it is captured here: by the time
+    /// the deferred passes run, the tracker's object under that id may be the ability
+    /// that took it over. In match 005e282a instance 715 is Arcane Signet's mana ability
+    /// in one message and Fountainport's treasure ability in the next.
+    /// </remarks>
+    public int? SourceAbilityGrpId { get; init; }
+
+    /// <summary>
     /// Where a zone transfer went, and where it came from, as Arena's zone type names.
     /// Only set on <see cref="EventKind.ZoneMove"/> — every other transfer category
     /// already says where it went by being a destroy, an exile, a draw or a mill.

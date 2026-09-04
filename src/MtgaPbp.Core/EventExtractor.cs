@@ -468,15 +468,23 @@ public sealed class EventExtractor(ICardDb cards)
         public readonly Dictionary<int, int> Mulligans = [];
 
         /// <summary>
-        /// Ability instances a player deliberately activated, mapped to the seat that
-        /// acted, under the id Arena used at the time. From
-        /// <c>AnnotationType_UserActionTaken</c> with an actionType of 2 — whose
-        /// affector, unlike most affectors, really is the seat on every one in the
-        /// archive. Kept raw and resolved only when the game closes, because the
+        /// Ability instances a player deliberately activated, under the id Arena used at
+        /// the time, each mapped to the seat that acted and to which ability was
+        /// activated. From <c>AnnotationType_UserActionTaken</c> with an actionType of 2
+        /// — whose affector, unlike most affectors, really is the seat on every one in
+        /// the archive. Kept raw and resolved only when the game closes, because the
         /// activation and the ability's creation arrive in different messages for a
         /// quarter of the archive and the alias map is not complete until the end.
         /// </summary>
-        public readonly Dictionary<int, int> Activations = [];
+        /// <remarks>
+        /// A list rather than one record per id, and carrying the ability grpId, because
+        /// Arena reuses an instance id within a game. Keyed by id alone the second
+        /// activation overwrote the first, and the surviving record was then free to
+        /// rename an unrelated ability's trigger line — and, since the seat is carried
+        /// too, to attribute it to the wrong player. Rare but real: two ids in the
+        /// archive carry activations of two different abilities.
+        /// </remarks>
+        public readonly Dictionary<int, List<(int Seat, int AbilityGrpId)>> Activations = [];
 
         /// <summary>
         /// The last statline seen for each permanent, so a change that no annotation
@@ -750,7 +758,13 @@ public sealed class EventExtractor(ICardDb cards)
                     if (Json.Int(a, "affectorId") is not { } actorSeat ||
                         actorSeat is not (1 or 2)) continue;
                     if (FirstAffected(a) is not { } abilityInst) continue;
-                    game.Activations[abilityInst] = actorSeat;
+                    // Which ability, not just which instance — see Activations' remarks.
+                    // An activation with no grpId can still be recorded; it simply never
+                    // matches, which is the safe direction.
+                    var grp = GameStateTracker.DetailInt(a, "abilityGrpId") ?? 0;
+                    if (!game.Activations.TryGetValue(abilityInst, out var acted))
+                        game.Activations[abilityInst] = acted = [];
+                    acted.Add((actorSeat, grp));
                 }
 
                 // A resync re-sends annotations it has already delivered, and each one
@@ -1582,6 +1596,11 @@ public sealed class EventExtractor(ICardDb cards)
                 {
                     SourceInstanceId = abilityId,
                     SourceName = abilityName,
+                    // Read now, not in the deferred pass: this id may belong to a
+                    // different ability by the time the game closes.
+                    SourceAbilityGrpId = abilityId is { } gid
+                        ? tracker.Get(gid)?.GrpId
+                        : null,
                     CauseInstanceId = causeId,
                     CauseName = causeName
                 };
@@ -2081,8 +2100,14 @@ public sealed class EventExtractor(ICardDb cards)
         // Both sides are folded to canonical ids only now, with the game's whole alias
         // map known — the activation names the id in use when the player acted, the
         // creation the id in use when Arena announced the ability.
-        var activated = new Dictionary<int, int>();
-        foreach (var (id, seat) in g.Activations) activated[tracker.Resolve(id)] = seat;
+        var activated = new Dictionary<int, List<(int Seat, int AbilityGrpId)>>();
+        foreach (var (id, records) in g.Activations)
+        {
+            var key = tracker.Resolve(id);
+            if (!activated.TryGetValue(key, out var into))
+                activated[key] = into = [];
+            into.AddRange(records);
+        }
 
         // Every trigger line that was really an activation, with the permanent it
         // belongs to. An ability whose permanent cannot be named keeps its trigger
@@ -2093,11 +2118,18 @@ public sealed class EventExtractor(ICardDb cards)
             var e = st.Events[i];
             if (e.Kind != EventKind.Triggered || e.SourceInstanceId is not { } ability)
                 continue;
-            if (!activated.TryGetValue(tracker.Resolve(ability), out var seat)) continue;
+            if (!activated.TryGetValue(tracker.Resolve(ability), out var records)) continue;
+
+            // The id alone is not enough. Where Arena has handed the same instance id to
+            // a second ability, only the record naming *this* ability may rename it —
+            // otherwise one permanent's activation renames another's trigger, and carries
+            // its seat across too. An event that never learned its grpId matches nothing.
+            var seat = SeatFor(records, e.SourceAbilityGrpId);
+            if (seat is not { } actor) continue;
 
             var (sourceId, sourceName) = tracker.AbilitySource(ability);
             if (sourceName is null) continue;
-            found.Add((i, seat, sourceId, sourceName));
+            found.Add((i, actor, sourceId, sourceName));
         }
         if (found.Count == 0) return;
 
@@ -2169,6 +2201,30 @@ public sealed class EventExtractor(ICardDb cards)
                 CauseName = null
             };
         }
+    }
+
+    /// <summary>
+    /// Which seat activated the ability an event is about, from the records filed under
+    /// its instance id — or null when none of them is about that ability.
+    /// </summary>
+    /// <remarks>
+    /// The exact answer is a grpId match, which is what tells two abilities sharing an
+    /// id apart. The fallback keeps the old id-only behaviour wherever either side never
+    /// said which ability it meant, so this tightens only the cases Arena described well
+    /// enough to prove wrong and cannot cost a line that resolves correctly today.
+    /// </remarks>
+    private static int? SeatFor(List<(int Seat, int AbilityGrpId)> records, int? grpId)
+    {
+        if (grpId is { } want)
+            foreach (var r in records)
+                if (r.AbilityGrpId == want)
+                    return r.Seat;
+
+        foreach (var r in records)
+            if (grpId is null || r.AbilityGrpId == 0)
+                return r.Seat;
+
+        return null;
     }
 
     /// <summary>

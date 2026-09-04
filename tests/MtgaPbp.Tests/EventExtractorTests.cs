@@ -1497,13 +1497,16 @@ public class EventExtractorTests
           "type": [ "AnnotationType_AbilityInstanceCreated" ] } ] }
     """);
 
-    private static string ActivationMessage(int abilityInstance, int actionType = 2) => Gre($$"""
+    // abilityGrpId defaults to 7, the grpId ActivationObjects gives instance 900, so an
+    // activation is about that ability unless a test deliberately says otherwise.
+    private static string ActivationMessage(
+        int abilityInstance, int actionType = 2, int abilityGrpId = 7) => Gre($$"""
     { "type": "GameStateType_Full",
       "annotations": [
         { "id": 42, "affectorId": 2, "affectedIds": [ {{abilityInstance}} ],
           "type": [ "AnnotationType_UserActionTaken" ], "details": [
             { "key": "actionType", "valueInt32": [ {{actionType}} ] },
-            { "key": "abilityGrpId", "valueInt32": [ 7 ] } ] } ] }
+            { "key": "abilityGrpId", "valueInt32": [ {{abilityGrpId}} ] } ] } ] }
     """);
 
     /// <summary>
@@ -1659,6 +1662,25 @@ public class EventExtractorTests
             ActivationMessage(900, actionType: 4));
 
         Assert.That(t.Events.Any(x => x.Kind == EventKind.Activated), Is.False);
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Triggered).SourceName,
+            Is.EqualTo("Llanowar Elves's ability"));
+    }
+
+    /// <summary>
+    /// Arena hands one ability instance id to a second, unrelated ability inside a game.
+    /// Instance 715 of match 005e282a is Arcane Signet's mana ability in one message and
+    /// Fountainport's treasure ability in the next; keyed by the id alone, whichever
+    /// activation was recorded last renamed the other ability's trigger line and carried
+    /// its seat across with it. An activation may only speak for its own ability.
+    /// </summary>
+    [Test]
+    public void An_activation_of_another_ability_sharing_the_id_leaves_the_trigger_alone()
+    {
+        var t = Run(RoomLine, MulliganLine, CreationMessage,
+            ActivationMessage(900, abilityGrpId: 174175));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Activated), Is.False,
+            "an activation of a different ability must not claim this trigger");
         Assert.That(t.Events.Single(x => x.Kind == EventKind.Triggered).SourceName,
             Is.EqualTo("Llanowar Elves's ability"));
     }
