@@ -64,7 +64,7 @@ client UI state — what Arena highlighted on screen — not a game event.
 **`DieRoll`** (6) carries a real roll: `Result`, `NaturalResult`, `Faces`, `Ignored`. It is
 nonetheless redundant. The opening already reports the roll, read from
 `GREMessageType_DieRollResultsResp` — a *message*, not an annotation
-(`EventExtractor.cs:684`). These six are the same rolls arriving on a second surface, and
+(`src/MtgaPbp.Core/EventExtractor.cs:684`). These six are the same rolls arriving on a second surface, and
 narrating them would say the die roll twice.
 
 **`ModifiedPower`** (3) carries `count` and `counter_type`, which is a counter, and
@@ -85,7 +85,7 @@ carrying six `UniqueAbilityId`s at once, which the grant path does not read. One
 occurrence.
 
 **`ModifiedColor`** (1) carries `color: 2, modificationType: "Set"`. A colour change is a
-real game fact, but one occurrence across 1,407 matches, and the transcript never states a
+real game fact, but one occurrence across all 1,412 matches, and the transcript never states a
 permanent's colour in the first place — so there is nothing for the change to modify on
 the page.
 
