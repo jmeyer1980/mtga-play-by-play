@@ -748,13 +748,24 @@ public sealed class EventExtractor(ICardDb cards)
                 // of its own: the ability's AbilityInstanceCreated already produces the
                 // line, and this is what corrects that line's verb — an activation
                 // reported as "X's ability triggers" hides both the decision and the
-                // cost that was paid. 450 of these across the archive, actionType 2
-                // meaning "activate" (1 is a cast, 3 a land drop, 4 a mana ability).
+                // cost that was paid. 4,602 of these across the archive at actionType 2,
+                // "activate" (1 is a cast, 3 a land drop, 4 a mana ability; 7, 8, 12,
+                // 15, 16, 18, 19 and 22-24 also occur and are not yet identified).
+                //
+                // A mana ability is activated too, so actionType 4 belongs here as well
+                // — it was excluded on the reasoning that a mana tap is not worth a
+                // line, but the exclusion never removed a line, it only left the wrong
+                // verb on one. Arena decides what gets a line, and it decides well:
+                // it describes an ability instance that carries state — a chosen type,
+                // a variable amount, a cost — and stays silent otherwise. So every
+                // Cavern of Souls activation in the archive is reported (239 of 239),
+                // and 18,875 of 18,899 Plains taps are not (#177).
                 foreach (var a in Json.Array(gsm, "annotations"))
                 {
                     if (!GameStateTracker.HasType(a, "AnnotationType_UserActionTaken"))
                         continue;
-                    if (GameStateTracker.DetailInt(a, "actionType") != 2) continue;
+                    if (GameStateTracker.DetailInt(a, "actionType") is not (2 or 4))
+                        continue;
                     if (Json.Int(a, "affectorId") is not { } actorSeat ||
                         actorSeat is not (1 or 2)) continue;
                     if (FirstAffected(a) is not { } abilityInst) continue;

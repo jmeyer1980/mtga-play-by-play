@@ -1651,15 +1651,35 @@ public class EventExtractorTests
     }
 
     /// <summary>
-    /// Only actionType 2 is an activation — 1 is a cast, 3 a land drop, 4 a mana
-    /// ability. A mana ability's UserActionTaken naming the same instance must not
-    /// turn a genuine trigger into a claim the player activated it.
+    /// A mana ability is an activated ability, so actionType 4 corrects the verb the
+    /// same way actionType 2 does. It used to be excluded, on the reasoning that a mana
+    /// tap is not worth a line — but excluding it never removed a line, it only left
+    /// "Nykthos, Shrine to Nyx's ability triggers" on the page, which is not something
+    /// that happened (#177).
     /// </summary>
     [Test]
-    public void A_user_action_that_is_not_an_activation_leaves_the_trigger_alone()
+    public void A_mana_ability_is_reported_as_an_activation()
     {
         var t = Run(RoomLine, MulliganLine, CreationMessage,
             ActivationMessage(900, actionType: 4));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Triggered), Is.False,
+            "a mana ability is activated, never triggered");
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Activated).SourceName,
+            Is.EqualTo("Llanowar Elves"));
+    }
+
+    /// <summary>
+    /// A cast and a land drop are not activations, and must not take an ability's
+    /// trigger line with them — 1 is a cast, 3 a land drop.
+    /// </summary>
+    [TestCase(1)]
+    [TestCase(3)]
+    public void A_user_action_that_is_not_an_activation_leaves_the_trigger_alone(
+        int actionType)
+    {
+        var t = Run(RoomLine, MulliganLine, CreationMessage,
+            ActivationMessage(900, actionType));
 
         Assert.That(t.Events.Any(x => x.Kind == EventKind.Activated), Is.False);
         Assert.That(t.Events.Single(x => x.Kind == EventKind.Triggered).SourceName,
