@@ -3001,4 +3001,59 @@ public class EventExtractorTests
         Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False,
             "the annotation must be recognised, not reported as unhandled");
     }
+
+    /// <summary>
+    /// Riot lets the player choose, as the creature arrives, between a +1/+1 counter and
+    /// haste. Which they chose decides whether it can attack that turn, and the archive
+    /// splits 10 to 9 between them, so neither is the assumable default (#193).
+    /// </summary>
+    [TestCase("haste", "Llanowar Elves enters with haste")]
+    [TestCase("counter", "Llanowar Elves enters with a +1/+1 counter")]
+    public void Riot_says_which_mode_was_chosen(string choice, string expected)
+    {
+        var riot = Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 830, "grpId": 5, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 1 } ],
+          "annotations": [
+            { "id": 91, "affectorId": 830, "affectedIds": [ 830 ],
+              "type": [ "AnnotationType_AbilityWordActive" ], "details": [
+                { "key": "AbilityWordName", "valueString": [ "Riot" ] },
+                { "key": "choice", "valueString": [ "{{choice}}" ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, riot);
+        var lines = MtgaPbp.Render.Narrator
+            .Narrate(t, MtgaPbp.Render.Density.Beats)
+            .Select(l => l.Text)
+            .ToList();
+
+        Assert.That(lines, Has.Some.EqualTo(expected));
+    }
+
+    /// <summary>
+    /// Convoke reaches the same annotation surface and carries no choice, so there is
+    /// nothing to say about it here — what it paid for is #184's territory.
+    /// </summary>
+    [Test]
+    public void An_ability_word_with_no_choice_says_nothing()
+    {
+        var convoke = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 830, "grpId": 5, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 1 } ],
+          "annotations": [
+            { "id": 92, "affectorId": 830, "affectedIds": [ 830 ],
+              "type": [ "AnnotationType_AbilityWordActive" ], "details": [
+                { "key": "AbilityWordName", "valueString": [ "Convoke" ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, convoke);
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.ModeChosen), Is.False);
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False,
+            "recognised and dropped, not reported as unhandled");
+    }
 }

@@ -1499,7 +1499,56 @@ public sealed class EventExtractor(ICardDb cards)
 
             GameEvent? ev;
 
-            if (type == "AnnotationType_TokenImmediatelyDied")
+            if (type == "AnnotationType_AbilityWordActive")
+            {
+                // Arena reports 120 ability words on the persistent surface, almost all
+                // of them a recalculated count — devotion, storm, delirium — which is
+                // state rather than an event and is left to `mtga-pbp stats`. Only two
+                // reach the ordinary annotation surface: Convoke, which carries nothing
+                // beyond its own name, and Riot, which carries the choice.
+                //
+                // Riot is the one worth a line. The creature enters with a +1/+1 counter
+                // or with haste, the player picks, and which they picked decides whether
+                // it can attack that turn — 9 haste and 10 counter across the archive, so
+                // neither is the assumable default (#193).
+                var word = GameStateTracker.DetailString(a, "AbilityWordName");
+                if (word != "Riot") continue;
+                if (GameStateTracker.DetailString(a, "choice") is not { } picked) continue;
+                if (FirstAffected(a) is not { } entering) continue;
+
+                var chosen = picked switch
+                {
+                    "haste" => "haste",
+                    "counter" => "a +1/+1 counter",
+                    _ => null
+                };
+                if (chosen is null) continue;
+
+                // The annotation names the ability object, not the creature — Arena
+                // often never describes that object, so NameOf answers with a
+                // placeholder. The permanent it belongs to is what a reader needs.
+                var (ownerId, enteringName) = tracker.AbilitySource(entering);
+                if (CardNames.IsPlaceholder(enteringName))
+                {
+                    enteringName = tracker.NameOf(entering);
+                    ownerId = entering;
+                }
+                if (CardNames.IsPlaceholder(enteringName)) continue;
+                entering = ownerId ?? entering;
+                st.SawCard(enteringName);
+
+                // Added here and skipped, like the other standalone branches above:
+                // the if/else chain further down ends in an else that would otherwise
+                // overwrite this with an Unknown.
+                st.Add(Base(tracker, ts, EventKind.ModeChosen) with
+                {
+                    SourceInstanceId = entering,
+                    SourceName = enteringName,
+                    Detail = chosen
+                });
+                continue;
+            }
+            else if (type == "AnnotationType_TokenImmediatelyDied")
             {
                 // No line of its own — it is the same sentence as the creation, and a
                 // second line would report a death the reader was never told to expect.
