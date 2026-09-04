@@ -17,9 +17,9 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
 
@@ -53,6 +53,26 @@ jobs:
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:Version=${{ steps.version.outputs.version }}
           --output publish
+
+      # Until now the zip shipped an executable nobody had ever run. The Test step
+      # above exercises a different artifact: framework-dependent, many files, ordinary
+      # AppContext.BaseDirectory. This one is self-contained, single-file and
+      # self-extracting, which is exactly where BaseDirectory changes meaning — and
+      # Config.Load sits directly on top of it. --version answers before any I/O, so it
+      # proves the host starts and the version was stamped, which is the failure this
+      # cannot afford to ship.
+      - name: Smoke-run the published exe
+        shell: pwsh
+        run: |
+          $want = '${{ steps.version.outputs.version }}'
+          $out = & ./publish/mtga-pbp.exe --version 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -ne 0) { throw "the published exe exited $code" }
+          if ($out -notmatch [regex]::Escape("mtga-pbp $want")) {
+            throw "the published exe reports something other than 'mtga-pbp $want'"
+          }
+          Write-Host "smoke ok - the shipped exe runs and is stamped $want"
 
       - name: Assemble the package
         id: package
