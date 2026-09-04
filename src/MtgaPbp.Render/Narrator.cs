@@ -88,11 +88,11 @@ public static class Narrator
     /// game but the last stated where that game ends — the match-end line already says
     /// how the last one went.
     /// </summary>
-    /// <summary>
-    /// Turns a transcript into lines. <paramref name="manaLedger"/> adds a receipt at
-    /// the close of every phase in which mana was spent; it is off unless asked for,
-    /// because the archive's 57,000 payments are a diagnostic view and not a reading one.
-    /// </summary>
+    /// <param name="manaLedger">
+    /// Closes every phase in which mana was spent with a receipt, in place of the
+    /// per-payment lines verbose would otherwise print. Off unless asked for, because
+    /// the archive's 57,000 payments are a diagnostic view and not a reading one.
+    /// </param>
     public static IReadOnlyList<Line> Narrate(
         Transcript t, Density density, bool manaLedger = false)
     {
@@ -149,6 +149,12 @@ public static class Narrator
                 {
                     if (paid.Count == 0) { paidAt = here; paidIn = phase; }
                     paid.Add(e);
+
+                    // The receipt replaces these rather than joining them. Verbose would
+                    // otherwise print the tap and then count it again a few lines later,
+                    // and the noise those per-payment lines make is the reason the
+                    // ledger exists.
+                    continue;
                 }
             }
 
@@ -233,9 +239,12 @@ public static class Narrator
                 else sources[at2] = (name, sources[at2].Count + 1);
             }
 
-            var symbols = string.Concat(
-                mine.Where(e => e.Detail is not null).Select(e => $"{{{e.Detail}}}"));
-            var spent = symbols.Length > 0 ? symbols : $"{mine.Count} mana";
+            // All or nothing. Naming the colours of only the payments that had one
+            // would print three symbols for four mana and call it the total, which is
+            // a quieter lie than saying nothing about colour at all.
+            var spent = mine.All(e => e.Detail is not null)
+                ? string.Concat(mine.Select(e => $"{{{e.Detail}}}"))
+                : $"{mine.Count} mana";
 
             var from = string.Join(", ", sources.Select(
                 s => s.Count > 1 ? $"{s.Name} ×{s.Count}" : s.Name));
