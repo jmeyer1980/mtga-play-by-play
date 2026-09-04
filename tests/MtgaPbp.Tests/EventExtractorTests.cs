@@ -1708,6 +1708,37 @@ public class EventExtractorTests
     }
 
     /// <summary>
+    /// The colour a payment spent. Read from a table rather than the card database,
+    /// which carries no ManaColor enum — its Color type stops at 5 and its CardColor
+    /// type is a different enum whose 0 is Colorless, so 12 has no answer there (#179).
+    /// </summary>
+    [TestCase(1, "W")]
+    [TestCase(2, "U")]
+    [TestCase(3, "B")]
+    [TestCase(4, "R")]
+    [TestCase(5, "G")]
+    [TestCase(12, "C")]
+    public void A_mana_payment_carries_the_colour_it_spent(int code, string symbol)
+    {
+        var paid = Gre($$"""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 800, "grpId": 5, "name": 648,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 73, "affectorId": 800, "affectedIds": [ 810 ],
+              "type": [ "AnnotationType_ManaPaid" ], "details": [
+                { "key": "id", "valueInt32": [ 4211 ] },
+                { "key": "color", "valueInt32": [ {{code}} ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, paid);
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.ManaPaid).Detail,
+            Is.EqualTo(symbol));
+    }
+
+    /// <summary>
     /// A token state-based actions removed before it had been anything. Arena reports it
     /// with <c>AnnotationType_TokenImmediatelyDied</c> and nothing else — no zone change,
     /// no destroy — so the transcript said a token was created and never mentioned it
