@@ -481,9 +481,11 @@ public sealed class EventExtractor(ICardDb cards)
         /// A list rather than one record per id, and carrying the ability grpId, because
         /// Arena reuses an instance id within a game. Keyed by id alone the second
         /// activation overwrote the first, and the surviving record was then free to
-        /// rename an unrelated ability's trigger line — and, since the seat is carried
-        /// too, to attribute it to the wrong player. Rare but real: two ids in the
-        /// archive carry activations of two different abilities.
+        /// rename an unrelated ability's trigger line. Rare but real: six (match,
+        /// instance) pairs in the archive carry activations of two different abilities.
+        /// The seat rides along on the record, so a mismatch could also name the wrong
+        /// player — that one is theoretical, since all six have both records from the
+        /// same seat and no (instance, ability) in the archive is activated by two.
         /// </remarks>
         public readonly Dictionary<int, List<(int Seat, int AbilityGrpId)>> Activations = [];
 
@@ -1613,6 +1615,9 @@ public sealed class EventExtractor(ICardDb cards)
                     SourceAbilityGrpId = abilityId is { } gid
                         ? tracker.Get(gid)?.GrpId
                         : null,
+                    SourceAbilityOwnerId = abilityId is { } oid
+                        ? tracker.Get(oid)?.ParentId
+                        : null,
                     CauseInstanceId = causeId,
                     CauseName = causeName
                 };
@@ -2121,6 +2126,24 @@ public sealed class EventExtractor(ICardDb cards)
             into.AddRange(records);
         }
 
+        // Every grpId an ability has worn, gathered under the permanent it belongs to.
+        // Arena revises an ability's grpId by re-sending its creation in the next
+        // message — instance 921 of 0b7e43ba is Elspeth's ability as 188701 and then as
+        // 188700 — so an activation names the last grpId while the earlier event still
+        // carries the superseded one. Both are the same ability, and the owner says so.
+        var worn = new Dictionary<(int Ability, int Owner), HashSet<int>>();
+        for (var i = g.FirstSeq; i < g.EndSeq; i++)
+        {
+            var e = st.Events[i];
+            if (e.Kind != EventKind.Triggered) continue;
+            if (e.SourceInstanceId is not { } id || e.SourceAbilityGrpId is not { } grp ||
+                e.SourceAbilityOwnerId is not { } owner) continue;
+
+            var key = (tracker.Resolve(id), tracker.Resolve(owner));
+            if (!worn.TryGetValue(key, out var family)) worn[key] = family = [];
+            family.Add(grp);
+        }
+
         // Every trigger line that was really an activation, with the permanent it
         // belongs to. An ability whose permanent cannot be named keeps its trigger
         // line: the verb is wrong, but a wrong verb still beats losing the fact.
@@ -2133,11 +2156,10 @@ public sealed class EventExtractor(ICardDb cards)
             if (!activated.TryGetValue(tracker.Resolve(ability), out var records)) continue;
 
             // The id alone is not enough. Where Arena has handed the same instance id to
-            // a second ability, only the record naming *this* ability may rename it —
+            // a second ability, only a record naming *this* ability may rename it —
             // otherwise one permanent's activation renames another's trigger, and carries
-            // its seat across too. Where neither side named an ability, SeatFor still
-            // answers on the id alone, so nothing that resolves today is lost.
-            var seat = SeatFor(records, e.SourceAbilityGrpId);
+            // its seat across too.
+            var seat = SeatFor(records, e, worn, tracker);
             if (seat is not { } actor) continue;
 
             var (sourceId, sourceName) = tracker.AbilitySource(ability);
@@ -2221,20 +2243,27 @@ public sealed class EventExtractor(ICardDb cards)
     /// its instance id — or null when none of them is about that ability.
     /// </summary>
     /// <remarks>
-    /// The exact answer is a grpId match, which is what tells two abilities sharing an
-    /// id apart. The fallback keeps the old id-only behaviour wherever either side never
-    /// said which ability it meant, so this tightens only the cases Arena described well
-    /// enough to prove wrong and cannot cost a line that resolves correctly today.
+    /// A record matches on the grpId the event carries, or on any other grpId the same
+    /// ability has worn under the same owner, which is what survives Arena revising a
+    /// grpId by re-sending the creation. There is no match-anything fallback: every
+    /// <c>UserActionTaken</c> in the archive carries an abilityGrpId and every emitted
+    /// trigger has one, so a fallback would be unreachable — and an unreachable wildcard
+    /// is just the id-only bug waiting to be reachable. Failing to match keeps the
+    /// trigger line, which is the wrong verb but never the wrong ability.
     /// </remarks>
-    private static int? SeatFor(List<(int Seat, int AbilityGrpId)> records, int? grpId)
+    private static int? SeatFor(
+        List<(int Seat, int AbilityGrpId)> records,
+        GameEvent e,
+        Dictionary<(int Ability, int Owner), HashSet<int>> worn,
+        GameStateTracker tracker)
     {
-        if (grpId is { } want)
-            foreach (var r in records)
-                if (r.AbilityGrpId == want)
-                    return r.Seat;
+        HashSet<int>? family = null;
+        if (e.SourceInstanceId is { } id && e.SourceAbilityOwnerId is { } owner)
+            worn.TryGetValue((tracker.Resolve(id), tracker.Resolve(owner)), out family);
 
         foreach (var r in records)
-            if (grpId is null || r.AbilityGrpId == 0)
+            if (r.AbilityGrpId == e.SourceAbilityGrpId ||
+                family?.Contains(r.AbilityGrpId) == true)
                 return r.Seat;
 
         return null;

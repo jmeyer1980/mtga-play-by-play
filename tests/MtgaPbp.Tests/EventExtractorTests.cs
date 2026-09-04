@@ -1706,6 +1706,66 @@ public class EventExtractorTests
     }
 
     /// <summary>
+    /// One instance id carrying two activations — its own ability's and one from the
+    /// ability that inherited the id. Only the matching record may rename, whichever
+    /// arrived first, and the other's seat must not come with it.
+    /// </summary>
+    [TestCase(true)]
+    [TestCase(false)]
+    public void Only_the_matching_activation_renames_when_one_id_carries_two(
+        bool foreignFirst)
+    {
+        var foreign = Gre("""
+        { "type": "GameStateType_Full",
+          "annotations": [
+            { "id": 44, "affectorId": 1, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_UserActionTaken" ], "details": [
+                { "key": "actionType", "valueInt32": [ 2 ] },
+                { "key": "abilityGrpId", "valueInt32": [ 174175 ] } ] } ] }
+        """);
+        var mine = ActivationMessage(900);
+
+        var t = foreignFirst
+            ? Run(RoomLine, MulliganLine, CreationMessage, foreign, mine)
+            : Run(RoomLine, MulliganLine, CreationMessage, mine, foreign);
+
+        var activated = t.Events.Single(x => x.Kind == EventKind.Activated);
+        Assert.That(activated.SourceName, Is.EqualTo("Llanowar Elves"));
+        Assert.That(activated.ActorSeat, Is.EqualTo(2),
+            "the foreign activation's seat must not ride along");
+    }
+
+    /// <summary>
+    /// Arena re-sends a creation in the next message having revised the ability's grpId
+    /// — instance 921 of match 0b7e43ba is Elspeth's ability as 188701 and then as
+    /// 188700, one ability under one owner, and the activation names the second. Keyed
+    /// on the grpId alone the first event stopped matching, putting the wrong verb back
+    /// on 17 archive lines that were already right.
+    /// </summary>
+    [Test]
+    public void A_revised_ability_grpid_still_matches_its_activation()
+    {
+        var revised = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 800, "grpId": 5, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 },
+            { "instanceId": 900, "grpId": 8, "parentId": 800,
+              "type": "GameObjectType_Ability", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 43, "affectorId": 800, "affectedIds": [ 900 ],
+              "type": [ "AnnotationType_AbilityInstanceCreated" ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, CreationMessage, revised,
+            ActivationMessage(900, abilityGrpId: 8));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Triggered), Is.False,
+            "both creations are the same ability under one owner");
+        Assert.That(t.Events.Count(x => x.Kind == EventKind.Activated), Is.EqualTo(2));
+    }
+
+    /// <summary>
     /// Arena renames instances mid-game, and an activation can arrive under a later id
     /// than the creation it belongs to. Both sides fold through the alias map — which
     /// is only complete when the game closes, and is why the match is made then.
