@@ -487,7 +487,7 @@ public sealed class EventExtractor(ICardDb cards)
         /// player — that one is theoretical, since all six have both records from the
         /// same seat and no (instance, ability) in the archive is activated by two.
         /// </remarks>
-        public readonly Dictionary<int, List<(int Seat, int AbilityGrpId)>> Activations = [];
+        public readonly Dictionary<int, List<(int Seat, int? AbilityGrpId)>> Activations = [];
 
         /// <summary>
         /// The last statline seen for each permanent, so a change that no annotation
@@ -773,12 +773,13 @@ public sealed class EventExtractor(ICardDb cards)
                         actorSeat is not (1 or 2)) continue;
                     if (FirstAffected(a) is not { } abilityInst) continue;
                     // Which ability, not just which instance — see Activations' remarks.
-                    // An activation with no grpId can still be recorded; it simply never
-                    // matches, which is the safe direction.
-                    var grp = GameStateTracker.DetailInt(a, "abilityGrpId") ?? 0;
+                    // Absent stays absent rather than becoming 0: a 0 would compare equal
+                    // to the 0 an unknown ability object reports, which is the id-only
+                    // match this exists to prevent. An unknown grpId matches nothing.
+                    var detail = GameStateTracker.DetailInt(a, "abilityGrpId");
                     if (!game.Activations.TryGetValue(abilityInst, out var acted))
                         game.Activations[abilityInst] = acted = [];
-                    acted.Add((actorSeat, grp));
+                    acted.Add((actorSeat, detail is > 0 ? detail : null));
                 }
 
                 // A resync re-sends annotations it has already delivered, and each one
@@ -1612,12 +1613,12 @@ public sealed class EventExtractor(ICardDb cards)
                     SourceName = abilityName,
                     // Read now, not in the deferred pass: this id may belong to a
                     // different ability by the time the game closes.
+                    // Both guarded to > 0: an object Arena never described reports 0,
+                    // and a 0 that compares equal to another 0 is an id-only match.
                     SourceAbilityGrpId = abilityId is { } gid
-                        ? tracker.Get(gid)?.GrpId
-                        : null,
+                        && tracker.Get(gid) is { GrpId: > 0 } ga ? ga.GrpId : null,
                     SourceAbilityOwnerId = abilityId is { } oid
-                        ? tracker.Get(oid)?.ParentId
-                        : null,
+                        && tracker.Get(oid) is { ParentId: > 0 } oa ? oa.ParentId : null,
                     CauseInstanceId = causeId,
                     CauseName = causeName
                 };
@@ -2117,7 +2118,7 @@ public sealed class EventExtractor(ICardDb cards)
         // Both sides are folded to canonical ids only now, with the game's whole alias
         // map known — the activation names the id in use when the player acted, the
         // creation the id in use when Arena announced the ability.
-        var activated = new Dictionary<int, List<(int Seat, int AbilityGrpId)>>();
+        var activated = new Dictionary<int, List<(int Seat, int? AbilityGrpId)>>();
         foreach (var (id, records) in g.Activations)
         {
             var key = tracker.Resolve(id);
@@ -2252,7 +2253,7 @@ public sealed class EventExtractor(ICardDb cards)
     /// trigger line, which is the wrong verb but never the wrong ability.
     /// </remarks>
     private static int? SeatFor(
-        List<(int Seat, int AbilityGrpId)> records,
+        List<(int Seat, int? AbilityGrpId)> records,
         GameEvent e,
         Dictionary<(int Ability, int Owner), HashSet<int>> worn,
         GameStateTracker tracker)
@@ -2262,8 +2263,8 @@ public sealed class EventExtractor(ICardDb cards)
             worn.TryGetValue((tracker.Resolve(id), tracker.Resolve(owner)), out family);
 
         foreach (var r in records)
-            if (r.AbilityGrpId == e.SourceAbilityGrpId ||
-                family?.Contains(r.AbilityGrpId) == true)
+            if (r.AbilityGrpId is { } grp &&
+                (grp == e.SourceAbilityGrpId || family?.Contains(grp) == true))
                 return r.Seat;
 
         return null;

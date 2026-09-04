@@ -1766,6 +1766,42 @@ public class EventExtractorTests
     }
 
     /// <summary>
+    /// Neither side named an ability: the object carries no grpId, so the tracker reports
+    /// 0, and the activation has no abilityGrpId detail. Stored as 0 those two would
+    /// compare equal and match, which is the id-only rule this exists to prevent, so
+    /// absent stays absent and matches nothing. The wrong verb beats the wrong ability.
+    /// </summary>
+    [Test]
+    public void An_activation_with_no_ability_named_matches_nothing()
+    {
+        var nameless = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 800, "grpId": 5, "name": 1001,
+              "type": "GameObjectType_Card", "controllerSeatId": 2 },
+            { "instanceId": 901, "parentId": 800,
+              "type": "GameObjectType_Ability", "controllerSeatId": 2 } ],
+          "annotations": [
+            { "id": 45, "affectorId": 800, "affectedIds": [ 901 ],
+              "type": [ "AnnotationType_AbilityInstanceCreated" ] } ] }
+        """);
+        var bare = Gre("""
+        { "type": "GameStateType_Full",
+          "annotations": [
+            { "id": 46, "affectorId": 2, "affectedIds": [ 901 ],
+              "type": [ "AnnotationType_UserActionTaken" ], "details": [
+                { "key": "actionType", "valueInt32": [ 2 ] } ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, nameless, bare);
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Activated), Is.False,
+            "two unknown grpIds must not match each other");
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.Triggered).SourceName,
+            Is.EqualTo("Llanowar Elves's ability"));
+    }
+
+    /// <summary>
     /// Arena renames instances mid-game, and an activation can arrive under a later id
     /// than the creation it belongs to. Both sides fold through the alias map — which
     /// is only complete when the game closes, and is why the match is made then.
