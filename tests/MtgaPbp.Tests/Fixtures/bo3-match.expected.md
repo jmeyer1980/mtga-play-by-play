@@ -46,6 +46,7 @@
 ### Opening
 - Opponent wins the die roll 19 to 3 and plays first
 - Both players keep seven
+- You keep 3x Plains · 2x Hare Apparent · Abandoned Air Temple · Hop to It
 
 ### Turn 1 — Opponent  (You 20 · Opponent 20)
 - Opponent plays Mountain
@@ -207,6 +208,7 @@
 - Opponent attacks with Goblin ×5
   *Opponent controls: Boggart Cursecrafter 1/2, The Great Goblin 3/2, Krenko, Mob Boss 3/3 (tapped), Goblin 1/1 (tapped), Goblin 1/1 (tapped), Goblin 1/1 (tapped), Goblin 1/1 (tapped), Goblin 1/1 (tapped), Boggart Cursecrafter 2/3, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1*
   *You control: Rabbit 6/6, Rabbit 6/6, Rabbit 6/6, Hare Apparent 6/6, Hare Apparent 6/6, Rabbit 6/6*
+- You end holding Abandoned Air Temple · Ethereal Armor · Hare Apparent
 - You concede — opponent wins game 1
 
 ## Game 2
@@ -214,6 +216,7 @@
 ### Opening
 - You choose to play first
 - Both players keep seven
+- You keep 2x Plains · Abandoned Air Temple · Dollmaker's Shop // Porcelain Gallery · Ethereal Armor · Hare Apparent · Hop to It
 
 ### Turn 1 — You  (You 20 · Opponent 20)
 - You play Plains

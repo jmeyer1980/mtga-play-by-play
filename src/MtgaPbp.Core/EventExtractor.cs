@@ -61,7 +61,14 @@ public sealed record GameRecord(
     /// on the 7 drawn matches — which carry no per-game entry for it to reach here.
     /// </para>
     /// </remarks>
-    string? Reason = null);
+    string? Reason = null,
+
+    /// <summary>
+    /// The hand the local player was still holding when the game ended. The direct
+    /// evidence separating land-starved from out-removed from misplay: "conceded on turn
+    /// 13 holding removal and three lands" needs no heuristic to say.
+    /// </summary>
+    IReadOnlyList<string>? FinalHand = null);
 
 public sealed record Transcript(
     string MatchId, long StartedAtMs, long EndedAtMs, string EventName,
@@ -497,6 +504,20 @@ public sealed class EventExtractor(ICardDb cards)
         public readonly HashSet<int> DiedOnArrival = [];
 
         /// <summary>
+        /// Each seat's hand as it stood when the mulligans were done with, bottoming
+        /// included: snapshotted while the turn was still unset and overwritten until it
+        /// was not, so what survives is the last look before turn one.
+        /// </summary>
+        /// <remarks>
+        /// Kept per seat rather than for the local one, because which seat is local is
+        /// learned from <c>MulliganReq</c> and that can arrive after the window has
+        /// already passed — game one of the Bo3 fixture does exactly this, and asking
+        /// for the local seat here recorded nothing for it while game two worked. Only
+        /// one seat ever has a hand to record, since Arena does not send the opponent's.
+        /// </remarks>
+        public readonly Dictionary<int, IReadOnlyList<string>> OpeningHands = [];
+
+        /// <summary>
         /// The last statline seen for each permanent, so a change that no annotation
         /// explains can be noticed. Per game, because instance ids are handed out again.
         /// </summary>
@@ -704,6 +725,16 @@ public sealed class EventExtractor(ICardDb cards)
                 if (tracker.Turn == 0) Openings.ReadMulligans(gsm, game.Mulligans);
 
                 tracker.Apply(gsm, st.Seq);
+
+                // Read after Apply so this message's objects are in, and overwritten
+                // every message until a turn number arrives — the London mulligan draws
+                // seven and then bottoms, so only the last look before turn one is the
+                // hand actually kept. Costs nothing after that: the guard is false for
+                // the rest of the game.
+                if (tracker.Turn == 0)
+                    for (var held = 1; held <= 2; held++)
+                        game.OpeningHands[held] = tracker.HandOf(held);
+
                 EmitCombat(tracker, ts, st);
                 EmitLevels(tracker, ts, st);
                 EmitCopies(tracker, ts, st);
@@ -885,7 +916,7 @@ public sealed class EventExtractor(ICardDb cards)
         var won = yourTeam == 1 ? gamesForTeam1 : gamesForTeam2;
         var lost = yourTeam == 1 ? gamesForTeam2 : gamesForTeam1;
 
-        var records = BuildGames(games, outcomes, yourTeam, st);
+        var records = BuildGames(games, outcomes, yourTeam, st, localSeat ?? fallbackSeat);
 
         if (sawFinal)
         {
@@ -1005,7 +1036,11 @@ public sealed class EventExtractor(ICardDb cards)
     /// lining those up by index would credit the wrong game with the wrong ending.
     /// </remarks>
     private static List<GameRecord> BuildGames(
-        List<GameRun> games, List<GameOutcome> outcomes, int? yourTeam, Emit st)
+        List<GameRun> games, List<GameOutcome> outcomes, int? yourTeam, Emit st,
+        // Passed rather than taken from yourTeam. They are equal in every observed
+        // match, but "team id equals seat" is an observation and a hand is the one
+        // thing that must never be attributed to the wrong player.
+        int? localSeat)
     {
         GameOutcome? Outcome(int number) =>
             number >= 1 && number <= outcomes.Count ? outcomes[number - 1] : null;
@@ -1029,11 +1064,14 @@ public sealed class EventExtractor(ICardDb cards)
             var outcome = Outcome(g.Number);
             records.Add(new GameRecord(
                 g.Number,
-                BuildOpening(g, st, chooser),
+                BuildOpening(g, st, chooser, localSeat),
                 turns,
                 outcome?.WinningTeamId,
                 EndLine(outcome?.WinningTeamId, yourTeam, outcome?.Reason, $"game {g.Number}"),
-                outcome?.Reason));
+                outcome?.Reason,
+                // Free: this game's tracker still holds the state it closed on, so the
+                // final hand needs no snapshot of its own during the run.
+                localSeat is { } seat ? g.Tracker.HandOf(seat) : null));
         }
         return records;
     }
@@ -1065,7 +1103,8 @@ public sealed class EventExtractor(ICardDb cards)
     /// number: the turn is announced, the player concedes during the mulligan, and the
     /// extractor's own turn-one rule recovers the seat anyway.
     /// </remarks>
-    private static Opening? BuildOpening(GameRun g, Emit st, int? chooser)
+    private static Opening? BuildOpening(
+        GameRun g, Emit st, int? chooser, int? localSeat)
     {
         int? firstPlayer = null;
         for (var i = g.FirstSeq; i < g.EndSeq; i++)
@@ -1077,7 +1116,9 @@ public sealed class EventExtractor(ICardDb cards)
         }
 
         return g.Rolls.Count > 0 || g.Mulligans.Count > 0 || firstPlayer is not null
-            ? new Opening(g.Rolls, firstPlayer, g.Mulligans, chooser)
+            ? new Opening(g.Rolls, firstPlayer, g.Mulligans, chooser,
+                localSeat is { } mine && g.OpeningHands.TryGetValue(mine, out var kept)
+                    ? kept : null)
             : null;
     }
 

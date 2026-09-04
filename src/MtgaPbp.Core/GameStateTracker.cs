@@ -188,6 +188,45 @@ public sealed class GameStateTracker(ICardDb cards)
         _commandZoneCards.TryGetValue(seat, out var cards) ? cards : [];
 
     /// <summary>
+    /// The cards in one seat's hand as the tracker last saw it, by name, ordered by the
+    /// instance ids Arena handed out — which is the order they were drawn.
+    /// </summary>
+    /// <remarks>
+    /// This can only ever answer for the local seat, and not because of a rule kept
+    /// here: Arena sends the opponent's hand as nothing at all. In a sampled match the
+    /// local seat has thirteen hand objects, every one carrying a grpId and marked
+    /// <c>Visibility_Private</c>, and the opponent has zero. So fog of war holds by
+    /// construction, and a caller cannot leak a hand by forgetting to check.
+    /// <para>
+    /// A card with no grpId is left out. That is a card the log moved into a hand
+    /// without ever describing — naming it "Unknown card" would put a placeholder in a
+    /// list whose whole value is being an exact seven.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> HandOf(int seat)
+    {
+        var held = new List<TrackedObject>();
+        foreach (var o in _objects.Values)
+        {
+            if (o.OwnerSeat != seat || o.GrpId == 0) continue;
+            if (o.Type != "GameObjectType_Card") continue;
+            if (!_zoneTypes.TryGetValue(o.ZoneId, out var zone)) continue;
+            if (zone != "ZoneType_Hand") continue;
+            held.Add(o);
+        }
+
+        held.Sort((a, b) => a.InstanceId.CompareTo(b.InstanceId));
+
+        var names = new List<string>(held.Count);
+        foreach (var o in held)
+        {
+            var name = NameOf(o.InstanceId);
+            if (!CardNames.IsPlaceholder(name)) names.Add(name);
+        }
+        return names;
+    }
+
+    /// <summary>
     /// Whose zone this is, for the zones that belong to a player. Null for the shared
     /// ones and for a zone the log has not described.
     /// </summary>

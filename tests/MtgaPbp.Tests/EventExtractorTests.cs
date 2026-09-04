@@ -2891,4 +2891,87 @@ public class EventExtractorTests
             "an ability that cannot be named produces no line, and the card whose id "
             + "was reused is not a name for it");
     }
+
+    /// <summary>
+    /// The hand actually kept, not just how many cards it held. Snapshotted while the
+    /// turn is still unset and overwritten until it is not, because the London mulligan
+    /// draws seven and then bottoms — only the last look before turn one is the keep.
+    /// </summary>
+    [Test]
+    public void The_opening_hand_is_the_hand_left_when_the_mulligans_are_done()
+    {
+        // Seven drawn, then two bottomed: only the five that remain were kept.
+        var drawn = Gre("""
+        { "type": "GameStateType_Full",
+          "zones": [
+            { "zoneId": 31, "type": "ZoneType_Hand", "ownerSeatId": 1 },
+            { "zoneId": 36, "type": "ZoneType_Library", "ownerSeatId": 1 } ],
+          "gameObjects": [
+            { "instanceId": 501, "grpId": 5, "name": 1001, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 },
+            { "instanceId": 502, "grpId": 5, "name": 1001, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 },
+            { "instanceId": 503, "grpId": 6, "name": 648, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 } ] }
+        """);
+        var bottomed = Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 503, "grpId": 6, "name": 648, "type": "GameObjectType_Card",
+              "zoneId": 36, "ownerSeatId": 1, "controllerSeatId": 1 } ] }
+        """);
+
+        // Turn one arrives after the keep, which both closes the snapshot window and
+        // gives BuildOpening a first player to hang an Opening on.
+        var turnOne = Gre("""
+        { "type": "GameStateType_Full",
+          "turnInfo": { "turnNumber": 1, "activePlayer": 1 },
+          "annotations": [
+            { "id": 90, "affectorId": 1, "affectedIds": [ 1 ],
+              "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, drawn, bottomed, turnOne);
+
+        Assert.That(t.Opening?.Hand, Is.EqualTo(new[] { "Llanowar Elves", "Llanowar Elves" }),
+            "the card put back on the bottom is not part of the keep");
+    }
+
+    /// <summary>
+    /// The opponent's hand stays fog of war. Asserted rather than trusted: Arena does not
+    /// send it today, which is why this works at all, but a rule that only holds because
+    /// the other end happens to stay quiet is one message format away from not holding.
+    /// </summary>
+    [Test]
+    public void An_opponents_hand_is_never_reported_even_when_the_log_describes_it()
+    {
+        var both = Gre("""
+        { "type": "GameStateType_Full",
+          "zones": [
+            { "zoneId": 31, "type": "ZoneType_Hand", "ownerSeatId": 1 },
+            { "zoneId": 35, "type": "ZoneType_Hand", "ownerSeatId": 2 } ],
+          "gameObjects": [
+            { "instanceId": 601, "grpId": 5, "name": 1001, "type": "GameObjectType_Card",
+              "zoneId": 35, "ownerSeatId": 2, "controllerSeatId": 2 },
+            { "instanceId": 602, "grpId": 6, "name": 648, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 } ] }
+        """);
+
+        // Turn one arrives after the keep, which both closes the snapshot window and
+        // gives BuildOpening a first player to hang an Opening on.
+        var turnOne = Gre("""
+        { "type": "GameStateType_Full",
+          "turnInfo": { "turnNumber": 1, "activePlayer": 1 },
+          "annotations": [
+            { "id": 90, "affectorId": 1, "affectedIds": [ 1 ],
+              "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+        """);
+
+        var t = Run(RoomLine, MulliganLine, both, turnOne);
+
+        // Seat 1 is ours here - MulliganReq names it - so ours is the Plains, theirs is not.
+        Assert.That(t.Opening?.Hand, Is.EqualTo(new[] { "Plains" }));
+        Assert.That(t.Opening?.Hand, Has.None.EqualTo("Llanowar Elves"),
+            "the opponent's hand must not reach the transcript even when the log carries it");
+    }
 }
