@@ -471,8 +471,9 @@ public sealed class EventExtractor(ICardDb cards)
         /// Ability instances a player deliberately activated, under the id Arena used at
         /// the time, each mapped to the seat that acted and to which ability was
         /// activated. From <c>AnnotationType_UserActionTaken</c> with an actionType of 2
-        /// — whose affector, unlike most affectors, really is the seat on every one in
-        /// the archive. Kept raw and resolved only when the game closes, because the
+        /// or 4, an ordinary activation or a mana ability — whose affector, unlike most
+        /// affectors, really is the seat on every one in the archive. Kept raw and
+        /// resolved only when the game closes, because the
         /// activation and the ability's creation arrive in different messages for a
         /// quarter of the archive and the alias map is not complete until the end.
         /// </summary>
@@ -2134,7 +2135,8 @@ public sealed class EventExtractor(ICardDb cards)
             // The id alone is not enough. Where Arena has handed the same instance id to
             // a second ability, only the record naming *this* ability may rename it —
             // otherwise one permanent's activation renames another's trigger, and carries
-            // its seat across too. An event that never learned its grpId matches nothing.
+            // its seat across too. Where neither side named an ability, SeatFor still
+            // answers on the id alone, so nothing that resolves today is lost.
             var seat = SeatFor(records, e.SourceAbilityGrpId);
             if (seat is not { } actor) continue;
 
