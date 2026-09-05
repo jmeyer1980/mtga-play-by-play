@@ -169,6 +169,16 @@ public enum EventKind
     PhasedOut,
     PhasedIn,
 
+    /// <summary>
+    /// A damage event was changed before it landed, and the annotation names the ability
+    /// that changed it; the damage line that follows shows the result. Every one of the
+    /// archive's 112 is a damage replacement, and the number was on the page while the
+    /// reason was dropped as unhandled (#192). Prevention is told apart because it is
+    /// what a reader needs to hear when a hit did nothing.
+    /// </summary>
+    DamageReplaced,
+    DamagePrevented,
+
     GameEnd,
 
     /// <summary>

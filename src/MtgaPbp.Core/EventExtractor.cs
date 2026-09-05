@@ -248,6 +248,12 @@ public sealed class EventExtractor(ICardDb cards)
         "AnnotationType_ChoiceResult",
         "AnnotationType_RevealedCardDeleted",
         "AnnotationType_DisqualifiedEffect",
+        // The entering-the-battlefield replacements: Riot ×20 and Read ahead ×1 are the
+        // archive's whole population, both carry only ReplacementSourceZcid and grpid —
+        // no choice — and Riot's choice already has its line from AbilityWordActive
+        // (#193). The damage replacements arrive as ReplacementEffectApplied instead,
+        // and those are reported (#192).
+        "AnnotationType_ReplacementEffect",
         "AnnotationType_Shuffle",
     };
 
@@ -1648,6 +1654,68 @@ public sealed class EventExtractor(ICardDb cards)
                 // The annotation carries nothing but the token naming itself as both
                 // affector and affected, so all there is to keep is the id.
                 if (FirstAffected(a) is { } dead) game.DiedOnArrival.Add(dead);
+                continue;
+            }
+
+            if (type == "AnnotationType_ReplacementEffectApplied" &&
+                GameStateTracker.DetailInt(a, "IsDamageReplacement") == 1)
+            {
+                // The number was already on the page and the reason was not: Twinflame
+                // Tyrant is a 3/5 whose damage arrived as 6, and the annotation that
+                // explains it was being dropped as unhandled (#192). All 112 in the
+                // archive are damage replacements, the same way round every time: the
+                // affected object is the source whose damage was replaced, and the
+                // affector is what replaced it — the permanent whose ability applied, or
+                // for protection the protected creature or the protected player, which
+                // arrives as a seat id (21 of the 45). One without IsDamageReplacement is
+                // a shape nobody has measured; it falls through to Unknown and stays
+                // visible as unhandled.
+                if (GameStateTracker.DetailInt(a, "grpid") is not { } grp ||
+                    cards.AbilityText(grp) is not { } raw ||
+                    FirstAffected(a) is not { } source) continue;
+
+                var sourceName = tracker.NameOf(source);
+                st.SawCard(sourceName);
+                // "The damage Unknown card would deal is replaced" explains nothing, so
+                // an unnameable source is dropped rather than guessed at.
+                if (CardNames.IsPlaceholder(sourceName)) continue;
+
+                // A seat is a player's own protection. An id that is not a permanent is
+                // the effect an earlier trigger left behind — Stagger's "until your next
+                // turn", 4 of the 112 — and is named through its parent or not at all.
+                var affector = Json.Int(a, "affectorId");
+                int? seat = affector is <= 2 and > 0 ? affector : null;
+                int? replacer = null;
+                string? replacerName = null;
+                if (affector is > 2)
+                {
+                    (replacer, replacerName) = (affector, tracker.NameOf(affector.Value));
+                    if (CardNames.IsPlaceholder(replacerName))
+                        (replacer, replacerName) = tracker.AbilitySource(affector.Value);
+                    if (CardNames.IsPlaceholder(replacerName)) (replacer, replacerName) = (null, null);
+                    st.SawCard(replacerName);
+                }
+
+                // Protection prevents — that is its rule, and Arena writes the prevented
+                // damage as a DamageDealt of 0 in 45 of 45 archived cases, which the page
+                // already keeps quiet. Told apart by Arena's own keyword text, the way
+                // Riot is by its ability word. Everything else quotes the text rather
+                // than guessing a verb: "doubles" is right for the Tyrant and wrong for
+                // Thor's "plus 1" and Fated Firepower's "plus an amount equal to…".
+                var prevents = AbilityText.Plain(raw)
+                    .StartsWith("Protection from", StringComparison.Ordinal);
+
+                st.Add(Base(tracker, ts, prevents ? EventKind.DamagePrevented : EventKind.DamageReplaced) with
+                {
+                    ActorSeat = seat ?? (replacer is { } r && tracker.Get(r)?.ControllerSeat is > 0 and var c
+                        ? c : null),
+                    SourceInstanceId = replacer,
+                    SourceName = replacerName,
+                    TargetInstanceId = source,
+                    TargetName = sourceName,
+                    Detail = AbilityText.Clause(raw, out _),
+                    SourceAbilityGrpId = grp
+                });
                 continue;
             }
 
