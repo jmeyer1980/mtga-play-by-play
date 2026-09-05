@@ -1071,6 +1071,15 @@ public static class Narrator
             $"{(e.SourceName is not null ? $"{e.SourceName}'s" : Owner(e.ActorSeat, t))} " +
             $"{e.Detail} prevents the damage from {e.TargetName}",
 
+        // A flip names the card and the face, in Arena's order. The heads are counted
+        // because that count is what a five-coin card uses, and counting is not left to
+        // the reader (#194).
+        EventKind.CoinFlipped when e.SourceName is not null && e.Detail is not null =>
+            e.Amount <= 1
+                ? $"{e.SourceName} flips a coin: {e.Detail}"
+                : $"{e.SourceName} flips {e.Amount} coins: {e.Detail} " +
+                  $"({e.Detail.Split(", ").Count(f => f == "heads")} heads)",
+
         EventKind.LifeChanged when e.Amount != 0 =>
             $"{Who(e.TargetSeat, t)} " +
             $"{Verb(e.TargetSeat, e.Amount > 0 ? "gain" : "lose", e.Amount > 0 ? "gains" : "loses", t)} " +

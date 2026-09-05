@@ -40,6 +40,10 @@ public class EventExtractorTests
             1021 => "Ghalta, Stampede Tyrant",
             1022 => "Siege Veteran",
             1023 => "Rabbit",
+
+            // The coin-flip tests (#194): the archive's two flipping cards.
+            1024 => "Ral Zarek, Guest Lecturer",
+            1025 => "Invert Polarity",
             _ => null
         };
         /// <summary>
@@ -1495,6 +1499,90 @@ public class EventExtractorTests
         Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False);
         Assert.That(t.Events.Any(x => x.Kind is EventKind.DamageReplaced or EventKind.DamagePrevented),
             Is.False);
+    }
+
+    /// <summary>
+    /// Five coins flipped by one ability are one line, in Arena's order, named for the
+    /// card rather than "its ability", with the flipping player as the actor. Ral Zarek's
+    /// "Flip five coins" is 10 of the archive's 11 flips (#194).
+    /// </summary>
+    [Test]
+    public void Coins_flipped_by_one_effect_are_reported_together()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 456, "grpId": 70, "name": 1024, "type": "GameObjectType_Card",
+              "controllerSeatId": 1, "zoneId": 28 },
+            { "instanceId": 648, "grpId": 204378, "type": "GameObjectType_Ability",
+              "parentId": 456, "controllerSeatId": 1 } ],
+          "annotations": [
+            { "id": 1, "affectorId": 648, "affectedIds": [ 648 ],
+              "type": [ "AnnotationType_ResolutionStart" ], "details": [ { "key": "grpid", "valueInt32": [ 204378 ] } ] },
+            { "id": 2, "affectorId": 648, "affectedIds": [ 1 ], "type": [ "AnnotationType_CoinFlip" ],
+              "details": [ { "key": "CoinFlipResult", "valueInt32": [ 1 ] } ] },
+            { "id": 3, "affectorId": 648, "affectedIds": [ 1 ], "type": [ "AnnotationType_CoinFlip" ],
+              "details": [ { "key": "CoinFlipResult", "valueInt32": [ 2 ] } ] },
+            { "id": 4, "affectorId": 648, "affectedIds": [ 1 ], "type": [ "AnnotationType_CoinFlip" ],
+              "details": [ { "key": "CoinFlipResult", "valueInt32": [ 1 ] } ] },
+            { "id": 5, "affectorId": 648, "affectedIds": [ 1 ], "type": [ "AnnotationType_CoinFlip" ],
+              "details": [ { "key": "CoinFlipResult", "valueInt32": [ 1 ] } ] },
+            { "id": 6, "affectorId": 648, "affectedIds": [ 1 ], "type": [ "AnnotationType_CoinFlip" ],
+              "details": [ { "key": "CoinFlipResult", "valueInt32": [ 2 ] } ] },
+            { "id": 7, "affectorId": 648, "affectedIds": [ 648 ],
+              "type": [ "AnnotationType_ResolutionComplete" ], "details": [ { "key": "grpid", "valueInt32": [ 204378 ] } ] } ] }
+        """));
+
+        var flip = t.Events.Single(x => x.Kind == EventKind.CoinFlipped);
+        Assert.That(flip.SourceName, Is.EqualTo("Ral Zarek, Guest Lecturer"), "the card, not its ability");
+        Assert.That(flip.SourceInstanceId, Is.EqualTo(456));
+        Assert.That(flip.ActorSeat, Is.EqualTo(1), "the flipping player is the affected seat");
+        Assert.That(flip.Amount, Is.EqualTo(5));
+        Assert.That(flip.Detail, Is.EqualTo("heads, tails, heads, heads, tails"));
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False);
+    }
+
+    /// <summary>
+    /// One flip from a spell is one line naming the spell. Invert Polarity's result 2 was
+    /// followed by the countered spell that card produces only on a lost flip, which is
+    /// what fixes 2 as tails.
+    /// </summary>
+    [Test]
+    public void A_single_coin_flip_names_the_spell_and_the_face()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ { "instanceId": 522, "grpId": 71, "name": 1025, "type": "GameObjectType_Card",
+                             "controllerSeatId": 1, "zoneId": 27 } ],
+          "annotations": [ { "id": 1, "affectorId": 522, "affectedIds": [ 1 ],
+            "type": [ "AnnotationType_CoinFlip" ],
+            "details": [ { "key": "CoinFlipResult", "valueInt32": [ 2 ] } ] } ] }
+        """));
+
+        var flip = t.Events.Single(x => x.Kind == EventKind.CoinFlipped);
+        Assert.That(flip.SourceName, Is.EqualTo("Invert Polarity"));
+        Assert.That(flip.Amount, Is.EqualTo(1));
+        Assert.That(flip.Detail, Is.EqualTo("tails"));
+    }
+
+    /// <summary>
+    /// A result that is neither 1 nor 2 is a shape nobody has seen; it stays unhandled
+    /// rather than being read as either face.
+    /// </summary>
+    [Test]
+    public void An_unrecognised_coin_flip_result_stays_unhandled()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ { "instanceId": 522, "grpId": 71, "name": 1025, "type": "GameObjectType_Card",
+                             "controllerSeatId": 1, "zoneId": 27 } ],
+          "annotations": [ { "id": 1, "affectorId": 522, "affectedIds": [ 1 ],
+            "type": [ "AnnotationType_CoinFlip" ],
+            "details": [ { "key": "CoinFlipResult", "valueInt32": [ 3 ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.CoinFlipped), Is.False);
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.True);
     }
 
     /// <summary>

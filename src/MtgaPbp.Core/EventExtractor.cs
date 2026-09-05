@@ -1720,6 +1720,61 @@ public sealed class EventExtractor(ICardDb cards)
                 continue;
             }
 
+            if (type == "AnnotationType_CoinFlip" &&
+                GameStateTracker.DetailInt(a, "CoinFlipResult") is int result and (1 or 2))
+            {
+                // Arena writes the result as a bare 1 or 2 and names it nowhere. 2 is
+                // read as tails because the one decodable flip in the archive — Invert
+                // Polarity's, "if you lose the flip, counter that spell" — came up 2 and
+                // the spell was countered in the same message; 1 is then the other face
+                // of a two-valued enum, and a called flip on Arena wins on heads. Ral
+                // Zarek's "Flip five coins", the other 10 of the archive's 11, counts
+                // heads, so heads and tails is the vocabulary every flipping card can be
+                // read in (#194). Any other value stays unhandled rather than being read
+                // as either face.
+                var face = result == 1 ? "heads" : "tails";
+                if (Json.Int(a, "affectorId") is not { } flipper) continue;
+
+                // The card, not "its ability": ten of the eleven arrive from a
+                // planeswalker's ability instance, and the line is about the card that
+                // flipped. A spell flips as itself.
+                int? sourceId = flipper;
+                var sourceName = tracker.NameOf(flipper);
+                if (tracker.Get(flipper) is { Type: "GameObjectType_Ability" } &&
+                    tracker.AbilitySource(flipper) is (var parent, { } parentName) &&
+                    !CardNames.IsPlaceholder(parentName))
+                    (sourceId, sourceName) = (parent ?? flipper, parentName);
+                st.SawCard(sourceName);
+                if (CardNames.IsPlaceholder(sourceName)) continue;
+
+                // The affected id is the flipping player's seat in all eleven. It read
+                // as "always 1" in the issue because the flipper sat in seat 1 in all
+                // three matches.
+                var seat = FirstAffected(a) is { } s && s <= 2 ? s : (int?)null;
+
+                // Five coins from one effect are five consecutive annotations in one
+                // message, and one line: a flip joins the flip line just written for the
+                // same source rather than becoming a line of its own, in Arena's order.
+                if (st.Events.Count > 0 && st.Events[^1] is
+                    { Kind: EventKind.CoinFlipped, TimestampMs: var when, SourceInstanceId: var sid } last &&
+                    when == ts && sid == sourceId)
+                {
+                    st.Events[^1] = last with { Amount = last.Amount + 1, Detail = $"{last.Detail}, {face}" };
+                    continue;
+                }
+
+                st.Add(Base(tracker, ts, EventKind.CoinFlipped) with
+                {
+                    ActorSeat = seat ?? (tracker.Get(sourceId.Value)?.ControllerSeat is > 0 and var c
+                        ? c : tracker.ActiveSeat),
+                    SourceInstanceId = sourceId,
+                    SourceName = sourceName,
+                    Amount = 1,
+                    Detail = face
+                });
+                continue;
+            }
+
             if (type == "AnnotationType_GainDesignation")
             {
                 // A Room's two halves are unlocked one at a time, and the designation
