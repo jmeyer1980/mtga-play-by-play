@@ -72,6 +72,14 @@ public sealed class TrackedObject
     /// here are from before the gap for the rest of the game, and nothing else in the
     /// log says so. On turn 14 of match 85878c60, 30 of the 45 creatures on the board
     /// were 2/2s still recorded as 1/1s (#199).
+    /// <para>
+    /// Any description counts, not only one carrying power and toughness, because a
+    /// description is complete rather than a patch: every one of the 172,944 creature
+    /// entries across 1,435 archived matches carries both (checked 2026-09-05), so a
+    /// creature being described is its statline being confirmed. Should Arena ever
+    /// send a creature without them, this clock must move only when they are carried,
+    /// or the mark would clear while the numbers stayed pre-gap.
+    /// </para>
     /// </remarks>
     public int LastDescribed;
 }
