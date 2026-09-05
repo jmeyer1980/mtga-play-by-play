@@ -646,6 +646,10 @@ public sealed class EventExtractor(ICardDb cards)
             {
                 gap = gap with { Turn = game.Tracker.Turn, Game = game.Number };
                 gaps.Add(gap);
+                // Still nothing applied — the tracker is told where the hole is, not
+                // what was in it, so that the board lines after it can say which of
+                // their numbers Arena has not confirmed since (#199).
+                game.Tracker.NoteGap();
                 st.Add(Base(game.Tracker, ended, EventKind.LogGap) with
                 {
                     Detail = GapLine(gap),
@@ -1446,8 +1450,28 @@ public sealed class EventExtractor(ICardDb cards)
                 var flags = new List<string>();
                 if (c.Damage > 0) flags.Add($"{c.Damage} dmg");
                 if (c.IsTapped) flags.Add("tapped");
-                if (flags.Count > 0) text += $" ({string.Join(", ", flags)})";
-                return (c.InstanceId, Stats: text);
+                // The number is kept, because it is usually still right, and marked,
+                // because it is a number from before a message Arena withheld and the
+                // withheld message is the one that changes fifty things at once. Words
+                // rather than a glyph: the statline twins in the page renderer are a
+                // measured regex over glyphs, and words already read the same on a
+                // screen reader, in find-in-page and on the clipboard (#199).
+                if (tracker.DescribedBeforeGap(c.InstanceId)) flags.Add("last reported before the gap");
+
+                // Tap state is printed but does not by itself make a board worth
+                // reprinting. Permanents untap at their controller's untap step, so
+                // once tapped state was read correctly every turn boundary "changed"
+                // every board — 417 of 1,076 consecutive snapshots differed from the
+                // one before by nothing except creatures having untapped, which is what
+                // a turn passing means and not news about the board. So the shape the
+                // comparison sees is built without that flag, by construction rather
+                // than by editing the text after — which stopped covering every flag
+                // order the moment a third flag existed.
+                // A gap mark coming off is left in on purpose: a board whose numbers
+                // Arena has since confirmed is news even when the numbers did not move.
+                // Across 1,435 archived matches that reprints 195 board lines.
+                var shape = text + Flagged(flags.Where(f => f != "tapped").ToList());
+                return (c.InstanceId, Stats: text + Flagged(flags), Shape: shape);
             }).ToList();
 
             // A board that has not moved since the last turn tells you nothing, and
@@ -1456,15 +1480,9 @@ public sealed class EventExtractor(ICardDb cards)
             // are stable, so they never make an unchanged board look changed.
             var detail = string.Join(", ",
                 parts.Select(p => tracker.NameOf(p.InstanceId) + p.Stats));
+            var shape = string.Join(", ",
+                parts.Select(p => tracker.NameOf(p.InstanceId) + p.Shape));
 
-            // Tap state is printed but does not by itself make a board worth reprinting.
-            // Permanents untap at their controller's untap step, so once tapped state was
-            // read correctly every turn boundary "changed" every board — 417 of 1,076
-            // consecutive snapshots differed from the one before by nothing except
-            // creatures having untapped, which is what a turn passing means and not news
-            // about the board.
-            var shape = detail.Replace(" (tapped)", "", StringComparison.Ordinal)
-                              .Replace(", tapped)", ")", StringComparison.Ordinal);
             // Except at the ending, where an unchanged board is still news: the reader
             // is owed what the match closed on, and a side that sat still for four
             // turns used to simply vanish from the record (a winner's two Rabbits were
@@ -1483,9 +1501,13 @@ public sealed class EventExtractor(ICardDb cards)
                 ActorSeat = seat,
                 Detail = detail
             });
-            st.Boards[seq] = parts;
+            st.Boards[seq] = parts.Select(p => (p.InstanceId, p.Stats)).ToList();
         }
     }
+
+    /// <summary>The parenthetical after a statline — " (2 dmg, tapped)" — or nothing when there is nothing to say.</summary>
+    private static string Flagged(IReadOnlyList<string> flags) =>
+        flags.Count > 0 ? $" ({string.Join(", ", flags)})" : "";
 
     private void EmitFor(JsonElement a, GameStateTracker tracker, long ts, Emit st,
         GameRun game,

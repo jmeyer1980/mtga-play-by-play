@@ -60,6 +60,28 @@ public sealed class TrackedObject
     /// later transform as the wear-off it already missed.
     /// </remarks>
     public Dictionary<int, int> AbilityGrpIds = [];
+
+    /// <summary>
+    /// Which message last carried this object in its <c>gameObjects</c>, counting the
+    /// messages the tracker has applied. Compared against the message the last log gap
+    /// fell after, in <see cref="GameStateTracker.DescribedBeforeGap"/>.
+    /// </summary>
+    /// <remarks>
+    /// A diff carries only what changed, so an object that changed inside a message
+    /// Arena withheld and has not changed since is never described again — its numbers
+    /// here are from before the gap for the rest of the game, and nothing else in the
+    /// log says so. On turn 14 of match 85878c60, 30 of the 45 creatures on the board
+    /// were 2/2s still recorded as 1/1s (#199).
+    /// <para>
+    /// Any description counts, not only one carrying power and toughness, because a
+    /// description is complete rather than a patch: every one of the 172,944 creature
+    /// entries across 1,435 archived matches carries both (checked 2026-09-05), so a
+    /// creature being described is its statline being confirmed. Should Arena ever
+    /// send a creature without them, this clock must move only when they are carried,
+    /// or the mark would clear while the numbers stayed pre-gap.
+    /// </para>
+    /// </remarks>
+    public int LastDescribed;
 }
 
 /// <summary>
@@ -132,6 +154,12 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly Dictionary<int, int> _classLevels = [];
     private readonly Dictionary<int, int> _triggerCauses = [];   // ability id -> what set it off
     private int _stamp;
+
+    /// <summary>How many messages <see cref="Apply"/> has seen; the clock <see cref="TrackedObject.LastDescribed"/> reads.</summary>
+    private int _messages;
+
+    /// <summary>Where that clock stood when the log last stopped accounting for the match. Zero until it has.</summary>
+    private int _gapAt;
 
     public int Turn { get; private set; }
     public int ActiveSeat { get; private set; }
@@ -342,6 +370,7 @@ public sealed class GameStateTracker(ICardDb cards)
     public void Apply(JsonElement gsm, int stamp = 0)
     {
         _stamp = stamp;
+        _messages++;
         _newAttackers.Clear();
         _newBlockers.Clear();
         _newLevels.Clear();
@@ -447,6 +476,7 @@ public sealed class GameStateTracker(ICardDb cards)
 
         if (!_objects.TryGetValue(id, out var obj))
             _objects[id] = obj = new TrackedObject { InstanceId = id };
+        obj.LastDescribed = _messages;
 
         var wasPower = obj.Power;
         var wasToughness = obj.Toughness;
@@ -789,6 +819,29 @@ public sealed class GameStateTracker(ICardDb cards)
     /// way, nothing the player was looking at is standing there.
     /// </summary>
     public bool OnBattlefield(int instanceId) => Get(instanceId) is { } o && InPlay(o);
+
+    /// <summary>
+    /// Records that the log stopped accounting for the match here — a message Arena
+    /// summarised instead of writing, or a line that tore. Not an event and not state:
+    /// nothing is applied, because there is nothing to apply. It only marks the point
+    /// after which every object not described again is unconfirmed.
+    /// </summary>
+    public void NoteGap() => _gapAt = _messages;
+
+    /// <summary>
+    /// True when Arena has not described this object since the last gap, so whatever it
+    /// says about the object is as of before the gap. False for an object it has
+    /// described since, and always before the first gap.
+    /// </summary>
+    /// <remarks>
+    /// "Not described since" is the whole test, deliberately. A gap withholds an unknown
+    /// message, and a diff only carries what changed; so an object the withheld message
+    /// changed, and nothing after it did, is exactly the one that is never sent again.
+    /// The mark therefore holds for as long as the silence does — to the end of the
+    /// game, if need be — rather than clearing at the next turn (#199).
+    /// </remarks>
+    public bool DescribedBeforeGap(int instanceId) =>
+        Get(instanceId) is { } o && o.LastDescribed <= _gapAt;
 
     /// <summary>
     /// power/toughness, which arrive either as a number or as <c>{ "value": n }</c>.

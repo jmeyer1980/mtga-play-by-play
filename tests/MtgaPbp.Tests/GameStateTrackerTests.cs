@@ -62,6 +62,40 @@ public class GameStateTrackerTests
         Assert.That(t.Turn, Is.EqualTo(1), "turn must survive a diff that omits turnInfo");
     }
 
+    /// <summary>
+    /// A summarised update is never applied, and a diff only carries what changed — so
+    /// after a gap, an object Arena has not described again may have changed inside the
+    /// message that was withheld, and nothing will ever say so. The tracker keeps which
+    /// objects those are, so a board line can say which of its numbers are unconfirmed
+    /// rather than printing them all as fact (#199).
+    /// </summary>
+    [Test]
+    public void An_object_not_described_since_a_gap_is_reported_as_described_before_it()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full", "gameObjects": [
+          { "instanceId": 50, "grpId": 1, "name": 648, "type": "GameObjectType_Card" },
+          { "instanceId": 51, "grpId": 1, "name": 648, "type": "GameObjectType_Card" } ] }
+        """));
+        Assert.That(t.DescribedBeforeGap(50), Is.False, "there is no gap yet");
+
+        t.NoteGap();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 51, "grpId": 1, "name": 648, "type": "GameObjectType_Card" } ] }
+        """));
+
+        Assert.That(t.DescribedBeforeGap(50), Is.True, "Arena has not described 50 since the gap");
+        Assert.That(t.DescribedBeforeGap(51), Is.False, "51 was described after it");
+
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff", "gameObjects": [
+          { "instanceId": 50, "grpId": 1, "name": 648, "type": "GameObjectType_Card" } ] }
+        """));
+        Assert.That(t.DescribedBeforeGap(50), Is.False, "and 50 is current again once it is");
+    }
+
     [Test]
     public void NameOf_prefers_the_objects_own_name_loc_id()
     {
