@@ -208,6 +208,15 @@ public sealed record GameEvent
     public string? RawType { get; init; }
 
     /// <summary>
+    /// A qualification that applies to the whole of <see cref="Detail"/> rather than to
+    /// any one item in it, said once where the line begins. Only set on
+    /// <see cref="EventKind.BoardSnapshot"/>, when every creature on the line was last
+    /// described before a log gap: the per-creature mark said the same five words 81
+    /// times on one line of match c11d24fd, and a screen reader read every one (#203).
+    /// </summary>
+    public string? Caveat { get; init; }
+
+    /// <summary>
     /// What caused this to happen, when the log says so — the spell that destroyed a
     /// creature, the ability that exiled it. Distinct from the actor, who is the
     /// player, and from declared targets, which Arena never sends.

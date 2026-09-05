@@ -1322,6 +1322,60 @@ public class EventExtractorTests
     }
 
     /// <summary>
+    /// When every creature on the line is marked, the mark is said once, about the line,
+    /// and the creatures keep their bare statlines. Turn 14 of match c11d24fd listed 81
+    /// creatures with all 81 marked: 2,511 of the line's 3,767 characters were the same
+    /// five words, and a screen reader spoke them 81 times in a row — burying the numbers
+    /// the mark exists to protect (#203). A mixed line keeps the per-creature form,
+    /// because there the mark is what tells one creature from the next.
+    /// </summary>
+    /// <remarks>
+    /// Whether a board has moved is still judged creature by creature, so a board that is
+    /// all marked on two consecutive turns is not reprinted, and the form only switches
+    /// when Arena confirms a creature — which is the reprint #199 chose.
+    /// </remarks>
+    [Test]
+    public void A_board_line_where_every_creature_is_marked_says_so_once()
+    {
+        const string elves = """
+            { "instanceId": 50, "grpId": 5, "name": 1001, "controllerSeatId": 2, "zoneId": 28,
+              "cardTypes": [ "CardType_Creature" ], "power": 1, "toughness": 1, "damage": 1 }
+            """;
+        const string zombie = """
+            { "instanceId": 51, "grpId": 7, "name": 1003, "controllerSeatId": 2, "zoneId": 28,
+              "cardTypes": [ "CardType_Creature" ], "power": 2, "toughness": 2 }
+            """;
+        string Turn(int n, string objects) => Gre($$"""
+            { "type": "GameStateType_Diff",
+              "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "gameObjects": [ {{objects}} ],
+              "turnInfo": { "turnNumber": {{n}}, "activePlayer": 1 },
+              "annotations": [ { "id": {{n * 10}}, "affectorId": 1, "affectedIds": [ 1 ],
+                "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+            """);
+        var gap = LogGaps.ToEnvelope(
+            new LogGap(LogGapKind.Summarized, 10486, 77, 3, ["GameStateMessage"])).GetRawText();
+
+        var t = Run(RoomLine, MulliganLine,
+            Turn(1, elves + "," + zombie), gap, Turn(2, ""), Turn(3, ""), Turn(4, elves));
+
+        var boards = t.Events.Where(e => e.Kind == EventKind.BoardSnapshot).ToList();
+        Assert.That(boards, Has.Count.EqualTo(2),
+            "the board did not move between turns 1 and 2, so turn 2 is not reprinted");
+
+        Assert.That(boards[0].Detail, Is.EqualTo("Llanowar Elves 1/1 (1 dmg), Zombie Army 2/2"),
+            "no creature carries the mark when all of them would");
+        Assert.That(boards[0].Caveat, Is.EqualTo("last reported before the gap"),
+            "the line carries it once instead");
+
+        Assert.That(boards[1].Turn, Is.EqualTo(3));
+        Assert.That(boards[1].Detail,
+            Is.EqualTo("Llanowar Elves 1/1 (1 dmg), Zombie Army 2/2 (last reported before the gap)"),
+            "once Arena confirms one creature the mark goes back onto the others");
+        Assert.That(boards[1].Caveat, Is.Null);
+    }
+
+    /// <summary>
     /// Equipment is the case that earns the line. Equip is an activated ability, not a
     /// cast, so nothing in the transcript ever names the creature carrying the sword —
     /// only the statline moves, with no visible cause.

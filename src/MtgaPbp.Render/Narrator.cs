@@ -959,8 +959,11 @@ public static class Narrator
         EventKind.TurnStart =>
             $"Turn {e.Turn} — {Who(e.ActorSeat ?? e.ActiveSeat, t)}{LifeScore(e, t)}",
 
+        // A caveat on the whole line goes before the colon, where it plainly covers
+        // everything after it — said once there rather than after each creature (#203).
         EventKind.BoardSnapshot when !string.IsNullOrWhiteSpace(e.Detail) =>
-            $"{Who(e.ActorSeat, t)} control{(e.ActorSeat == t.You?.Seat ? "" : "s")}: {e.Detail}",
+            $"{Who(e.ActorSeat, t)} control{(e.ActorSeat == t.You?.Seat ? "" : "s")}"
+            + (string.IsNullOrWhiteSpace(e.Caveat) ? "" : $" ({e.Caveat})") + $": {e.Detail}",
 
         EventKind.LandPlayed when e.SourceName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "play", "plays", t)} {e.SourceName}",
