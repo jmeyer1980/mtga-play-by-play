@@ -1702,8 +1702,9 @@ public sealed class EventExtractor(ICardDb cards)
                 // Riot is by its ability word. Everything else quotes the text rather
                 // than guessing a verb: "doubles" is right for the Tyrant and wrong for
                 // Thor's "plus 1" and Fated Firepower's "plus an amount equal to…".
-                var prevents = AbilityText.Plain(raw)
-                    .StartsWith("Protection from", StringComparison.Ordinal);
+                var clause = AbilityText.Clause(raw, out var isKeyword);
+                var prevents = isKeyword &&
+                    clause.StartsWith("protection from", StringComparison.Ordinal);
 
                 st.Add(Base(tracker, ts, prevents ? EventKind.DamagePrevented : EventKind.DamageReplaced) with
                 {
@@ -1713,7 +1714,7 @@ public sealed class EventExtractor(ICardDb cards)
                     SourceName = replacerName,
                     TargetInstanceId = source,
                     TargetName = sourceName,
-                    Detail = AbilityText.Clause(raw, out _),
+                    Detail = clause,
                     SourceAbilityGrpId = grp
                 });
                 continue;
