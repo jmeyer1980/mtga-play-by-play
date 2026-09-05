@@ -13,12 +13,12 @@ public static class Program
         // 35 MB log, rewrote every page, and ran the pruner.
         if (args.Any(a => a is "--version" or "-V"))
         {
-            Banner.Write(art: false);
+            Banner.Write("--version", art: false);
             return 0;
         }
         if (args.Any(a => a is "--help" or "-h" or "/?" or "help"))
         {
-            Banner.Write(art: false);
+            Banner.Write("--help", art: false);
             Usage();
             return 0;
         }
@@ -35,7 +35,7 @@ public static class Program
         var rebuild = args.Contains("--rebuild");
 
         // Identity first, on every command that a person reads.
-        if (command is not ("keep" or "unkeep")) Banner.Write();
+        if (command is not ("keep" or "unkeep")) Banner.Write(command);
 
         try
         {
