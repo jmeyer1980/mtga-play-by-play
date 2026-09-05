@@ -425,6 +425,30 @@ public class NarratorTests
             Is.EqualTo("Opponent's protection from everything prevents the damage from Hare Apparent"));
     }
 
+    /// <summary>
+    /// A flip names the card and the face; several from one effect are one line in
+    /// Arena's order with the heads counted, because the count is what the card uses and
+    /// counting is not left to the reader (#194).
+    /// </summary>
+    [Test]
+    public void A_coin_flip_names_the_card_and_the_face_and_counts_the_heads()
+    {
+        string One(GameEvent e) => Narrator.Narrate(T(e), Density.Beats).Single().Text;
+
+        Assert.That(One(E(EventKind.CoinFlipped) with
+        { ActorSeat = 1, SourceInstanceId = 522, SourceName = "Invert Polarity", Amount = 1, Detail = "tails" }),
+            Is.EqualTo("Invert Polarity flips a coin: tails"));
+        Assert.That(One(E(EventKind.CoinFlipped) with
+        {
+            ActorSeat = 1,
+            SourceInstanceId = 456,
+            SourceName = "Ral Zarek, Guest Lecturer",
+            Amount = 5,
+            Detail = "heads, tails, heads, heads, tails"
+        }),
+            Is.EqualTo("Ral Zarek, Guest Lecturer flips 5 coins: heads, tails, heads, heads, tails (3 heads)"));
+    }
+
     [Test]
     public void Effects_name_what_caused_them_when_the_log_says_so()
     {
