@@ -963,7 +963,7 @@ public static class Narrator
         // everything after it — said once there rather than after each creature (#203).
         EventKind.BoardSnapshot when !string.IsNullOrWhiteSpace(e.Detail) =>
             $"{Who(e.ActorSeat, t)} control{(e.ActorSeat == t.You?.Seat ? "" : "s")}"
-            + (e.Caveat is null ? "" : $" ({e.Caveat})") + $": {e.Detail}",
+            + (string.IsNullOrWhiteSpace(e.Caveat) ? "" : $" ({e.Caveat})") + $": {e.Detail}",
 
         EventKind.LandPlayed when e.SourceName is not null =>
             $"{Who(e.ActorSeat, t)} {Verb(e.ActorSeat, "play", "plays", t)} {e.SourceName}",

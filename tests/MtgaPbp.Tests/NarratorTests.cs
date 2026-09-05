@@ -349,6 +349,21 @@ public class NarratorTests
             "Opponent controls (last reported before the gap): Forest 2/2 (tapped), Squirrel 1/1 (tapped)"));
     }
 
+    /// <summary>
+    /// A blank caveat is no caveat, so the line must not print empty parentheses. The
+    /// extractor never sets one — its only assignment is a constant or null — so this
+    /// guards the narrator against a future caller rather than recording an observed case.
+    /// </summary>
+    [Test]
+    public void Board_snapshot_with_a_blank_caveat_reads_as_if_there_were_none()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.BoardSnapshot) with { ActorSeat = 1, Detail = "Knight 2/2", Caveat = " " }),
+            Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("You control: Knight 2/2"));
+    }
+
     [Test]
     public void Effects_name_what_caused_them_when_the_log_says_so()
     {
