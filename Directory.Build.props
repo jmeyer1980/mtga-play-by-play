@@ -5,7 +5,7 @@
     -p:Version from the tag, so this is what a build from a working copy reports.
   -->
   <PropertyGroup>
-    <Version>0.7.0</Version>
+    <Version>0.7.1</Version>
   </PropertyGroup>
 
   <!--
