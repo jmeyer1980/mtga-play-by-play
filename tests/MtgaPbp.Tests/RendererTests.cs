@@ -2060,6 +2060,31 @@ public class RendererTests
             "the density that is visible by default keeps the short anchors");
     }
 
+    /// <summary>
+    /// A board line counts identical creatures with a leading "3×", the decklist's idiom,
+    /// and is spoken the decklist's way: "3 copies of Rabbit". It is not the trailing
+    /// "×3" that counts repetitions of a line, and must not be heard as one (#205).
+    /// </summary>
+    [Test]
+    public void GamePage_speaks_a_counted_board_entry_as_copies()
+    {
+        var root = Markup.Parse(GamePageRenderer.Render(Sample(opening: false) with
+        {
+            Events =
+            [
+                new GameEvent { Seq = 0, Kind = EventKind.TurnStart, Turn = 1, ActorSeat = 1 },
+                new GameEvent { Seq = 1, Kind = EventKind.BoardSnapshot, Turn = 1,
+                                ActorSeat = 1, Detail = "3× Rabbit 1/1, Hare Apparent 2/2" },
+            ]
+        }));
+        var li = root.Descendants("li").First(l => l.Attribute("class")?.Value == "board");
+
+        Assert.That(Markup.Spoken(li), Is.EqualTo(
+            "You control: 3 copies of Rabbit 1 power 1 toughness, Hare Apparent 2 power 2 toughness"));
+        Assert.That(Markup.Clipboard(li), Is.EqualTo("You control: 3× Rabbit 1/1, Hare Apparent 2/2"),
+            "the glyph stays for the eye, and what is copied is what the markdown says");
+    }
+
     [Test]
     public void GamePage_spells_out_a_collapsed_run_for_screen_readers()
     {

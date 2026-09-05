@@ -83,7 +83,7 @@
 - Opponent attacks with Ajani's Pridemate 3/3
 - Ajani's Pridemate 3/3 deals 3 damage to You
 - You lose 3 life
-  *Opponent controls: Ajani's Pridemate 3/3 (tapped), Rabbit 1/1, Rabbit 1/1, Rabbit 1/1*
+  *Opponent controls: Ajani's Pridemate 3/3 (tapped), 3× Rabbit 1/1*
 
 ## Turn 6 — You  (You 17 · Opponent 21)
 - You draw Caretaker's Talent
@@ -110,7 +110,7 @@
 - Rabbit deals 1 damage to You ×3
 - You lose 3 life
 - Rabbit is put into the graveyard
-  *Opponent controls: Ajani's Pridemate 4/4 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1*
+  *Opponent controls: Ajani's Pridemate 4/4 (tapped), 3× Rabbit 1/1 (tapped), Leonin Vanguard 1/1*
 
 ## Turn 8 — You  (You 14 · Opponent 22)
 - Leonin Vanguard 2/2 returns to 1/1
@@ -119,7 +119,7 @@
 - You cast Hop to It
 - Hop to It creates Rabbit ×3
 - Hop to It resolves
-  *You control: Rabbit 1/1, Rabbit 1/1, Rabbit 1/1*
+  *You control: 3× Rabbit 1/1*
 
 ## Turn 9 — Opponent  (You 14 · Opponent 22)
 - Opponent casts Crowd of True Believers
@@ -137,8 +137,8 @@
 - Rabbit deals 1 damage to You ×3
 - You lose 3 life
 - Rabbit is put into the graveyard
-  *You control: Rabbit 1/1, Rabbit 1/1*
-  *Opponent controls: Ajani's Pridemate 5/5 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Rabbit 1/1 (tapped), Leonin Vanguard 1/1, Crowd of True Believers 1/2*
+  *You control: 2× Rabbit 1/1*
+  *Opponent controls: Ajani's Pridemate 5/5 (tapped), 3× Rabbit 1/1 (tapped), Leonin Vanguard 1/1, Crowd of True Believers 1/2*
 
 ## Turn 10 — You  (You 11 · Opponent 23)
 - Leonin Vanguard 2/2 returns to 1/1
@@ -167,7 +167,7 @@
 - Ajani's Pridemate's ability triggers
 - Ajani's Pridemate 5/5 gets 1 +1/+1 counter
   *You control: Rabbit 1/1*
-  *Opponent controls: Ajani's Pridemate 6/6, Rabbit 1/1, Rabbit 1/1, Leonin Vanguard 2/2, Crowd of True Believers 1/2*
+  *Opponent controls: Ajani's Pridemate 6/6, 2× Rabbit 1/1, Leonin Vanguard 2/2, Crowd of True Believers 1/2*
 - You end holding Ghostly Dancers · Overlord of the Mistmoors · Toby, Beastie Befriender
 - You concede — opponent wins the match
 

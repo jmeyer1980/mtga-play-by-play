@@ -332,6 +332,49 @@ public class PermanentLabelsTests
         Assert.That(board, Is.EqualTo("You control: Rabbit A 6/6, Rabbit B 6/6"));
     }
 
+    /// <summary>
+    /// Creatures that read identically are counted rather than listed: twenty-eight
+    /// "Rabbit 1/1" was already unreadable before the gap mark made it longer (#205). The
+    /// count leads, the way a crowd line and the decklist count their subjects, and the
+    /// group sits where its first member stood so the rest of the line keeps its order.
+    /// A Rabbit at another size is another entry — that difference is information.
+    /// </summary>
+    [Test]
+    public void Interchangeable_creatures_on_the_board_line_are_counted_not_listed()
+    {
+        var board = Lines(
+            Turn(1, Creature(10, Rabbit, 1, 1), Creature(11, HareApparent, 2, 2),
+                    Creature(12, Rabbit, 1, 1), Creature(13, Rabbit, 1, 1),
+                    Creature(14, Rabbit, 3, 3)),
+            Turn(2, Creature(10, Rabbit, 1, 1), Creature(11, HareApparent, 2, 2),
+                    Creature(12, Rabbit, 1, 1), Creature(13, Rabbit, 1, 1),
+                    Creature(14, Rabbit, 3, 3)))
+            .Last(l => l.StartsWith("You control", StringComparison.Ordinal));
+
+        Assert.That(board, Is.EqualTo("You control: 3× Rabbit 1/1, Hare Apparent 2/2, Rabbit 3/3"));
+    }
+
+    /// <summary>
+    /// A letter is exactly what makes two same-named creatures not interchangeable, so a
+    /// lettered creature is never folded into a count; only its anonymous siblings are.
+    /// </summary>
+    [Test]
+    public void A_lettered_creature_is_never_folded_into_a_count()
+    {
+        var board = Lines(
+            Turn(1, Creature(10, Rabbit, 1, 1), Creature(11, Rabbit, 1, 1),
+                    Creature(12, Rabbit, 1, 1), Creature(13, Rabbit, 1, 1)),
+            Turn(2, Creature(10, Rabbit, 5, 5), Creature(11, Rabbit, 1, 1),
+                    Creature(12, Rabbit, 1, 1), Creature(13, Rabbit, 1, 1)),
+            Turn(3, Creature(10, Rabbit, 6, 6), Creature(11, Rabbit, 6, 6),
+                    Creature(12, Rabbit, 1, 1), Creature(13, Rabbit, 1, 1)),
+            Turn(4, Creature(10, Rabbit, 6, 6), Creature(11, Rabbit, 6, 6),
+                    Creature(12, Rabbit, 1, 1), Creature(13, Rabbit, 1, 1)))
+            .Last(l => l.StartsWith("You control", StringComparison.Ordinal));
+
+        Assert.That(board, Is.EqualTo("You control: Rabbit A 6/6, Rabbit B 6/6, 2× Rabbit 1/1"));
+    }
+
     // ---------- what a spell did to what it hit ----------
 
     /// <summary>
