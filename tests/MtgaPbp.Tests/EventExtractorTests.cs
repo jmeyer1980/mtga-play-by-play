@@ -33,6 +33,13 @@ public class EventExtractorTests
             2044 => "Waxen Shapethief",
             2045 => "Aurora Awakener",
             2046 => "Taskmaster, Mercenary Mimic",
+
+            // The replacement-effect tests (#192): a doubler, what it doubled, and a
+            // protected creature with the white creature whose hit it shrugged off.
+            1020 => "Twinflame Tyrant",
+            1021 => "Ghalta, Stampede Tyrant",
+            1022 => "Siege Veteran",
+            1023 => "Rabbit",
             _ => null
         };
         /// <summary>
@@ -64,6 +71,11 @@ public class EventExtractorTests
             10 => "Hexproof",
             12 => "Lifelink",
             500 => "When this Class becomes level 2, create a token.",
+
+            // Arena's own texts for the replacement-effect tests, under their real ids.
+            175861 => "If a source you control would deal damage to an opponent or a permanent an opponent controls, it deals double that damage instead.",
+            6364 => "Protection from everything",
+            185 => "Protection from white",
             _ => null
         };
     }
@@ -1373,6 +1385,116 @@ public class EventExtractorTests
             Is.EqualTo("Llanowar Elves 1/1 (1 dmg), Zombie Army 2/2 (last reported before the gap)"),
             "once Arena confirms one creature the mark goes back onto the others");
         Assert.That(boards[1].Caveat, Is.Null);
+    }
+
+    /// <summary>
+    /// A replacement effect names the ability that replaced the damage, before the
+    /// damage line that shows the result. Twinflame Tyrant is a 3/5 whose damage arrived
+    /// as 6 with nothing on the page saying why: the annotation was being dropped as
+    /// unhandled (#192). The affected object is the damage source and the affector is the
+    /// permanent whose ability applied — the same way round in all 112 in the archive.
+    /// </summary>
+    [Test]
+    public void A_damage_replacement_names_what_replaced_the_damage()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 654, "grpId": 60, "name": 1020, "controllerSeatId": 1, "zoneId": 28,
+              "cardTypes": [ "CardType_Creature" ], "power": 3, "toughness": 5 },
+            { "instanceId": 797, "grpId": 61, "name": 1021, "controllerSeatId": 1, "zoneId": 28,
+              "cardTypes": [ "CardType_Creature" ], "power": 12, "toughness": 12 } ],
+          "annotations": [
+            { "id": 1, "affectorId": 654, "affectedIds": [ 797 ],
+              "type": [ "AnnotationType_ReplacementEffectApplied" ], "details": [
+                { "key": "grpid", "valueInt32": [ 175861 ] },
+                { "key": "IsDamageReplacement", "valueInt32": [ 1 ] } ] },
+            { "id": 2, "affectorId": 797, "affectedIds": [ 2 ],
+              "type": [ "AnnotationType_DamageDealt" ], "details": [
+                { "key": "damage", "valueInt32": [ 24 ] } ] } ] }
+        """));
+
+        var replaced = t.Events.Single(x => x.Kind == EventKind.DamageReplaced);
+        Assert.That(replaced.SourceName, Is.EqualTo("Twinflame Tyrant"), "whose ability applied");
+        Assert.That(replaced.TargetName, Is.EqualTo("Ghalta, Stampede Tyrant"), "whose damage it replaced");
+        Assert.That(replaced.Detail, Is.EqualTo(
+            "“If a source you control would deal damage to an opponent or a permanent an opponent controls, it deals double that damage instead.”"));
+        Assert.That(replaced.SourceAbilityGrpId, Is.EqualTo(175861));
+        Assert.That(replaced.ActorSeat, Is.EqualTo(1));
+
+        var kinds = t.Events.Select(x => x.Kind).ToList();
+        Assert.That(kinds.IndexOf(EventKind.DamageReplaced), Is.LessThan(kinds.IndexOf(EventKind.Damage)),
+            "the reason comes before the number");
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False);
+    }
+
+    /// <summary>
+    /// Protection prevents, and Arena writes the prevented damage as a DamageDealt of 0 —
+    /// 45 of 45 in the archive — which the page already keeps quiet. This line is then
+    /// the only thing that says why a hit did nothing. The protected thing is the
+    /// affector: a player's own protection arrives with the seat as affector.
+    /// </summary>
+    [Test]
+    public void Protection_reports_the_damage_it_prevented()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [
+            { "instanceId": 626, "grpId": 62, "name": 1022, "controllerSeatId": 2, "zoneId": 28,
+              "cardTypes": [ "CardType_Creature" ], "power": 4, "toughness": 4 },
+            { "instanceId": 574, "grpId": 63, "name": 1023, "controllerSeatId": 1, "zoneId": 28,
+              "cardTypes": [ "CardType_Creature" ], "power": 1, "toughness": 1 } ],
+          "annotations": [
+            { "id": 1, "affectorId": 1, "affectedIds": [ 626 ],
+              "type": [ "AnnotationType_ReplacementEffectApplied" ], "details": [
+                { "key": "grpid", "valueInt32": [ 6364 ] },
+                { "key": "IsDamageReplacement", "valueInt32": [ 1 ] } ] },
+            { "id": 2, "affectorId": 626, "affectedIds": [ 1 ],
+              "type": [ "AnnotationType_DamageDealt" ], "details": [
+                { "key": "damage", "valueInt32": [ 0 ] } ] },
+            { "id": 3, "affectorId": 574, "affectedIds": [ 626 ],
+              "type": [ "AnnotationType_ReplacementEffectApplied" ], "details": [
+                { "key": "grpid", "valueInt32": [ 185 ] },
+                { "key": "IsDamageReplacement", "valueInt32": [ 1 ] } ] } ] }
+        """));
+
+        var prevented = t.Events.Where(x => x.Kind == EventKind.DamagePrevented).ToList();
+        Assert.That(prevented, Has.Count.EqualTo(2));
+
+        Assert.That(prevented[0].ActorSeat, Is.EqualTo(1), "a player's own protection");
+        Assert.That(prevented[0].SourceName, Is.Null);
+        Assert.That(prevented[0].TargetName, Is.EqualTo("Siege Veteran"));
+        Assert.That(prevented[0].Detail, Is.EqualTo("protection from everything"));
+
+        Assert.That(prevented[1].SourceName, Is.EqualTo("Rabbit"));
+        Assert.That(prevented[1].ActorSeat, Is.EqualTo(1));
+        Assert.That(prevented[1].TargetName, Is.EqualTo("Siege Veteran"));
+        Assert.That(prevented[1].Detail, Is.EqualTo("protection from white"));
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False);
+    }
+
+    /// <summary>
+    /// The other replacement annotation is an entering-the-battlefield choice — Riot 20
+    /// times and Read ahead once, the archive's whole population — and carries no choice
+    /// (ReplacementSourceZcid and grpid only). Riot's choice already has its own line from
+    /// AbilityWordActive (#193), so this one says nothing and is not unhandled either.
+    /// </summary>
+    [Test]
+    public void An_entering_replacement_is_not_reported_as_unhandled()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ { "instanceId": 951, "grpId": 60, "name": 1020, "controllerSeatId": 1,
+                             "zoneId": 28, "cardTypes": [ "CardType_Creature" ] } ],
+          "annotations": [ { "id": 1, "affectorId": 9026, "affectedIds": [ 951 ],
+            "type": [ "AnnotationType_ReplacementEffect" ], "details": [
+              { "key": "grpid", "valueInt32": [ 175 ] },
+              { "key": "ReplacementSourceZcid", "valueInt32": [ 4 ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Any(x => x.Kind == EventKind.Unknown), Is.False);
+        Assert.That(t.Events.Any(x => x.Kind is EventKind.DamageReplaced or EventKind.DamagePrevented),
+            Is.False);
     }
 
     /// <summary>

@@ -642,6 +642,9 @@ public static class Narrator
     private static string Who(int? seat, Transcript t) =>
         seat is null ? "Someone" : seat == t.You?.Seat ? "You" : "Opponent";
 
+    private static string Owner(int? seat, Transcript t) =>
+        seat is null ? "Someone's" : seat == t.You?.Seat ? "Your" : "Opponent's";
+
     private static string Verb(int? seat, string youForm, string theyForm, Transcript t) =>
         seat == t.You?.Seat ? youForm : theyForm;
 
@@ -1049,6 +1052,24 @@ public static class Narrator
             $"{e.SourceName ?? "Something"} deals {e.Amount} damage to {Who(e.TargetSeat, t)}",
         EventKind.Damage when e.TargetName is not null =>
             $"{e.SourceName ?? "Something"} deals {e.Amount} damage to {e.TargetName}",
+
+        // Where the number on the damage line came from. The reason is the ability's
+        // own text, quoted, because no verb read out of it is true of every case:
+        // "doubles" fits Twinflame Tyrant and not Thor's "plus 1" (#192). "it" when a
+        // permanent replaced its own damage, which is what Wolverine's does.
+        EventKind.DamageReplaced when e.TargetName is not null && e.Detail is not null =>
+            e.SourceName is null
+                ? $"The damage {e.TargetName} would deal is replaced: {Ability(e.Detail, density)}"
+                : $"{e.SourceName} replaces the damage " +
+                  $"{(e.SourceInstanceId is { } s && s == e.TargetInstanceId ? "it" : e.TargetName)} " +
+                  $"would deal: {Ability(e.Detail, density)}",
+
+        // Protection prevents, and the page had been silent about it: Arena writes the
+        // prevented damage as a zero, which the damage line above keeps quiet. Whose
+        // protection: a permanent's, or a player's own when the seat is all Arena names.
+        EventKind.DamagePrevented when e.TargetName is not null && e.Detail is not null =>
+            $"{(e.SourceName is not null ? $"{e.SourceName}'s" : Owner(e.ActorSeat, t))} " +
+            $"{e.Detail} prevents the damage from {e.TargetName}",
 
         EventKind.LifeChanged when e.Amount != 0 =>
             $"{Who(e.TargetSeat, t)} " +

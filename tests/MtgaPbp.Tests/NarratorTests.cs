@@ -364,6 +364,67 @@ public class NarratorTests
         Assert.That(lines.Single().Text, Is.EqualTo("You control: Knight 2/2"));
     }
 
+    /// <summary>
+    /// The line says who replaced the damage, whose damage, and quotes Arena's own text
+    /// for how: no verb is inferred from the text, because "doubles" would be a lie for
+    /// Thor's "plus 1" and for Fated Firepower's "plus an amount equal to…" (#192).
+    /// </summary>
+    [Test]
+    public void A_replaced_damage_line_quotes_the_ability_and_names_both_permanents()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.DamageReplaced) with
+            {
+                ActorSeat = 1,
+                SourceInstanceId = 654,
+                SourceName = "Twinflame Tyrant",
+                TargetInstanceId = 797,
+                TargetName = "Ghalta, Stampede Tyrant",
+                Detail = "“If a source you control would deal damage to an opponent or a permanent an opponent controls, it deals double that damage instead.”"
+            }), Density.Verbose);
+
+        Assert.That(lines.Single().Text, Is.EqualTo(
+            "Twinflame Tyrant replaces the damage Ghalta, Stampede Tyrant would deal: “If a source you control would deal damage to an opponent or a permanent an opponent controls, it deals double that damage instead.”"));
+    }
+
+    [Test]
+    public void A_permanent_replacing_its_own_damage_says_it()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.DamageReplaced) with
+            {
+                ActorSeat = 1,
+                SourceInstanceId = 463,
+                SourceName = "Wolverine, Best There Is",
+                TargetInstanceId = 463,
+                TargetName = "Wolverine, Best There Is",
+                Detail = "“Unrivaled Lethality — Double all damage this creature would deal.”"
+            }), Density.Verbose);
+
+        Assert.That(lines.Single().Text, Is.EqualTo(
+            "Wolverine, Best There Is replaces the damage it would deal: “Unrivaled Lethality — Double all damage this creature would deal.”"));
+    }
+
+    /// <summary>
+    /// Prevention names whose protection it was: a permanent's, or a player's own —
+    /// Teferi's Protection arrives with the seat as affector and no permanent to name.
+    /// </summary>
+    [Test]
+    public void Prevented_damage_names_the_protection_and_whose_it_is()
+    {
+        string One(GameEvent e) => Narrator.Narrate(T(e), Density.Beats).Single().Text;
+
+        Assert.That(One(E(EventKind.DamagePrevented) with
+        { ActorSeat = 1, TargetInstanceId = 626, TargetName = "Hulk, Gamma Goliath", Detail = "protection from everything" }),
+            Is.EqualTo("Your protection from everything prevents the damage from Hulk, Gamma Goliath"));
+        Assert.That(One(E(EventKind.DamagePrevented) with
+        { ActorSeat = 1, SourceInstanceId = 574, SourceName = "Rabbit", TargetInstanceId = 577, TargetName = "Siege Veteran", Detail = "protection from white" }),
+            Is.EqualTo("Rabbit's protection from white prevents the damage from Siege Veteran"));
+        Assert.That(One(E(EventKind.DamagePrevented) with
+        { ActorSeat = 2, TargetInstanceId = 548, TargetName = "Hare Apparent", Detail = "protection from everything" }),
+            Is.EqualTo("Opponent's protection from everything prevents the damage from Hare Apparent"));
+    }
+
     [Test]
     public void Effects_name_what_caused_them_when_the_log_says_so()
     {
