@@ -329,6 +329,26 @@ public class NarratorTests
         Assert.That(lines.Single().Text, Is.EqualTo("You control: Knight 2/2"));
     }
 
+    /// <summary>
+    /// A caveat about the whole line is said once, before the colon, so that it plainly
+    /// covers everything after it — rather than once per creature (#203).
+    /// </summary>
+    [Test]
+    public void Board_snapshot_says_a_caveat_on_the_whole_line_once_before_the_colon()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.BoardSnapshot) with
+            {
+                ActorSeat = 2,
+                Detail = "Forest 2/2 (tapped), Squirrel 1/1 (tapped)",
+                Caveat = "last reported before the gap"
+            }),
+            Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo(
+            "Opponent controls (last reported before the gap): Forest 2/2 (tapped), Squirrel 1/1 (tapped)"));
+    }
+
     [Test]
     public void Effects_name_what_caused_them_when_the_log_says_so()
     {

@@ -1433,6 +1433,9 @@ public sealed class EventExtractor(ICardDb cards)
     /// has the tracker; the renderer still decides how to present it and which player
     /// label to use. A <paramref name="final"/> call is a game's ending — the one
     /// boundary that will never come round again — and is never suppressed as a repeat.
+    /// A caveat true of the whole line rides beside the text, in
+    /// <see cref="GameEvent.Caveat"/>, so the renderer can say it once where the line
+    /// begins rather than after every creature.
     /// </summary>
     private static void EmitBoardSnapshots(
         GameStateTracker tracker, long ts, int turn, Emit st, bool final = false)
@@ -1442,6 +1445,17 @@ public sealed class EventExtractor(ICardDb cards)
             var creatures = tracker.CreaturesOnBattlefield(seat);
             if (creatures.Count == 0) continue;
 
+            // Whether the gap mark goes on each creature or once on the line is decided
+            // before any creature's text is built, because it depends on all of them:
+            // when every creature on the line would carry it, the line carries it once
+            // instead and the creatures keep their bare statlines. On turn 14 of match
+            // c11d24fd all 81 creatures were marked, 2,511 of the line's 3,767
+            // characters were the mark, and a screen reader spoke it 81 times in a row —
+            // the numbers the mark exists to protect were buried under it (#203). A
+            // mixed line keeps the mark on each creature, because there it is what tells
+            // one creature from the next.
+            var hoisted = creatures.All(c => tracker.DescribedBeforeGap(c.InstanceId));
+
             var parts = creatures.Select(c =>
             {
                 var text = "";
@@ -1450,13 +1464,6 @@ public sealed class EventExtractor(ICardDb cards)
                 var flags = new List<string>();
                 if (c.Damage > 0) flags.Add($"{c.Damage} dmg");
                 if (c.IsTapped) flags.Add("tapped");
-                // The number is kept, because it is usually still right, and marked,
-                // because it is a number from before a message Arena withheld and the
-                // withheld message is the one that changes fifty things at once. Words
-                // rather than a glyph: the statline twins in the page renderer are a
-                // measured regex over glyphs, and words already read the same on a
-                // screen reader, in find-in-page and on the clipboard (#199).
-                if (tracker.DescribedBeforeGap(c.InstanceId)) flags.Add("last reported before the gap");
 
                 // Tap state is printed but does not by itself make a board worth
                 // reprinting. Permanents untap at their controller's untap step, so
@@ -1467,11 +1474,26 @@ public sealed class EventExtractor(ICardDb cards)
                 // comparison sees is built without that flag, by construction rather
                 // than by editing the text after — which stopped covering every flag
                 // order the moment a third flag existed.
-                // A gap mark coming off is left in on purpose: a board whose numbers
-                // Arena has since confirmed is news even when the numbers did not move.
-                // Across 1,435 archived matches that reprints 195 board lines.
-                var shape = text + Flagged(flags.Where(f => f != "tapped").ToList());
-                return (c.InstanceId, Stats: text + Flagged(flags), Shape: shape);
+                var shape = flags.Where(f => f != "tapped").ToList();
+
+                // The number is kept, because it is usually still right, and marked,
+                // because it is a number from before a message Arena withheld and the
+                // withheld message is the one that changes fifty things at once. Words
+                // rather than a glyph: the statline twins in the page renderer are a
+                // measured regex over glyphs, and words already read the same on a
+                // screen reader, in find-in-page and on the clipboard (#199).
+                // The shape carries the mark per creature whichever way the line says
+                // it, so the same board has the same shape in either form and the form
+                // can only switch when Arena confirms a creature. A gap mark coming off
+                // is left in on purpose: a board whose numbers Arena has since confirmed
+                // is news even when the numbers did not move. Across 1,435 archived
+                // matches that reprints 195 board lines.
+                if (tracker.DescribedBeforeGap(c.InstanceId))
+                {
+                    shape.Add(GapMark);
+                    if (!hoisted) flags.Add(GapMark);
+                }
+                return (c.InstanceId, Stats: text + Flagged(flags), Shape: text + Flagged(shape));
             }).ToList();
 
             // A board that has not moved since the last turn tells you nothing, and
@@ -1499,7 +1521,8 @@ public sealed class EventExtractor(ICardDb cards)
                 Turn = turn,
                 Kind = EventKind.BoardSnapshot,
                 ActorSeat = seat,
-                Detail = detail
+                Detail = detail,
+                Caveat = hoisted ? GapMark : null
             });
             st.Boards[seq] = parts.Select(p => (p.InstanceId, p.Stats)).ToList();
         }
@@ -1508,6 +1531,12 @@ public sealed class EventExtractor(ICardDb cards)
     /// <summary>The parenthetical after a statline — " (2 dmg, tapped)" — or nothing when there is nothing to say.</summary>
     private static string Flagged(IReadOnlyList<string> flags) =>
         flags.Count > 0 ? $" ({string.Join(", ", flags)})" : "";
+
+    /// <summary>
+    /// What a board line says of a creature Arena has not described since a log gap —
+    /// after the creature, or once for the line when it is true of every creature there.
+    /// </summary>
+    private const string GapMark = "last reported before the gap";
 
     private void EmitFor(JsonElement a, GameStateTracker tracker, long ts, Emit st,
         GameRun game,
