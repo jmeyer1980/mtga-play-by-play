@@ -1277,6 +1277,51 @@ public class EventExtractorTests
     }
 
     /// <summary>
+    /// A summarised update is never applied, so a permanent that changed inside it and
+    /// has not been described since still carries the numbers from before. The board
+    /// line used to print those numbers bare — 30 of 45 creatures on turn 14 of match
+    /// 85878c60 were 2/2s printed as 1/1s (#199). The line keeps the number, which is
+    /// usually still right, and says which ones Arena has not confirmed since the gap.
+    /// </summary>
+    /// <remarks>
+    /// A diff carries only what changed, so a permanent that changed inside the
+    /// summarised message and not since is never described again: the mark has to hold
+    /// until Arena describes the object, not merely until the next turn.
+    /// </remarks>
+    [Test]
+    public void A_board_line_marks_permanents_Arena_has_not_described_since_a_gap()
+    {
+        const string elves = """
+            { "instanceId": 50, "grpId": 5, "name": 1001, "controllerSeatId": 2, "zoneId": 28,
+              "cardTypes": [ "CardType_Creature" ], "power": 1, "toughness": 1, "damage": 1 }
+            """;
+        const string zombie = """
+            { "instanceId": 51, "grpId": 7, "name": 1003, "controllerSeatId": 2, "zoneId": 28,
+              "cardTypes": [ "CardType_Creature" ], "power": 2, "toughness": 2 }
+            """;
+        string Turn(int n, string objects) => Gre($$"""
+            { "type": "GameStateType_Diff",
+              "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+              "gameObjects": [ {{objects}} ],
+              "turnInfo": { "turnNumber": {{n}}, "activePlayer": 1 },
+              "annotations": [ { "id": {{n * 10}}, "affectorId": 1, "affectedIds": [ 1 ],
+                "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+            """);
+        var gap = LogGaps.ToEnvelope(
+            new LogGap(LogGapKind.Summarized, 10486, 77, 3, ["GameStateMessage"])).GetRawText();
+
+        var t = Run(RoomLine, MulliganLine,
+            Turn(1, elves + "," + zombie), gap, Turn(2, zombie), Turn(3, elves + "," + zombie));
+
+        var boards = t.Events.Where(e => e.Kind == EventKind.BoardSnapshot).Select(e => e.Detail).ToList();
+        Assert.That(boards[0],
+            Is.EqualTo("Llanowar Elves 1/1 (1 dmg, last reported before the gap), Zombie Army 2/2"),
+            "only the creature Arena has not described since the gap is marked");
+        Assert.That(boards[1], Is.EqualTo("Llanowar Elves 1/1 (1 dmg), Zombie Army 2/2"),
+            "and the mark comes off once Arena describes it again");
+    }
+
+    /// <summary>
     /// Equipment is the case that earns the line. Equip is an activated ability, not a
     /// cast, so nothing in the transcript ever names the creature carrying the sword —
     /// only the statline moves, with no visible cause.

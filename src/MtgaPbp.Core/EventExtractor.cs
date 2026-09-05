@@ -646,6 +646,10 @@ public sealed class EventExtractor(ICardDb cards)
             {
                 gap = gap with { Turn = game.Tracker.Turn, Game = game.Number };
                 gaps.Add(gap);
+                // Still nothing applied — the tracker is told where the hole is, not
+                // what was in it, so that the board lines after it can say which of
+                // their numbers Arena has not confirmed since (#199).
+                game.Tracker.NoteGap();
                 st.Add(Base(game.Tracker, ended, EventKind.LogGap) with
                 {
                     Detail = GapLine(gap),
@@ -1446,6 +1450,13 @@ public sealed class EventExtractor(ICardDb cards)
                 var flags = new List<string>();
                 if (c.Damage > 0) flags.Add($"{c.Damage} dmg");
                 if (c.IsTapped) flags.Add("tapped");
+                // The number is kept, because it is usually still right, and marked,
+                // because it is a number from before a message Arena withheld and the
+                // withheld message is the one that changes fifty things at once. Words
+                // rather than a glyph: the statline twins in the page renderer are a
+                // measured regex over glyphs, and words already read the same on a
+                // screen reader, in find-in-page and on the clipboard (#199).
+                if (tracker.DescribedBeforeGap(c.InstanceId)) flags.Add("last reported before the gap");
                 if (flags.Count > 0) text += $" ({string.Join(", ", flags)})";
                 return (c.InstanceId, Stats: text);
             }).ToList();
@@ -1465,6 +1476,9 @@ public sealed class EventExtractor(ICardDb cards)
             // about the board.
             var shape = detail.Replace(" (tapped)", "", StringComparison.Ordinal)
                               .Replace(", tapped)", ")", StringComparison.Ordinal);
+            // A gap mark coming off is left in the comparison on purpose: a board whose
+            // numbers Arena has since confirmed is news even when the numbers did not
+            // move. Across 1,435 archived matches that reprints 195 board lines.
             // Except at the ending, where an unchanged board is still news: the reader
             // is owed what the match closed on, and a side that sat still for four
             // turns used to simply vanish from the record (a winner's two Rabbits were
