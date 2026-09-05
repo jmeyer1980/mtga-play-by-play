@@ -1750,7 +1750,7 @@ public sealed class EventExtractor(ICardDb cards)
                 // The affected id is the flipping player's seat in all eleven. It read
                 // as "always 1" in the issue because the flipper sat in seat 1 in all
                 // three matches.
-                var seat = FirstAffected(a) is { } s && s <= 2 ? s : (int?)null;
+                var seat = FirstAffected(a) is > 0 and <= 2 and var s ? s : (int?)null;
 
                 // Five coins from one effect are five consecutive annotations in one
                 // message, and one line: a flip joins the flip line just written for the

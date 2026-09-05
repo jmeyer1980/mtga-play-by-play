@@ -1586,6 +1586,26 @@ public class EventExtractorTests
     }
 
     /// <summary>
+    /// An affected id that is not a seat — 0 is Arena's "none" — credits the flip to the
+    /// source's controller rather than to seat 0; the guard is the same one every other
+    /// seat read uses. A review catch, not an archived case: all eleven carry a seat.
+    /// </summary>
+    [Test]
+    public void A_coin_flip_with_no_seat_credits_the_sources_controller()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "gameObjects": [ { "instanceId": 522, "grpId": 71, "name": 1025, "type": "GameObjectType_Card",
+                             "controllerSeatId": 2, "zoneId": 27 } ],
+          "annotations": [ { "id": 1, "affectorId": 522, "affectedIds": [ 0 ],
+            "type": [ "AnnotationType_CoinFlip" ],
+            "details": [ { "key": "CoinFlipResult", "valueInt32": [ 1 ] } ] } ] }
+        """));
+
+        Assert.That(t.Events.Single(x => x.Kind == EventKind.CoinFlipped).ActorSeat, Is.EqualTo(2));
+    }
+
+    /// <summary>
     /// Equipment is the case that earns the line. Equip is an activated ability, not a
     /// cast, so nothing in the transcript ever names the creature carrying the sword —
     /// only the statline moves, with no visible cause.
