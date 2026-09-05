@@ -96,7 +96,7 @@
 - You attack with Hare Apparent
 - Hare Apparent deals 2 damage to Opponent
 - Opponent loses 2 life
-  *You control: Hare Apparent 2/2 (tapped), Rabbit 1/1, Rabbit 1/1, Rabbit 1/1*
+  *You control: Hare Apparent 2/2 (tapped), 3× Rabbit 1/1*
 
 ### Turn 7 — Opponent  (You 16 · Opponent 18)
 - Opponent plays Mountain
@@ -108,7 +108,7 @@
 - Boggart Mischief's ability creates Goblin ×2
 - The Great Goblin deals 2 damage to You
 - You lose 2 life
-  *Opponent controls: Fanatical Firebrand 1/1, Boggart Cursecrafter 1/2, The Great Goblin 3/2, Goblin 1/1, Goblin 1/1*
+  *Opponent controls: Fanatical Firebrand 1/1, Boggart Cursecrafter 1/2, The Great Goblin 3/2, 2× Goblin 1/1*
 
 ### Turn 8 — You  (You 14 · Opponent 18)
 - You draw Caretaker's Talent
@@ -149,7 +149,7 @@
 - Opponent gains 2 life
 - Requiting Hex resolves
   *Opponent controls: Boggart Cursecrafter 1/2, The Great Goblin 3/2, Goblin 1/1*
-  *You control: Rabbit 1/1, Rabbit 1/1, Rabbit 1/1*
+  *You control: 3× Rabbit 1/1*
 
 ### Turn 9 — Opponent  (You 8 · Opponent 22)
 - Opponent plays Mountain
@@ -172,7 +172,7 @@
 - Hare Apparent's ability creates Rabbit
 - Rabbit triggers Caretaker's Talent's ability
 - You draw Plains
-  *You control: Rabbit 1/1, Rabbit 1/1, Rabbit 1/1, Hare Apparent 2/2, Hare Apparent 2/2, Rabbit 1/1*
+  *You control: 4× Rabbit 1/1, 2× Hare Apparent 2/2*
 
 ### Turn 11 — Opponent  (You 7 · Opponent 22)
 - Opponent activates Krenko, Mob Boss
@@ -192,22 +192,22 @@
 - The Great Goblin's ability exiles Blood Crypt
 - Opponent casts Boggart Cursecrafter
 - Boggart Cursecrafter resolves
-  *Opponent controls: Boggart Cursecrafter 1/2, The Great Goblin 3/2, Krenko, Mob Boss 3/3 (tapped), Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Boggart Cursecrafter 2/3*
+  *Opponent controls: Boggart Cursecrafter 1/2, The Great Goblin 3/2, Krenko, Mob Boss 3/3 (tapped), 5× Goblin 1/1, Boggart Cursecrafter 2/3*
 
 ### Turn 12 — You  (You 5 · Opponent 23)
 - You draw Ethereal Armor
 - You play Plains
 - You cast Porcelain Gallery
 - Porcelain Gallery resolves
-  *You control: Rabbit 6/6, Rabbit 6/6, Rabbit 6/6, Hare Apparent 6/6, Hare Apparent 6/6, Rabbit 6/6*
+  *You control: 4× Rabbit 6/6, 2× Hare Apparent 6/6*
 
 ### Turn 13 — Opponent  (You 5 · Opponent 23)
 - Opponent plays Blood Crypt
 - Opponent activates Krenko, Mob Boss
 - Krenko, Mob Boss's ability creates Goblin ×10
 - Opponent attacks with Goblin ×5
-  *Opponent controls: Boggart Cursecrafter 1/2, The Great Goblin 3/2, Krenko, Mob Boss 3/3 (tapped), Goblin 1/1 (tapped), Goblin 1/1 (tapped), Goblin 1/1 (tapped), Goblin 1/1 (tapped), Goblin 1/1 (tapped), Boggart Cursecrafter 2/3, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1, Goblin 1/1*
-  *You control: Rabbit 6/6, Rabbit 6/6, Rabbit 6/6, Hare Apparent 6/6, Hare Apparent 6/6, Rabbit 6/6*
+  *Opponent controls: Boggart Cursecrafter 1/2, The Great Goblin 3/2, Krenko, Mob Boss 3/3 (tapped), 5× Goblin 1/1 (tapped), Boggart Cursecrafter 2/3, 10× Goblin 1/1*
+  *You control: 4× Rabbit 6/6, 2× Hare Apparent 6/6*
 - You end holding Abandoned Air Temple · Ethereal Armor · Hare Apparent
 - You concede — opponent wins game 1
 
@@ -253,7 +253,7 @@
 - You cast Hop to It
 - Hop to It creates Rabbit ×3
 - Hop to It resolves
-  *You control: Rabbit 1/1, Rabbit 1/1, Rabbit 1/1*
+  *You control: 3× Rabbit 1/1*
 
 ### Turn 6 — Opponent  (You 18 · Opponent 20)
 - Opponent plays Swamp
@@ -277,7 +277,7 @@
 - Requiting Hex destroys Rabbit
 - Requiting Hex resolves
 - Ethereal Armor is put into the graveyard
-  *You control: Rabbit 1/1, Rabbit 1/1, Hare Apparent 2/2*
+  *You control: 2× Rabbit 1/1, Hare Apparent 2/2*
 
 ### Turn 8 — Opponent  (You 17 · Opponent 20) · 1 minute 11 seconds elapsed
 - Opponent plays Blazemire Verge

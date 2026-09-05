@@ -405,7 +405,7 @@ public static partial class GamePageRenderer
     {
         var encoded = E(text);
 
-        return Statline().Replace(encoded, m =>
+        var spoken = Statline().Replace(encoded, m =>
         {
             var power = m.Groups[1].Value;
             var toughness = m.Groups[2].Value;
@@ -414,7 +414,19 @@ public static partial class GamePageRenderer
                 ? m.Value
                 : Spoken(m.Value, $"{Said(power)} power {Said(toughness)} toughness");
         });
+
+        // A board line counts identical creatures with a leading "3×" — the decklist's
+        // idiom, so it gets the decklist's words: "3 copies of Rabbit". The digits sit
+        // hard against the glyph with a space after, which is what tells this from the
+        // trailing " ×3" run marker Speech handles first; always plural, because a count
+        // of one is never written (#205). Matched after encoding, where the glyph has
+        // become a numeric reference.
+        return Count().Replace(spoken, m =>
+            $"""<span aria-hidden="true">{m.Groups[1].Value}×</span><span class="vh">{m.Groups[1].Value} copies of</span> """);
     }
+
+    [GeneratedRegex(@"(?<!\w)(\d+)(?:×|&#215;) ")]
+    private static partial Regex Count();
 
     private static bool Signed(string number) => number[0] is '+' or '-';
 

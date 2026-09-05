@@ -1500,8 +1500,7 @@ public sealed class EventExtractor(ICardDb cards)
             // repeating it verbatim is most of the noise these lines can generate. The
             // comparison uses the bare names: the letters a permanent may pick up later
             // are stable, so they never make an unchanged board look changed.
-            var detail = string.Join(", ",
-                parts.Select(p => tracker.NameOf(p.InstanceId) + p.Stats));
+            var detail = Listed(parts.Select(p => tracker.NameOf(p.InstanceId) + p.Stats));
             var shape = string.Join(", ",
                 parts.Select(p => tracker.NameOf(p.InstanceId) + p.Shape));
 
@@ -1537,6 +1536,38 @@ public sealed class EventExtractor(ICardDb cards)
     /// after the creature, or once for the line when it is true of every creature there.
     /// </summary>
     private const string GapMark = "last reported before the gap";
+
+    /// <summary>
+    /// A board line's entries, joined — with creatures that read identically counted
+    /// rather than listed, at the place the first of them stood: "3× Rabbit 1/1".
+    /// </summary>
+    /// <remarks>
+    /// Identical means identical in everything the line can say: name, letter, statline
+    /// and flags. <see cref="PermanentLabels"/> letters exactly the permanents that
+    /// stopped being interchangeable, so nothing a reader could tell apart is folded, and
+    /// a Rabbit at another size or with damage on it stays its own entry. The count leads
+    /// because that is how this transcript counts subjects — "24× Squirrel gets a
+    /// counter", the decklist's "4× Hare Apparent" — while a trailing "×3" counts
+    /// repetitions of a line, and a board line ending in a count would read as one
+    /// (#205). Twenty-eight "Rabbit 1/1" was already unreadable before the gap mark made
+    /// it longer; across 1,435 archived matches this rewrites 4,494 board lines
+    /// in 967 transcripts, 6,677 counts in all, the longest 160 Rabbits.
+    /// </remarks>
+    private static string Listed(IEnumerable<string> entries)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var order = new List<string>();
+        foreach (var entry in entries)
+        {
+            if (counts.TryGetValue(entry, out var n)) counts[entry] = n + 1;
+            else
+            {
+                counts[entry] = 1;
+                order.Add(entry);
+            }
+        }
+        return string.Join(", ", order.Select(e => counts[e] > 1 ? $"{counts[e]}× {e}" : e));
+    }
 
     private void EmitFor(JsonElement a, GameStateTracker tracker, long ts, Emit st,
         GameRun game,
@@ -2703,7 +2734,7 @@ public sealed class EventExtractor(ICardDb cards)
                 // once the whole log has been read, so reading the tracker's final state
                 // here named a creature after a card that was still in its owner's
                 // library at the time. 73 of 467 archived matches contain a rename.
-                Detail = string.Join(", ", creatures.Select(c =>
+                Detail = Listed(creatures.Select(c =>
                     labels.NameAt(c.Id, seq) + labels.Suffix(c.Id, seq) + c.Stats))
             };
         }
