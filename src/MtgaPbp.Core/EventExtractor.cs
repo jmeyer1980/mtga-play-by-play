@@ -1723,16 +1723,18 @@ public sealed class EventExtractor(ICardDb cards)
             if (type == "AnnotationType_CoinFlip" &&
                 GameStateTracker.DetailInt(a, "CoinFlipResult") is int result and (1 or 2))
             {
-                // Arena writes the result as a bare 1 or 2 and names it nowhere. 1 is
-                // heads, measured: a bot match played to check it (546789e8, 2026-09-05)
-                // flipped 2, 1, 2, 1, 2 for Ral Zarek's "skips their next X turns, where
-                // X is the number of coins that came up heads", and the flipper then
-                // took exactly two extra turns before the bot's next one. Consistent
-                // with the only archived flip that decodes on its own — Invert
-                // Polarity's "if you lose the flip, counter that spell" came up 2 and
-                // the spell was countered in the same message. Heads and tails is the
-                // vocabulary every flipping card can be read in (#194). Any other value
-                // stays unhandled rather than being read as either face.
+                // Arena writes CoinFlipResult as a bare 1 or 2 and names it nowhere. A
+                // result of 1 is heads, measured: a bot match played to check it
+                // (546789e8, 2026-09-05) flipped results 2, 1, 2, 1, 2 — two results of
+                // 1 — for Ral Zarek's "Flip five coins. Target opponent skips their
+                // next X turns, where X is the number of coins that came up heads", and
+                // the opponent's next two turns were skipped. X was the count of results
+                // equal to 1, so 1 is heads. Consistent with the only archived flip that
+                // decodes on its own: Invert Polarity's "if you lose the flip, counter
+                // that spell" came up 2 and the spell was countered in the same message,
+                // so 2 is the losing face. Heads and tails is the vocabulary every
+                // flipping card can be read in (#194). Any other value stays unhandled
+                // rather than being read as either face.
                 var face = result == 1 ? "heads" : "tails";
                 if (Json.Int(a, "affectorId") is not { } flipper) continue;
 
