@@ -348,6 +348,37 @@ public sealed class EventExtractor(ICardDb cards)
         public int LastTurn;
         public int LastTurnStarted;
         public readonly List<GameEvent> Events = [];
+
+        /// <summary>
+        /// The seat of every turn the message being processed opens, in order, and how
+        /// many of them the message's annotation loop has reached so far — counted there,
+        /// above the resync filter, and not in <see cref="EmitFor"/>, so a start the
+        /// filter silences still counts toward the place of the one after it. Rebuilt
+        /// per message. One entry is every ordinary message; two is a skipped turn.
+        /// </summary>
+        public readonly List<int?> Opened = [];
+        public int Reached;
+
+        /// <summary>
+        /// The seat whose turn this message skipped, or null when it skipped none.
+        /// </summary>
+        /// <remarks>
+        /// Two turns opened in one message, for different seats, is the whole signature.
+        /// Nothing in the annotations names a skip: the skipped seat's turn is opened
+        /// first and gets no draw, no phase and no action, and the turn that is played
+        /// opens after it, under the same number, with <c>turnInfo</c> already on the
+        /// playing seat (#210).
+        /// <para>
+        /// Counted 2026-09-06 across 1,477 archived matches: 19,967 <c>NewTurnStarted</c>,
+        /// four messages carrying two of them — two matches, both after Ral Zarek's
+        /// "skips their next turns" ultimate — every one seat 2 then seat 1; none carrying
+        /// three, and none opening one seat's turn twice. The mirror image, an extra turn,
+        /// is one seat opening consecutive turns in separate messages; 17 of those, and
+        /// this never sees them because it looks inside one message only.
+        /// </para>
+        /// </remarks>
+        public int? SkippedSeat =>
+            Opened.Count >= 2 && Opened[^1] != Opened[^2] ? Opened[^2] : null;
         public readonly Dictionary<string, int> Unknown = new(StringComparer.Ordinal);
         public readonly Dictionary<string, int> UnknownPersistent = new(StringComparer.Ordinal);
 
@@ -846,6 +877,15 @@ public sealed class EventExtractor(ICardDb cards)
                     acted.Add((actorSeat, detail is > 0 ? detail : null));
                 }
 
+                // Which seats this message opens a turn for. Read before the loop
+                // because the first turn a message opens can only be known to be a
+                // skipped one once the second is in view — see Emit.SkippedSeat.
+                st.Opened.Clear();
+                st.Reached = 0;
+                foreach (var a in Json.Array(gsm, "annotations"))
+                    if (GameStateTracker.HasType(a, "AnnotationType_NewTurnStarted"))
+                        st.Opened.Add(Json.Int(a, "affectorId"));
+
                 // A resync re-sends annotations it has already delivered, and each one
                 // used to narrate a second time. Everything is remembered; only a resync
                 // is allowed to be silenced by that memory — see GameRun.AlreadyTold.
@@ -857,6 +897,15 @@ public sealed class EventExtractor(ICardDb cards)
                 var resync = Json.Str(gsm, "type") == "GameStateType_Full";
                 foreach (var a in Json.Array(gsm, "annotations"))
                 {
+                    // A turn start's place among the ones this message opens is counted
+                    // here, above the filter, so that a start the resync silences still
+                    // counts toward the place of the one after it. Counted below the
+                    // filter, a re-sent skipped start beside a new played one left the
+                    // played one looking like the first of two, and it was dropped —
+                    // a missing header, which is worse than the duplicate (#210).
+                    if (GameStateTracker.HasType(a, "AnnotationType_NewTurnStarted"))
+                        st.Reached++;
+
                     var told = game.AlreadyTold(a);
                     if (resync && told) continue;
                     EmitFor(a, tracker, ts, st, game, countered, leftPlay);
@@ -2085,6 +2134,14 @@ public sealed class EventExtractor(ICardDb cards)
                 var affector = Json.Int(a, "affectorId");
                 var affected = FirstAffected(a);
 
+                // Only the last turn a message opens is a turn that is played. When a
+                // message opens two, for different seats, the first was skipped: it has
+                // no lines and no number of its own, and a heading for it duplicated the
+                // played turn's anchor over nothing (#210). It is folded into the played
+                // turn's header instead — carried on that event as SkippedSeat.
+                if (simple == EventKind.TurnStart &&
+                    st.SkippedSeat is not null && st.Reached < st.Opened.Count) continue;
+
                 var sourceName = affector is { } s && s > 2 ? tracker.NameOf(s) : null;
                 st.SawCard(sourceName);
 
@@ -2121,7 +2178,8 @@ public sealed class EventExtractor(ICardDb cards)
                     TargetSeat = affected is { } t2 && t2 <= 2 ? t2 : null,
                     TargetInstanceId = affected is { } t3 && t3 > 2 ? t3 : null,
                     TargetName = affected is { } t4 && t4 > 2 ? tracker.NameOf(t4) : null,
-                    Amount = AmountFor(type, a)
+                    Amount = AmountFor(type, a),
+                    SkippedSeat = simple == EventKind.TurnStart ? st.SkippedSeat : null
                 };
             }
             else if (type is "AnnotationType_PhasedOut" or "AnnotationType_PhasedIn")

@@ -306,6 +306,33 @@ public class NarratorTests
         Assert.That(lines.Single().Text, Is.EqualTo("Turn 1 — You"));
     }
 
+    /// <summary>
+    /// A skipped turn is folded into the header of the turn that follows it rather than
+    /// given an empty header of its own: Arena numbers both the same, and what a reader
+    /// needs explained is why the same player is taking two turns in a row (#210).
+    /// </summary>
+    [Test]
+    public void Turn_header_says_whose_turn_was_skipped()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.TurnStart) with
+            { Turn = 33, ActorSeat = 1, SkippedSeat = 2, LifeSeat1 = 16, LifeSeat2 = 20 }),
+            Density.Beats);
+
+        Assert.That(lines.Single().Text,
+            Is.EqualTo("Turn 33 — You (Opponent's turn was skipped)  (You 16 · Opponent 20)"));
+    }
+
+    [Test]
+    public void Turn_header_says_when_it_was_your_turn_that_was_skipped()
+    {
+        var lines = Narrator.Narrate(T(
+            E(EventKind.TurnStart) with { Turn = 8, ActorSeat = 2, SkippedSeat = 1 }),
+            Density.Beats);
+
+        Assert.That(lines.Single().Text, Is.EqualTo("Turn 8 — Opponent (Your turn was skipped)"));
+    }
+
     [Test]
     public void Board_snapshot_is_flagged_so_renderers_can_set_it_apart()
     {
