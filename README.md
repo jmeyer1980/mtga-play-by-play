@@ -187,10 +187,12 @@ Open a new terminal afterwards for it to take effect. A winget install would do 
 for you, but the package is not submitted yet — see
 [`packaging/winget/`](packaging/winget/).
 
-There is no safe `cmd.exe` one-liner for this — `setx PATH "%PATH%;..."` folds the
-system `PATH` into your user `PATH` and truncates at 1024 characters. From `cmd.exe`,
-either run the PowerShell line above via `powershell -NoProfile -Command "..."` or use
-Windows' *Edit environment variables for your account* dialog.
+The `cmd.exe` equivalent, `setx PATH "%PATH%;..."`, is not safe: it folds the system
+`PATH` into your user `PATH` and truncates the result at 1024 characters. The PowerShell
+block above has neither problem — it reads and writes only the user scope, with no
+length limit. From `cmd.exe`, either run that block via
+`powershell -NoProfile -Command "..."` or use Windows' *Edit environment variables for
+your account* dialog.
 
 Output lands in `$env:USERPROFILE\MTGA_PlayByPlay` (`%USERPROFILE%\MTGA_PlayByPlay` in
 `cmd.exe`):
