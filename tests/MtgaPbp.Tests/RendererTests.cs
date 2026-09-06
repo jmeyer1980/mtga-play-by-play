@@ -2061,6 +2061,41 @@ public class RendererTests
     }
 
     /// <summary>
+    /// The one way the archive has produced two headings for one turn number: a skipped
+    /// turn, which Arena opens and closes inside the next upkeep message (#210). Before
+    /// the fold, both densities carried "t33" twice, and the fragment link, the pager and
+    /// heading navigation all landed on an empty h2.
+    /// </summary>
+    [Test]
+    public void GamePage_turn_anchors_stay_unique_when_a_turn_was_skipped()
+    {
+        var t = EventExtractorTests.RunFor(EventExtractorTests.Gre("""
+        { "type": "GameStateType_Full",
+          "turnInfo": { "turnNumber": 33, "activePlayer": 1 },
+          "annotations": [
+            { "id": 400, "affectorId": 2, "affectedIds": [ 2 ],
+              "type": [ "AnnotationType_NewTurnStarted" ] },
+            { "id": 401, "affectorId": 1, "affectedIds": [ 1 ],
+              "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+        """));
+        var root = Markup.Parse(GamePageRenderer.Render(t));
+        var headings = root.Descendants("h2").ToList();
+
+        var ids = headings.Select(h => h.Attribute("id")?.Value ?? "").ToList();
+        Assert.That(ids, Is.Unique);
+        Assert.That(ids.Where(id => id.EndsWith("t33", StringComparison.Ordinal)),
+            Is.EqualTo(new[] { "t33", "v-t33" }), "one turn-33 heading per density, not two");
+
+        // Nothing empty: the skip is said on the heading a reader lands on.
+        Assert.That(headings.Select(Markup.Clipboard),
+            Has.Some.EqualTo("Turn 33 — You (Opponent's turn was skipped)"));
+
+        // The markdown is the same document.
+        Assert.That(MarkdownRenderer.Render(t),
+            Does.Contain("## Turn 33 — You (Opponent's turn was skipped)"));
+    }
+
+    /// <summary>
     /// A board line counts identical creatures with a leading "3×", the decklist's idiom,
     /// and is spoken the decklist's way: "3 copies of Rabbit". It is not the trailing
     /// "×3" that counts repetitions of a line, and must not be heard as one (#205).

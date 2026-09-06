@@ -593,6 +593,58 @@ public class EventExtractorTests
         Assert.That(e.ActorSeat, Is.EqualTo(2));
     }
 
+    /// <summary>
+    /// A skipped turn is not silent in the log: the next upkeep message opens a turn for
+    /// the skipped seat and then, in the same message, opens the turn that is played,
+    /// with turnInfo already on the playing seat and one turn number for both. Four such
+    /// messages across 1,477 archived matches, every one this shape (#210).
+    /// </summary>
+    [Test]
+    public void A_doubled_turn_start_in_one_message_is_a_skipped_turn_folded_into_the_played_one()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "players": [ { "systemSeatNumber": 1, "lifeTotal": 16 },
+                       { "systemSeatNumber": 2, "lifeTotal": 20 } ],
+          "turnInfo": { "turnNumber": 33, "activePlayer": 1 },
+          "annotations": [
+            { "id": 400, "affectorId": 2, "affectedIds": [ 2 ],
+              "type": [ "AnnotationType_NewTurnStarted" ] },
+            { "id": 401, "affectorId": 1, "affectedIds": [ 1 ],
+              "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+        """));
+
+        var start = t.Events.Single(x => x.Kind == EventKind.TurnStart);
+        Assert.That(start.Turn, Is.EqualTo(33));
+        Assert.That(start.ActorSeat, Is.EqualTo(1), "the seat that plays the turn");
+        Assert.That(start.SkippedSeat, Is.EqualTo(2), "the seat whose turn Arena skipped");
+        Assert.That((start.LifeSeat1, start.LifeSeat2), Is.EqualTo((16, 20)),
+            "the score rides on the header that survives");
+    }
+
+    /// <summary>
+    /// The mirror image is an extra turn: the same seat starting twice, each start in its
+    /// own message. 17 of those in the archive, none inside one message, so the signature
+    /// above cannot mistake one for a skip.
+    /// </summary>
+    [Test]
+    public void An_extra_turn_is_two_starts_in_separate_messages_and_is_not_a_skip()
+    {
+        string NewTurn(int n) => Gre($$"""
+            { "type": "GameStateType_Full",
+              "turnInfo": { "turnNumber": {{n}}, "activePlayer": 1 },
+              "annotations": [ { "id": {{n * 10}}, "affectorId": 1, "affectedIds": [ 1 ],
+                "type": [ "AnnotationType_NewTurnStarted" ] } ] }
+            """);
+
+        var t = Run(RoomLine, MulliganLine, NewTurn(5), NewTurn(6));
+
+        var starts = t.Events.Where(x => x.Kind == EventKind.TurnStart).ToList();
+        Assert.That(starts.Select(s => s.Turn), Is.EqualTo(new[] { 5, 6 }));
+        Assert.That(starts.Select(s => s.ActorSeat), Is.All.EqualTo(1));
+        Assert.That(starts.Select(s => s.SkippedSeat), Is.All.Null);
+    }
+
     [Test]
     public void Extract_records_unknown_annotations_without_dropping_them()
     {

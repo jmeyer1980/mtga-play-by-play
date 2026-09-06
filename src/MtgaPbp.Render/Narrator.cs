@@ -639,6 +639,16 @@ public static class Narrator
         return $"  (You {yours} · Opponent {theirs})";
     }
 
+    /// <summary>
+    /// Whose turn was skipped just before this one, said on the header of the turn that
+    /// was played. Arena gives a skipped turn the played turn's number and nothing of its
+    /// own — no draw, no phase, no line — so a heading for it would stand over nothing,
+    /// and what a reader needs explained is the same player taking two turns in a row.
+    /// The score follows as usual: the skip qualifies who is playing, not the totals (#210).
+    /// </summary>
+    private static string Skipped(GameEvent e, Transcript t) =>
+        e.SkippedSeat is { } seat ? $" ({Owner(seat, t)} turn was skipped)" : "";
+
     private static string Who(int? seat, Transcript t) =>
         seat is null ? "Someone" : seat == t.You?.Seat ? "You" : "Opponent";
 
@@ -960,7 +970,7 @@ public static class Narrator
     private static string? Phrase(GameEvent e, Transcript t, Density density) => e.Kind switch
     {
         EventKind.TurnStart =>
-            $"Turn {e.Turn} — {Who(e.ActorSeat ?? e.ActiveSeat, t)}{LifeScore(e, t)}",
+            $"Turn {e.Turn} — {Who(e.ActorSeat ?? e.ActiveSeat, t)}{Skipped(e, t)}{LifeScore(e, t)}",
 
         // A caveat on the whole line goes before the colon, where it plainly covers
         // everything after it — said once there rather than after each creature (#203).

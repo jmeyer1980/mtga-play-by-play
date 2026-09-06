@@ -300,4 +300,26 @@ public sealed record GameEvent
     /// the score entering the turn. Zero when not applicable.</summary>
     public int LifeSeat1 { get; init; }
     public int LifeSeat2 { get; init; }
+
+    /// <summary>
+    /// On a <see cref="EventKind.TurnStart"/>, the seat whose turn Arena skipped just
+    /// before this one began. Null on every other turn, and on every other event.
+    /// </summary>
+    /// <remarks>
+    /// A skipped turn is not silent in the log, and it has no turn of its own either.
+    /// The next upkeep message opens a turn for the skipped seat and then, in the same
+    /// message, opens the turn that is played — <c>turnInfo</c> already on the playing
+    /// seat, one turn number for both, and no draw, phase or action for the seat that
+    /// was skipped. Rendered as two headings, that number appeared twice under the same
+    /// anchor, the first heading over nothing (#210). So the skipped start is carried
+    /// here, on the turn that was played, and the header says whose turn it was.
+    /// <para>
+    /// Counted 2026-09-06 across 1,477 archived matches: 19,967 <c>NewTurnStarted</c>,
+    /// four messages carrying two of them, in two matches, every one seat 2 skipped
+    /// and seat 1 playing. An extra turn is the mirror image — one seat opening
+    /// consecutive turns, each start in its own message, 17 in the archive — and never
+    /// sets this.
+    /// </para>
+    /// </remarks>
+    public int? SkippedSeat { get; init; }
 }
