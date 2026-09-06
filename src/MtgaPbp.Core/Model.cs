@@ -182,7 +182,7 @@ public enum EventKind
     /// <summary>
     /// A coin flip, or several from one effect at once. Arena writes the result as a
     /// bare 1 or 2 and names it nowhere; the transcript reads 1 as heads and 2 as tails,
-    /// an inference recorded where it is made (#194).
+    /// measured against a five-coin ultimate whose skipped turns matched the ones (#194).
     /// </summary>
     CoinFlipped,
 
