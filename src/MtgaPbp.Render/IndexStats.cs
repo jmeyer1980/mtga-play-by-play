@@ -70,6 +70,24 @@ public sealed record IndexStats(
     /// that would mean nothing.
     /// </summary>
     IReadOnlyList<StatRow> ByOpponentDeck,
+
+    /// <summary>
+    /// The cards the opponent showed most over the decided matches, each with the record
+    /// in the matches it was seen in (#137). A match counts once for every card it
+    /// showed, so these add up past the match count. Capped at
+    /// <see cref="OpponentCardRows"/>; basic lands left out; empty when no match recorded
+    /// any.
+    /// </summary>
+    IReadOnlyList<StatRow> OpponentCardsMostSeen,
+
+    /// <summary>
+    /// The cards you fall shortest against: wins short of par, scaled to the sample,
+    /// most short first, among cards seen in at least <see cref="OpponentCardMinimum"/>
+    /// decided matches, and only those actually short of it. See
+    /// <see cref="WinsVsPar"/> for why not raw losses and <see cref="ShortfallScaled"/>
+    /// for why not the raw shortfall.
+    /// </summary>
+    IReadOnlyList<StatRow> OpponentCardsLosingTo,
     int LongestWinStreak,
     int Unattributed,
     int Excluded,
@@ -105,6 +123,54 @@ public sealed record IndexStats(
 {
     /// <summary>Nothing to report when nothing has a result yet.</summary>
     public bool Any => Overall.Played > 0;
+
+    /// <summary>
+    /// The fewest decided matches a card must have been seen in before it is ranked as
+    /// one you lose to. Below this one result moves the rate by twenty points or more,
+    /// and every 0-1 would top the list. Against the archive this was set on (1,455
+    /// decided matches, 2026-09-06) it leaves 822 of 4,852 non-basic cards eligible.
+    /// </summary>
+    public const int OpponentCardMinimum = 5;
+
+    /// <summary>
+    /// Rows per card table. The same archive holds 4,852 distinct non-basic cards the
+    /// opponent showed, and a table of all of them would be most of the page.
+    /// </summary>
+    public const int OpponentCardRows = 25;
+
+    /// <summary>
+    /// Wins in the matches a card was seen in, minus what <paramref name="overallRate"/>
+    /// predicts for that many matches. Negative is bad news.
+    /// </summary>
+    /// <remarks>
+    /// Ranked by this rather than by losses minus wins because the raw differential is
+    /// the base rate wearing a card's name: with a losing record overall, every staple
+    /// the opponent shows often comes out ahead on losses just by being seen often. On
+    /// the archive this was built against, Arcane Signet (37-59) and Command Tower
+    /// (44-63) topped the raw ranking — the two cards in every Brawl deck — while Day of
+    /// Judgment at 3-20 came third. Against par, the staples sit near zero and the
+    /// sweeper leads.
+    /// </remarks>
+    public static double WinsVsPar(StatRow r, double overallRate) => r.Won - r.Played * overallRate;
+
+    /// <summary>
+    /// <see cref="WinsVsPar"/> divided by the square root of the matches the card was
+    /// seen in — what the losing-to table is ranked by.
+    /// </summary>
+    /// <remarks>
+    /// The raw shortfall grows with the sample: a staple a little under par over a
+    /// hundred games is ten wins short, and outranks a card that beat you nearly every
+    /// time over ten. On the archive this was set against, Arcane Signet at 37-59 came
+    /// second by raw shortfall, above Bloom Tender at 2-17. Dividing by the square root
+    /// of the sample is the shape of a proportion's standard error, so this compares how
+    /// far below par a card sits in units the sample size sets rather than in wins:
+    /// Arcane Signet drops to the middle of the table and Day of Judgment 3-20, Bloom
+    /// Tender 2-17, Get Lost 1-14 and Mana Drain 0-10 lead, which is the list a reader
+    /// would have written. Sorting by win rate instead put nothing but 0-N cards at the
+    /// top — 38 of the 822 eligible had no win at all.
+    /// </remarks>
+    public static double ShortfallScaled(StatRow r, double overallRate) =>
+        r.Played == 0 ? 0 : WinsVsPar(r, overallRate) / Math.Sqrt(r.Played);
 
     public static IndexStats From(IReadOnlyList<MatchSummary> rows)
     {
@@ -161,6 +227,42 @@ public sealed record IndexStats(
             .ThenBy(r => r.Name, StringComparer.Ordinal)
             .ToList();
 
+        // Per card the opponent showed, over the same counted set (#137). A match
+        // contributes once to every card it showed — Distinct guards a list that
+        // repeats a name — so the rows add up past the match count by design, and the
+        // panel's note says so. Basics are left out: Swamp was seen in 459 decided
+        // matches of the archive this was built against, and all it says is which
+        // colour the loss was to, which ByOpponentDeck already says better.
+        var byOpponentCard = counted
+            .Where(r => r.OpponentCards is { Count: > 0 })
+            .SelectMany(r => r.OpponentCards!
+                .Where(c => !DeckIdentity.IsBasic(c))
+                .Distinct(StringComparer.Ordinal)
+                .Select(c => (Card: c, Match: r)))
+            .GroupBy(x => x.Card, StringComparer.Ordinal)
+            .Select(g => Row(g.Key, null, g.Select(x => x.Match).ToList()))
+            .ToList();
+
+        var overall = Row("Overall", null, counted);
+        var rate = overall.WinRate ?? 0;
+
+        var mostSeen = byOpponentCard
+            .OrderByDescending(r => r.Played)
+            .ThenBy(r => r.Name, StringComparer.Ordinal)
+            .Take(OpponentCardRows)
+            .ToList();
+
+        // Strictly short of par: a card exactly at par is not bad news, and one ahead
+        // of it is the opposite. Ranked by the shortfall scaled to the sample — see
+        // ShortfallScaled for why not the raw one. Ties go to the larger sample.
+        var losingTo = byOpponentCard
+            .Where(r => r.Played >= OpponentCardMinimum && WinsVsPar(r, rate) < 0)
+            .OrderBy(r => ShortfallScaled(r, rate))
+            .ThenByDescending(r => r.Played)
+            .ThenBy(r => r.Name, StringComparer.Ordinal)
+            .Take(OpponentCardRows)
+            .ToList();
+
         var deckOf = new Dictionary<string, string>(StringComparer.Ordinal);
         var labelOf = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var c in clusters)
@@ -171,10 +273,12 @@ public sealed record IndexStats(
         }
 
         return new IndexStats(
-            Row("Overall", null, counted),
+            overall,
             byFormat,
             byDeck,
             byOpponentDeck,
+            mostSeen,
+            losingTo,
             LongestStreak(counted),
             Unattributed: counted.Count(r => r.Deck is null or { Count: 0 }),
             Excluded: rows.Count - counted.Count,

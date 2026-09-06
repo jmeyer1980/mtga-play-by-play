@@ -2046,6 +2046,82 @@ public class RendererTests
             Assert.That(li.Parent!.Name.LocalName, Is.EqualTo("ol"));
     }
 
+    /// <summary>
+    /// Card search is seat-aware from the haystack up (#137): a card the opponent showed
+    /// is tagged with a leading "~", so "opp:" in front of a term matches only those, and
+    /// a bare term still matches either seat as it always has. One name, one entry — the
+    /// haystack was already a third of the page, and doubling the card names would have
+    /// been the wrong way to add one bit of information.
+    /// </summary>
+    [Test]
+    public void Index_search_tags_the_opponents_cards_rather_than_repeating_them()
+    {
+        var html = IndexRenderer.Render([IndexRenderer.Summarize(Sample() with
+        {
+            OpponentCards = ["Duress", "Lightning Bolt"]
+        })]);
+        var hay = Regex.Match(html, "data-search=\"([^\"]*)\"").Groups[1].Value;
+
+        Assert.That(hay, Does.Contain("plains").And.Not.Contain("~plains"), "yours stays as it was");
+        Assert.That(hay, Does.Contain("~lightning bolt"));
+        Assert.That(Regex.Matches(hay, "lightning bolt").Count, Is.EqualTo(1), "tagged, not repeated");
+        Assert.That(hay, Does.Contain("~duress"),
+            "a card they showed that no line narrated is still theirs to search");
+
+        Assert.That(html, Does.Contain("t.indexOf('opp:') === 0"));
+        Assert.That(html, Does.Contain("'~' + t.slice(4)"));
+    }
+
+    [Test]
+    public void Summary_carries_the_opponents_cards_to_the_index()
+    {
+        var s = IndexRenderer.Summarize(Sample() with { OpponentCards = ["Duress"] });
+        Assert.That(s.OpponentCards, Is.EqualTo(new[] { "Duress" }));
+        Assert.That(IndexRenderer.Summarize(Sample()).OpponentCards, Is.Empty);
+    }
+
+    private static int _their;
+
+    private static MatchSummary Their(string result, params string[] cards) =>
+        new($"t{++_their}", "2026-08-19 00:00", ++_their, "Ladder",
+            "Rival", result, 9, false, [], OpponentCards: cards);
+
+    /// <summary>
+    /// The two tables the record panel gains (#137), and the note that says how to read
+    /// them. Their rows are stats rows like any other, so the copy walker and the sort
+    /// controls need nothing new.
+    /// </summary>
+    [Test]
+    public void Index_breaks_the_record_down_by_the_opponents_cards()
+    {
+        var rows = new List<MatchSummary>();
+        for (var i = 0; i < 5; i++) rows.Add(Their("Won 2-0", "Staple"));
+        for (var i = 0; i < 5; i++) rows.Add(Their("Lost 0-2", "Staple", "Sweeper"));
+        var root = Markup.Parse(IndexRenderer.Render(rows));
+
+        var seen = root.Descendants("table").Single(t => t.Attribute("id")?.Value == "their-cards");
+        Assert.That(seen.Element("caption")?.Value, Is.EqualTo("Their cards, most seen"));
+        Assert.That(seen.Descendants("th").Where(h => h.Attribute("scope")?.Value == "row").Select(h => h.Value),
+            Is.EqualTo(new[] { "Staple", "Sweeper" }));
+        Assert.That(seen.Value, Does.Contain("Vs par"));
+
+        var losses = root.Descendants("table").Single(t => t.Attribute("id")?.Value == "their-cards-losses");
+        Assert.That(losses.Element("caption")?.Value, Is.EqualTo("Their cards you lose to"));
+        var sweeper = losses.Descendants("tr").Single(tr => tr.Value.Contains("Sweeper"));
+        var cells = sweeper.Elements("td").ToList();
+        Assert.That(Markup.Clipboard(cells[^1]), Is.EqualTo("−2.5"), "wins short of a 50% par over five matches");
+        Assert.That(Markup.Spoken(cells[^1]), Is.EqualTo("2.5 below par"));
+        Assert.That(losses.Descendants("tr").Count(tr => tr.Value.Contains("Staple")), Is.Zero,
+            "exactly at par is not bad news");
+
+        var note = root.Descendants("p").Single(p => p.Attribute("id")?.Value == "their-cards-note");
+        Assert.That(note.Value, Does.Contain("Basic lands").And.Contain("at least 5"));
+
+        // With nothing seen from any opponent, neither table nor the note appears.
+        var bare = IndexRenderer.Render([IndexRenderer.Summarize(Sample())]);
+        Assert.That(bare, Does.Not.Contain("their-cards"));
+    }
+
     [Test]
     public void GamePage_turn_anchors_stay_unique_across_the_two_densities()
     {
