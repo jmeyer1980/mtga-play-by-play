@@ -645,6 +645,43 @@ public class EventExtractorTests
         Assert.That(starts.Select(s => s.SkippedSeat), Is.All.Null);
     }
 
+    /// <summary>
+    /// A resync may re-send the skipped seat's start beside a start it has not told yet.
+    /// The re-sent one is silenced before it is narrated, and the played turn must still
+    /// know it was the last of two — counted by position in the message, not by how many
+    /// starts the narration reached — or its header is dropped, which is worse than the
+    /// duplicate this replaced (#210).
+    /// </summary>
+    [Test]
+    public void A_resync_that_repeats_the_skipped_start_keeps_the_played_turn_header()
+    {
+        const string skipped = """
+            { "id": 400, "affectorId": 2, "affectedIds": [ 2 ],
+              "type": [ "AnnotationType_NewTurnStarted" ] }
+            """;
+        const string played = """
+            { "id": 401, "affectorId": 1, "affectedIds": [ 1 ],
+              "type": [ "AnnotationType_NewTurnStarted" ] }
+            """;
+
+        var t = Run(RoomLine, MulliganLine,
+            Gre($$"""
+            { "type": "GameStateType_Diff",
+              "turnInfo": { "turnNumber": 33, "activePlayer": 2 },
+              "annotations": [ {{skipped}} ] }
+            """),
+            Gre($$"""
+            { "type": "GameStateType_Full",
+              "turnInfo": { "turnNumber": 33, "activePlayer": 1 },
+              "annotations": [ {{skipped}}, {{played}} ] }
+            """));
+
+        var starts = t.Events.Where(x => x.Kind == EventKind.TurnStart).ToList();
+        Assert.That(starts.Select(s => s.ActorSeat), Is.EqualTo(new int?[] { 2, 1 }),
+            "the first message's start, then the played turn — never nothing");
+        Assert.That(starts[1].SkippedSeat, Is.EqualTo(2));
+    }
+
     [Test]
     public void Extract_records_unknown_annotations_without_dropping_them()
     {

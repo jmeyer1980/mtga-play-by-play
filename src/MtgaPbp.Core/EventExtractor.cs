@@ -351,8 +351,10 @@ public sealed class EventExtractor(ICardDb cards)
 
         /// <summary>
         /// The seat of every turn the message being processed opens, in order, and how
-        /// many of them <see cref="EmitFor"/> has reached so far. Rebuilt per message.
-        /// One entry is every ordinary message; two is a skipped turn.
+        /// many of them the message's annotation loop has reached so far — counted there,
+        /// above the resync filter, and not in <see cref="EmitFor"/>, so a start the
+        /// filter silences still counts toward the place of the one after it. Rebuilt
+        /// per message. One entry is every ordinary message; two is a skipped turn.
         /// </summary>
         public readonly List<int?> Opened = [];
         public int Reached;
@@ -875,14 +877,6 @@ public sealed class EventExtractor(ICardDb cards)
                     acted.Add((actorSeat, detail is > 0 ? detail : null));
                 }
 
-                // A resync re-sends annotations it has already delivered, and each one
-                // used to narrate a second time. Everything is remembered; only a resync
-                // is allowed to be silenced by that memory — see GameRun.AlreadyTold.
-                //
-                // The filter sits here and nowhere else. The loops above rebuild per
-                // message, so a repeat only re-states what they already hold, and
-                // tracker.Apply is right to take a resync, because a resync is a true
-                // snapshot of the board. It is the telling that must not happen twice.
                 // Which seats this message opens a turn for. Read before the loop
                 // because the first turn a message opens can only be known to be a
                 // skipped one once the second is in view — see Emit.SkippedSeat.
@@ -892,9 +886,26 @@ public sealed class EventExtractor(ICardDb cards)
                     if (GameStateTracker.HasType(a, "AnnotationType_NewTurnStarted"))
                         st.Opened.Add(Json.Int(a, "affectorId"));
 
+                // A resync re-sends annotations it has already delivered, and each one
+                // used to narrate a second time. Everything is remembered; only a resync
+                // is allowed to be silenced by that memory — see GameRun.AlreadyTold.
+                //
+                // The filter sits here and nowhere else. The loops above rebuild per
+                // message, so a repeat only re-states what they already hold, and
+                // tracker.Apply is right to take a resync, because a resync is a true
+                // snapshot of the board. It is the telling that must not happen twice.
                 var resync = Json.Str(gsm, "type") == "GameStateType_Full";
                 foreach (var a in Json.Array(gsm, "annotations"))
                 {
+                    // A turn start's place among the ones this message opens is counted
+                    // here, above the filter, so that a start the resync silences still
+                    // counts toward the place of the one after it. Counted below the
+                    // filter, a re-sent skipped start beside a new played one left the
+                    // played one looking like the first of two, and it was dropped —
+                    // a missing header, which is worse than the duplicate (#210).
+                    if (GameStateTracker.HasType(a, "AnnotationType_NewTurnStarted"))
+                        st.Reached++;
+
                     var told = game.AlreadyTold(a);
                     if (resync && told) continue;
                     EmitFor(a, tracker, ts, st, game, countered, leftPlay);
@@ -2128,11 +2139,8 @@ public sealed class EventExtractor(ICardDb cards)
                 // no lines and no number of its own, and a heading for it duplicated the
                 // played turn's anchor over nothing (#210). It is folded into the played
                 // turn's header instead — carried on that event as SkippedSeat.
-                if (simple == EventKind.TurnStart)
-                {
-                    st.Reached++;
-                    if (st.SkippedSeat is not null && st.Reached < st.Opened.Count) continue;
-                }
+                if (simple == EventKind.TurnStart &&
+                    st.SkippedSeat is not null && st.Reached < st.Opened.Count) continue;
 
                 var sourceName = affector is { } s && s > 2 ? tracker.NameOf(s) : null;
                 st.SawCard(sourceName);
