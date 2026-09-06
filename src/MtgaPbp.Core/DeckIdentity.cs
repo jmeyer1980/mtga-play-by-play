@@ -121,6 +121,13 @@ public static class DeckIdentity
         "Snow-Covered Mountain", "Snow-Covered Forest", "Snow-Covered Wastes"
     };
 
+    /// <summary>
+    /// Whether a name is a basic land — the printed basics and their snow forms. The
+    /// index leaves these out of its opponent-card tables (#137): a basic says which
+    /// colours a match was against and nothing about the deck.
+    /// </summary>
+    public static bool IsBasic(string name) => Basics.Contains(name);
+
     private static bool IsLand(DeckEntry card) => card.IsLand || Basics.Contains(card.Name);
 
     /// <summary>

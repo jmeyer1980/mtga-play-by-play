@@ -64,7 +64,15 @@ public sealed record MatchSummary(
     /// How the deciding game ended — see <see cref="TranscriptSummary.Ending"/> — or
     /// null when the log never said, which is every unfinished match and every draw.
     /// </summary>
-    string? Ending = null);
+    string? Ending = null,
+
+    /// <summary>
+    /// The cards the opponent showed — <see cref="Transcript.OpponentCards"/>, carried
+    /// here so the index can search and count by seat (#137). <see cref="Cards"/> merges
+    /// both seats, which made a search for a card find the games where you cast it as
+    /// readily as the games where it was cast at you. Null or empty means none recorded.
+    /// </summary>
+    IReadOnlyList<string>? OpponentCards = null);
 
 public static class IndexRenderer
 {
@@ -91,7 +99,8 @@ public static class IndexRenderer
             : null,
         You: t.You?.ScreenName,
         OpponentCommanders: t.OpponentCommanders,
-        Ending: TranscriptSummary.Ending(t));
+        Ending: TranscriptSummary.Ending(t),
+        OpponentCards: t.OpponentCards);
 
     /// <summary>
     /// Rows are rendered statically rather than built by script: the page then works
@@ -175,7 +184,7 @@ public static class IndexRenderer
                 // rows. A row with no deck contributes neither, which is what stops a
                 // search for "white" from turning up matches whose colours nobody knows.
                 var haystack = string.Join(' ',
-                    r.Opponent, r.EventName, r.Result, r.Date, string.Join(' ', r.Cards),
+                    r.Opponent, r.EventName, r.Result, r.Date, SearchableCards(r),
                     // How it ended, so "conceded" filters to the concessions — the
                     // question the ending was surfaced to answer, and one no other
                     // column can be searched for.
@@ -434,6 +443,22 @@ public static class IndexRenderer
         _ => $" data-key=\"{E(value.ToString() ?? "")}\""
     };
 
+    /// <summary>
+    /// Every card the match showed, once each, the opponent's tagged with a leading "~"
+    /// so that "opp:" can tell the seats apart (#137). Tagged rather than listed twice:
+    /// the haystack was already a third of the page, and a bare term still finds a
+    /// tagged name by substring, so nothing a search used to find is lost. A card the
+    /// opponent showed that no narrated line named is still theirs to search, so their
+    /// list is taken whole and yours is what is left of the merged one.
+    /// </summary>
+    private static string SearchableCards(MatchSummary r)
+    {
+        var theirs = r.OpponentCards ?? [];
+        var set = new HashSet<string>(theirs, StringComparer.Ordinal);
+        return string.Join(' ',
+            r.Cards.Where(c => !set.Contains(c)).Concat(theirs.Select(c => "~" + c)));
+    }
+
     private static string Colors(MatchSummary r) => r.Colors is not { Length: > 0 } c
         ? ""
         : Twin(E(c), E(DeckColors.Spoken(c)));
@@ -591,7 +616,8 @@ public static class IndexRenderer
         var format = Breakdown("By format", "Format", s.ByFormat, decks: false, id: "by-format");
         var deck = Breakdown("By deck", "Deck", s.ByDeck, decks: true, id: "by-deck");
         var against = Breakdown("Against", "Their deck", s.ByOpponentDeck, decks: false, id: "against");
-        if (format.Length == 0 && deck.Length == 0 && against.Length == 0) return "";
+        var theirs = TheirCards(s);
+        if (format.Length == 0 && deck.Length == 0 && against.Length == 0 && theirs.Length == 0) return "";
 
         var sb = new StringBuilder();
         sb.Append($"""
@@ -616,9 +642,100 @@ public static class IndexRenderer
         sb.Append(deck);
         sb.Append(Versions(s));
         sb.Append(against);
+        sb.Append(theirs);
         sb.Append(SessionTable(s));
         sb.Append("</details>");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The record broken down by the cards the opponent showed (#137): what is seen
+    /// most, and what you fall shortest against. The note comes first because both
+    /// tables need reading rules — a match counts once per card it showed, so the rows
+    /// add up past the match count; basic lands are left out, since they only restate
+    /// which colours a loss was to; and "vs par" is the number the second table ranks by.
+    /// </summary>
+    /// <remarks>
+    /// Ranked by wins short of par rather than by raw losses, because with a losing
+    /// record every staple the opponent shows often comes out ahead on losses just by
+    /// being seen often — on the archive this was built against, Arcane Signet and
+    /// Command Tower topped a raw ranking. Par is what the overall win rate predicts for
+    /// that many matches: seen in five at an overall 46%, a card's par is 2.3 wins, and
+    /// 0-5 against it is 2.3 short. The shortfall is scaled to the sample before ranking
+    /// — see <see cref="IndexStats.ShortfallScaled"/> — and the column shows it unscaled,
+    /// because "2.3 wins short" is a number a reader can check against the record beside
+    /// it. The minimum sample is <see cref="IndexStats.OpponentCardMinimum"/>, and the
+    /// note says so, for the same reason the version note says to read the record rather
+    /// than the percentage.
+    /// </remarks>
+    private static string TheirCards(IndexStats s)
+    {
+        if (s.OpponentCardsMostSeen.Count == 0) return "";
+        var rate = s.Overall.WinRate ?? 0;
+
+        var sb = new StringBuilder();
+        sb.Append($"""
+            <p class="note" id="their-cards-note">A match counts once for every card the
+            opponent showed in it, so these rows add up past the match count. Basic lands
+            are left out. Vs par is your wins minus what your overall rate predicts for
+            that many matches. The second table ranks the cards you fall shortest against,
+            among those seen in at least {IndexStats.OpponentCardMinimum} matches, with
+            the shortfall divided by the square root of the matches seen — so a staple a
+            little under par over a hundred games does not outrank a card that beat you
+            nearly every time. Small samples swing: read the record, not the percentage.</p>
+            """);
+        sb.Append(CardTable("Their cards, most seen", s.OpponentCardsMostSeen, rate, "their-cards"));
+        sb.Append(CardTable("Their cards you lose to", s.OpponentCardsLosingTo, rate, "their-cards-losses"));
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// One card table: the same four columns as every breakdown, plus vs par. Built
+    /// beside <see cref="Breakdown"/> rather than as an option on it, because the deck
+    /// columns and this one never share a table and a method with two optional shapes
+    /// reads worse than two methods.
+    /// </summary>
+    private static string CardTable(string title, IReadOnlyList<StatRow> rows, double rate, string id)
+    {
+        if (rows.Count == 0) return "";
+
+        var sb = new StringBuilder();
+        sb.Append($"""
+            <div class="scroller"><table class="stats" id="{id}"><caption>{E(title)}</caption>
+            <thead><tr>{Col("Card", Text)}{Col("Played", Num)}
+            {Col("Record", Num)}{Col("Win rate", Num)}{Col("Vs par", Num)}</tr></thead><tbody>
+            """);
+
+        foreach (var r in rows)
+        {
+            var par = IndexStats.WinsVsPar(r, rate);
+            sb.Append($"""
+                <tr><th scope="row"{Key(r.Name)}>{E(r.Name)}</th><td{Key(r.Played)}>{r.Played}</td>
+                <td{Key(RecordKey(r))}>{Record(r)}</td><td{Key(r.WinRate)}>{Rate(r)}</td>
+                <td{Key(Math.Round(par, 1))}>{VsPar(par)}</td></tr>
+                """);
+        }
+
+        sb.Append("</tbody></table></div>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Wins vs par as a signed number with one decimal, and a spoken twin, because a
+    /// leading hyphen is exactly the kind of punctuation a screen reader drops at its
+    /// default level — "-2.5" read as "2.5" is the opposite of what it says. The glyph is
+    /// a real minus sign for the eye, and the ear gets "below par".
+    /// </summary>
+    private static string VsPar(double par)
+    {
+        var rounded = Math.Round(par, 1);
+        var n = Math.Abs(rounded).ToString("0.#", CultureInfo.InvariantCulture);
+        return rounded switch
+        {
+            0 => Twin("0", "at par"),
+            < 0 => Twin($"−{n}", $"{n} below par"),
+            _ => Twin($"+{n}", $"{n} above par")
+        };
     }
 
     /// <summary>
@@ -1286,6 +1403,10 @@ public static class IndexRenderer
                 // "deck:hare-apparent" also select "deck:hare-apparent-2", so the panel
                 // would say a deck has played N while the table below showed more.
                 if (t.indexOf('deck:') === 0) return (' ' + hay + ' ').indexOf(' ' + t + ' ') !== -1;
+                // "opp:" in front of a term matches only cards the opponent showed.
+                // Those carry a leading "~" in the haystack, so the sigil plus the
+                // term has to appear — which also pins the term to the start of a name.
+                if (t.indexOf('opp:') === 0) return hay.indexOf('~' + t.slice(4)) !== -1;
                 return hay.indexOf(t) !== -1;
               });
               tr.hidden = !match;

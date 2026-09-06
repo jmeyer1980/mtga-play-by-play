@@ -55,6 +55,116 @@ public class IndexStatsTests
         Assert.That(stats.ByOpponentDeck[0].Name, Does.Contain("A").And.Contain("B"));
     }
 
+    // ---------- Their cards (#137) ----------
+
+    /// <summary>
+    /// A match counts once for every card the opponent showed in it, so the rows add up
+    /// past the match count by design; a match that showed nothing contributes to none;
+    /// an unfinished one contributes to none either; and basic lands stay out, because
+    /// they only restate which colours a loss was to, which the table above already
+    /// says — on the archive, Swamp alone was seen in 459 decided matches.
+    /// </summary>
+    [Test]
+    public void Opponent_cards_count_once_per_decided_match_they_were_seen_in()
+    {
+        var stats = IndexStats.From([
+            Match("Won 2-0") with { OpponentCards = ["Get Lost", "Swamp"] },
+            Match("Lost 0-2") with { OpponentCards = ["Get Lost", "Sheoldred, the Apocalypse", "Swamp"] },
+            Match("Lost 1-2") with { OpponentCards = ["Sheoldred, the Apocalypse"] },
+            Match("Lost 0-1", incomplete: true) with { OpponentCards = ["Get Lost"] },
+            Match("Won 2-1")
+        ]);
+
+        var rows = stats.OpponentCardsMostSeen;
+        Assert.That(rows.Select(r => r.Name),
+            Is.EqualTo(new[] { "Get Lost", "Sheoldred, the Apocalypse" }),
+            "most seen first, ties by name; no basics; nothing from a match that showed nothing");
+        Assert.That((rows[0].Won, rows[0].Lost), Is.EqualTo((1, 1)), "the unfinished match is not a loss");
+        Assert.That((rows[1].Won, rows[1].Lost), Is.EqualTo((0, 2)));
+    }
+
+    /// <summary>
+    /// "Which of their cards do I lose to" is not the raw loss count. With a losing
+    /// record overall, every staple the opponent shows often comes out ahead on losses
+    /// simply by being seen often — ranked that way on the archive, Arcane Signet and
+    /// Command Tower topped the list. The ranking is wins short of par instead: how many
+    /// fewer wins than the overall rate predicts for that many matches. And a card needs
+    /// a minimum sample before it is ranked at all, or every 0-1 would top the list.
+    /// </summary>
+    [Test]
+    public void Cards_you_lose_to_are_ranked_by_wins_short_of_par_over_a_minimum_sample()
+    {
+        // Ten matches, five won: par is 50%.
+        //   Staple  — in all ten, 5-5: exactly par, not bad news.
+        //   Sweeper — in five losses and no win: five matches, 2.5 wins short of par.
+        //   Fine    — in four wins and one loss: ahead of par.
+        //   Rare    — in one loss only: too small a sample to say anything.
+        var rows = new List<MatchSummary>();
+        for (var i = 0; i < 5; i++)
+            rows.Add(Match("Won 2-0") with { OpponentCards = i < 4 ? ["Staple", "Fine"] : ["Staple"] });
+        for (var i = 0; i < 5; i++)
+            rows.Add(Match("Lost 0-2") with
+            { OpponentCards = i == 0 ? ["Staple", "Sweeper", "Rare", "Fine"] : ["Staple", "Sweeper"] });
+
+        var stats = IndexStats.From(rows);
+
+        Assert.That(stats.Overall.WinRate, Is.EqualTo(0.5));
+        Assert.That(stats.OpponentCardsLosingTo.Select(r => r.Name), Is.EqualTo(new[] { "Sweeper" }));
+        Assert.That(IndexStats.WinsVsPar(stats.OpponentCardsLosingTo[0], 0.5), Is.EqualTo(-2.5));
+        Assert.That(IndexStats.OpponentCardMinimum, Is.EqualTo(5));
+
+        // Both tables are capped, so a long archive does not put thousands of rows on
+        // the index — 4,852 distinct non-basic cards over 1,455 decided matches on the
+        // archive this was built against.
+        Assert.That(stats.OpponentCardsMostSeen.Select(r => r.Name),
+            Is.EqualTo(new[] { "Staple", "Fine", "Sweeper", "Rare" }));
+        Assert.That(IndexStats.OpponentCardRows, Is.EqualTo(25));
+    }
+
+    /// <summary>
+    /// The raw shortfall grows with the sample, so a staple a little under par over a
+    /// hundred games outranks a card that beat you nearly every time — on the archive,
+    /// Arcane Signet at 37-59 ranked second by raw shortfall, above Bloom Tender at 2-17.
+    /// Scaled to the square root of the sample it drops to the middle of the table, and
+    /// the cards that lead are the ones a reader would name: Day of Judgment 3-20, Bloom
+    /// Tender 2-17, Get Lost 1-14, Mana Drain 0-10.
+    /// </summary>
+    [Test]
+    public void A_staple_a_little_under_par_does_not_outrank_a_card_that_beats_you()
+    {
+        // Overall 50%. Staple: 40-60 over a hundred, ten wins short — scaled, 1.0.
+        // Sweeper: 0-9, four and a half short — scaled, 1.5. Sweeper leads.
+        var rows = new List<MatchSummary>();
+        for (var i = 0; i < 40; i++) rows.Add(Match("Won 2-0") with { OpponentCards = ["Staple"] });
+        for (var i = 0; i < 60; i++)
+            rows.Add(Match("Lost 0-2") with { OpponentCards = i < 9 ? ["Staple", "Sweeper"] : ["Staple"] });
+        for (var i = 0; i < 20; i++) rows.Add(Match("Won 2-0"));
+
+        var stats = IndexStats.From(rows);
+
+        Assert.That(stats.Overall.WinRate, Is.EqualTo(0.5));
+        Assert.That(stats.OpponentCardsLosingTo.Select(r => r.Name), Is.EqualTo(new[] { "Sweeper", "Staple" }));
+        Assert.That(IndexStats.WinsVsPar(stats.OpponentCardsLosingTo[1], 0.5), Is.EqualTo(-10),
+            "the staple is further short in absolute wins");
+        Assert.That(IndexStats.ShortfallScaled(stats.OpponentCardsLosingTo[0], 0.5), Is.EqualTo(-1.5));
+        Assert.That(IndexStats.ShortfallScaled(stats.OpponentCardsLosingTo[1], 0.5), Is.EqualTo(-1.0));
+    }
+
+    [Test]
+    public void Opponent_card_tables_stop_at_the_row_cap()
+    {
+        var rows = new List<MatchSummary>();
+        for (var i = 0; i < 30; i++)
+            rows.Add(Match("Lost 0-2") with { OpponentCards = Enumerable.Range(0, 30).Select(n => $"Card {n:00}").ToList() });
+        for (var i = 0; i < 30; i++)
+            rows.Add(Match("Won 2-0") with { OpponentCards = [$"Card {i:00}"] });
+
+        var stats = IndexStats.From(rows);
+
+        Assert.That(stats.OpponentCardsMostSeen, Has.Count.EqualTo(IndexStats.OpponentCardRows));
+        Assert.That(stats.OpponentCardsLosingTo, Has.Count.EqualTo(IndexStats.OpponentCardRows));
+    }
+
     // ---------- the four traps ----------
 
     /// <summary>

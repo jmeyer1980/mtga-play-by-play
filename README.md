@@ -206,7 +206,10 @@ out/text/<matchId>.md            markdown, for pasting into chat
 ```
 
 Open `out/index.html` in any browser. Search filters on opponent, event, result,
-date, deck colours, and every card that appeared.
+date, deck colours, and every card that appeared; `opp:` in front of a card name
+matches only the games where the opponent showed it. The record panel breaks your
+record down by format, deck and opposing commander, and by the cards opponents showed
+most and the ones you fall shortest against.
 
 The **Vault** panel reports gold, gems, vault progress and your four wildcard counts,
 and how each has moved since the tool first saw them. Arena writes those totals into
