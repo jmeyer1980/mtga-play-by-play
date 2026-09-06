@@ -54,7 +54,7 @@ notification-area icon, asked the shell where the icon was, and removed it.
 | What `GetConsoleWindow()` returns under the default host | A window of class `PseudoConsoleWindow`, owned by our own process, that nothing on screen corresponds to. The window the user sees is class `CASCADIA_HOSTING_WINDOW_CLASS`, owned by `WindowsTerminal.exe` — a different process. |
 | `ShowWindow(SW_HIDE)` on that handle | Returns `TRUE` and the pseudo-window's visible flag flips. The Terminal window stays exactly where it was. |
 | `FreeConsole()` | Returns `TRUE`. The Terminal window titled by our `Console.Title` is gone from the desktop within two seconds. |
-| `AllocConsole()` afterwards | Returns `TRUE`. A new Terminal window appears. After rebinding `Console.Out`/`Error`/`In` over `OpenStandard*()`, `Console.Title`, `WindowWidth` (120×30) and `WriteLine` all work in it. |
+| `AllocConsole()` afterwards | Returns `TRUE` in both runs, and a new Terminal window appears in both. After rebinding `Console.Out`/`Error`/`In` over `OpenStandard*()`, `Console.Title` and `WriteLine` work in it in both runs. `WindowWidth` reported 120×30 only in the `Start-Process` run; in the shell-host run — a process that had no console when it started — it threw `IOException` after the rebind. |
 | `GetConsoleProcessList()` | **1** when launched by `Start-Process` — we own the console. **3** when launched from a shell host. |
 | `Shell_NotifyIcon(NIM_ADD)` from a console process, icon taken from the exe's own resources with `ExtractIconEx` | `TRUE`; two icon sizes extracted. `NIM_SETVERSION` to `NOTIFYICON_VERSION_4`: `TRUE`. A balloon (`NIF_INFO`): `TRUE`. |
 | `Shell_NotifyIconGetRect` | `S_OK`, with a 48×72 rectangle at the bottom-right of the display — the icon exists in the notification area, not merely in our process's opinion. |
@@ -125,9 +125,12 @@ action is opening the report; a second click opens it again, which is harmless.
 
 Not the same window: **no** under Windows Terminal, measured. A fresh one: **yes** —
 `FreeConsole()` closes the window the process was started in, `AllocConsole()` opens a
-new one later, and after rebinding the standard streams `LiveBoard` could draw into it.
-That costs a replay (the board's `Say` lines would need keeping in a small ring so the
-new window is not blank above the block) and leaves one thing unmeasured: what closing
+new one later, and after rebinding the standard streams `LiveBoard` could draw into it —
+in the shortcut case. In the shell-host run `Console.WindowWidth` threw after the rebind,
+and `LiveBoard` falls back to plain appended lines on exactly that exception, so a replay
+there would scroll rather than pin. That costs a replay (the board's `Say` lines would
+need keeping in a small ring so the new window is not blank above the block), a second
+measurement of the width question, and leaves one more thing unmeasured: what closing
 that new window does. `CTRL_CLOSE_EVENT` normally ends the process, and whether a handler
 that calls `FreeConsole()` and returns can keep it alive is exactly the kind of fact this
 document refuses to assert. So:
