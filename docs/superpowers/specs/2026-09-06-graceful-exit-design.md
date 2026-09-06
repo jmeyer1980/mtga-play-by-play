@@ -41,8 +41,8 @@ Four decisions are asked for at the end; each is a one-line answer.
 ## Method
 
 Reasoning about the Windows shell is how #46 shipped a change the screen reader could
-not hear. So the questions that could be answered by running something were. A
-throwaway spike — a ~330-line `net10.0` console program, P/Invoke only, built with the
+not hear. So every question that could be answered by running something was answered
+that way. A throwaway spike — a ~330-line `net10.0` console program, P/Invoke only, built with the
 repository's own `app.ico` as its icon — was launched two ways: with `Start-Process`,
 which gives it a fresh console the way a shortcut, a double-click or a scheduled task
 does; and from a shell host, which attaches it to an existing one. It logged what the
