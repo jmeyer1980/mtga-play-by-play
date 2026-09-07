@@ -58,8 +58,16 @@ public sealed class TrayIcon : IDisposable
     {
         var tray = new TrayIcon(tip, openReport, quit);
         tray._thread.Start();
-        tray._ready.Wait();
-        if (tray._failure is not null) throw tray._failure;
+        // Bounded: a shell that never answers must leave the caller in its window, not
+        // hanging at startup. The event is left for the thread on that path, since the
+        // thread may still reach it; on the failure path the thread has already exited.
+        if (!tray._ready.Wait(TimeSpan.FromSeconds(10)))
+            throw new InvalidOperationException("the notification-area icon did not come up in time");
+        if (tray._failure is not null)
+        {
+            tray._ready.Dispose();
+            throw tray._failure;
+        }
         return tray;
     }
 

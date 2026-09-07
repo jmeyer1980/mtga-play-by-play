@@ -38,6 +38,8 @@ public static class Program
         // key: the same exe is started three ways (shortcut, Startup folder, terminal),
         // and the target line of a shortcut is where the choice belongs (#213).
         var tray = args.Contains("--tray");
+        if (tray && command != "watch")
+            Console.Error.WriteLine("warning: --tray only applies to watch; ignoring it");
 
         // Identity first, on every command that a person reads.
         if (command is not ("keep" or "unkeep" or "stop")) Banner.Write(command);
@@ -620,7 +622,7 @@ public static class Program
         void Repaint(IReadOnlyList<MatchSummary> rows, IndexStats st, Nudge? nudge)
         {
             var tonight = st.Sessions.FirstOrDefault();
-            lease.Tip(TrayTip.Compose(tonight, DateTime.Now));
+            lease.Tip(tonight, DateTime.Now);
             var byId = rows.GroupBy(r => r.MatchId, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
@@ -796,9 +798,10 @@ public static class Program
     {
         public bool Active => icon is not null;
 
-        public void Tip(string text)
+        public void Tip(SessionRow? session, DateTime now)
         {
-            if (OperatingSystem.IsWindows()) icon?.SetTip(text);
+            if (OperatingSystem.IsWindows() && icon is not null)
+                icon.SetTip(TrayTip.Compose(session, now));
         }
 
         public void Balloon(string title, string text)
@@ -831,8 +834,10 @@ public static class Program
                 openReport: () => OpenInBrowser(server.Url),
                 quit: stop.Set));
         }
-        catch (InvalidOperationException e)
+        catch (Exception e)
         {
+            // Whatever the icon could not do is a reason to stay in the window, never a
+            // reason to stop watching.
             Console.Error.WriteLine($"no notification-area icon ({e.Message}); staying in this window");
             return new TrayLease(null);
         }
