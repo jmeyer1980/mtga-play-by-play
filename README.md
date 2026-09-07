@@ -65,7 +65,7 @@ cd C:\path\to\mtga-pbp
 |---|---|
 | `.\mtga-pbp.exe` | capture new matches, then rebuild the site |
 | `.\mtga-pbp.exe --open` | ... and open the report in your browser |
-| `.\mtga-pbp.exe watch` | serve the report and keep it live (see below) |
+| `.\mtga-pbp.exe watch [--tray]` | serve the report and keep it live (see below); `--tray` puts it in the notification area |
 | `.\mtga-pbp.exe stop [port]` | stop a running `watch` from any terminal (default 8787) |
 | `.\mtga-pbp.exe capture` | capture only |
 | `.\mtga-pbp.exe build` | re-derive the whole site from the archive |
@@ -132,6 +132,32 @@ Two things that trip people up:
 Add a port the same way if you need one: `"...\mtga-pbp.exe" watch 9000`. The
 **Start in** field can be left as Windows set it — `mtga-pbp.json` is read from the
 folder the exe is in, not from the working directory.
+
+#### In the notification area
+
+```powershell
+.\mtga-pbp.exe watch --tray
+```
+
+The same `watch`, living behind an icon in the notification area instead of a window.
+Started from a shortcut, the Startup folder or a scheduled task, its window closes as
+soon as it has said where the report is; started from a terminal you typed into, that
+terminal is kept — Ctrl+C still works — and the icon is added beside it.
+
+- **Left-click** the icon (or <kbd>Win</kbd>+<kbd>B</kbd>, arrow to it, <kbd>Enter</kbd>)
+  to open the report.
+- **Right-click** it (or <kbd>Shift</kbd>+<kbd>F10</kbd>) for the menu: **Open report**
+  and **Quit**. Quit is the same stop as Ctrl+C: the icon goes, the port closes, the
+  process exits.
+- The tooltip is the scoreboard's headline — tonight's record and when it last updated.
+- `.\mtga-pbp.exe stop` ends it too.
+
+Windows 11 keeps a new icon behind the **^** chevron until you drag it out or turn it on
+under Settings › Personalization › Taskbar › Other system tray icons; a notification on
+start says it is there. Double-clicking does nothing the single click did not.
+
+To make a shortcut for it, build the `watch` shortcut as above and put ` --tray` after
+`watch`, outside the quotes: `"C:\path	o\mtga-pbp\mtga-pbp.exe" watch --tray`.
 
 ### Rebuilds only touch what changed
 
@@ -329,6 +355,11 @@ you cannot see it is a `watch` you cannot tell is running.
 
 If one is running where you cannot see it — a task created without `/it`, say —
 `.\mtga-pbp.exe stop` ends it without Task Manager.
+
+If you would rather have the icon than the window at every logon, put ` --tray` after
+`watch` in the shortcut's target or the `schtasks` line. Then the icon is how you can
+tell it is running, and its **Quit** — or `stop` — is how you end it. Keep `/it` on the
+scheduled task either way: the icon needs your session as much as the window did.
 
 It will **not** open a browser at every logon. `watch` opens the report only when
 `"OpenAfterBuild"` is on, the same setting the other commands use, and it is off unless
