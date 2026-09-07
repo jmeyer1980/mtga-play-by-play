@@ -35,7 +35,7 @@ public static class Program
         var rebuild = args.Contains("--rebuild");
 
         // Identity first, on every command that a person reads.
-        if (command is not ("keep" or "unkeep")) Banner.Write(command);
+        if (command is not ("keep" or "unkeep" or "stop")) Banner.Write(command);
 
         try
         {
@@ -45,6 +45,8 @@ public static class Program
                 "build" => Build(cfg, open, rebuild: rebuild),
                 "stats" => Stats(cfg),
                 "watch" => Watch(cfg, operands, open, prune, rebuild),
+                "stop" => StopCommand.Run(operands.FirstOrDefault(), TimeSpan.FromSeconds(10),
+                                          Console.Out, Console.Error),
                 "collection" => ImportCollection(cfg, operands.FirstOrDefault()),
                 "why" => Why.Run(cfg, operands.FirstOrDefault(), operands.Skip(1).ToArray()),
                 "keep" => Favorite(cfg, operands.FirstOrDefault(), on: true),
@@ -61,7 +63,7 @@ public static class Program
     }
 
     private static readonly string[] Commands =
-        ["capture", "build", "stats", "watch", "keep", "unkeep", "collection", "why"];
+        ["capture", "build", "stats", "watch", "stop", "keep", "unkeep", "collection", "why"];
 
     private static readonly string[] Options = ["--open", "--rebuild", "--prune"];
 
@@ -111,6 +113,7 @@ public static class Program
                                       (on `watch`, applies to its first build only)
             mtga-pbp stats            unhandled annotations and unresolved cards
             mtga-pbp watch [port]     serve the report and keep it live (default 8787)
+            mtga-pbp stop [port]      stop a running watch (default 8787)
             mtga-pbp collection <file> import a collection exported from elsewhere
             mtga-pbp why <matchId> [turns] show turns beside the log behind them,
                                            one (13), several (13 14, or 13,14)
@@ -521,6 +524,25 @@ public static class Program
         // on top of it; it is the whole experience for anyone who has turned that off.
         Console.WriteLine($"serving  {server.Url}");
 
+        // One signal, three senders: Ctrl+C here, `mtga-pbp stop` from any other
+        // terminal, and — under --tray — the icon's Quit. Named after the port, so a
+        // second watch on another port is a different name (#213). Created before the
+        // first capture rather than after it: a `stop` typed during a long first build
+        // used to find nothing listening, and a Ctrl+C during it killed the process
+        // mid-write. Both now end the watch as soon as that build has landed.
+        using var stop = StopSignal.Listen(server.Port);
+        Console.CancelKeyPress += (_, e) =>
+        {
+            // The first press is a request; the second is an order. A capture or build
+            // that has hung — a cloud-synced folder, say — never reaches the loop that
+            // honours the request, and the way out of that must not be Task Manager,
+            // which is the problem this signal exists to remove. Returning without
+            // cancelling lets the default handler end the process.
+            if (stop.AlreadyRequested) return;
+            e.Cancel = true;
+            stop.Set();
+        };
+
         // On anything but a first run there is a report to show right now. A first
         // run has nothing yet — opening the browser onto a 404 with no script in it
         // would strand the user there, because a 404 cannot subscribe to the change
@@ -620,9 +642,6 @@ public static class Program
         // Drawn before the first match of the evening, so the window says what it is
         // watching from the moment it opens.
         if (firstStats is not null) Repaint(firstRows, firstStats, firstNudge);
-
-        var stop = new ManualResetEventSlim(false);
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Set(); };
 
         var logs = new LogGrowth();
         // A rebuild the archive has earned and the loop has not managed to run yet.

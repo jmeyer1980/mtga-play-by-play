@@ -13,8 +13,8 @@ copy's code, so the files on disk can be stale even though you downloaded a newe
 and nothing on screen says so. That has been the answer twice, and cost a full morning
 each time.
 
-If the stamp is not the version you expect, close `watch`, start it again from the new
-copy, and look at the output afresh.
+If the stamp is not the version you expect, close `watch` (or run `mtga-pbp stop`), start
+it again from the new copy, and look at the output afresh.
 
 ## 2. Nothing came out at all
 
