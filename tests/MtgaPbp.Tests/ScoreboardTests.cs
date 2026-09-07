@@ -249,7 +249,7 @@ public class ScoreboardTests
     {
         Assert.That(Text(Board()), Does.Contain("· Ctrl+C to stop"));
         var lines = Scoreboard.Lines(Session(), [], null, null, "http://127.0.0.1:8787/", Updated,
-                                     78, 30, stopHint: "Ctrl+C or the icon's Quit to stop");
-        Assert.That(Text(lines), Does.Contain("· Ctrl+C or the icon's Quit to stop"));
+                                     78, 30, stopHint: "Ctrl+C or icon's Quit");
+        Assert.That(Text(lines), Does.Contain("· Ctrl+C or icon's Quit"));
     }
 }
