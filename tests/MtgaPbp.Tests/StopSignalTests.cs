@@ -72,4 +72,14 @@ public class StopSignalTests
     {
         Assert.That(StopSignal.NameFor(8787), Is.EqualTo(@"Local\mtga-pbp-stop-8787"));
     }
+
+    [Test]
+    public void A_request_is_visible_to_whoever_asks_next()
+    {
+        // The Ctrl+C handler's rule: the first press is a request, a second one an order.
+        using var listener = StopSignal.Listen(FreshPort());
+        Assert.That(listener.AlreadyRequested, Is.False);
+        listener.Set();
+        Assert.That(listener.AlreadyRequested, Is.True);
+    }
 }

@@ -531,7 +531,17 @@ public static class Program
         // used to find nothing listening, and a Ctrl+C during it killed the process
         // mid-write. Both now end the watch as soon as that build has landed.
         using var stop = StopSignal.Listen(server.Port);
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Set(); };
+        Console.CancelKeyPress += (_, e) =>
+        {
+            // The first press is a request; the second is an order. A capture or build
+            // that has hung — a cloud-synced folder, say — never reaches the loop that
+            // honours the request, and the way out of that must not be Task Manager,
+            // which is the problem this signal exists to remove. Returning without
+            // cancelling lets the default handler end the process.
+            if (stop.AlreadyRequested) return;
+            e.Cancel = true;
+            stop.Set();
+        };
 
         // On anything but a first run there is a report to show right now. A first
         // run has nothing yet — opening the browser onto a 404 with no script in it

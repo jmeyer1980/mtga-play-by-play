@@ -33,6 +33,9 @@ public sealed class StopSignal : IDisposable
     /// <summary>Whether another process can find this signal by port.</summary>
     public bool IsNamed { get; }
 
+    /// <summary>Whether someone has already asked this watch to stop.</summary>
+    public bool AlreadyRequested => _handle.WaitOne(0);
+
     /// <summary>The kernel object a watch on <paramref name="port"/> listens under.</summary>
     public static string NameFor(int port) => Prefix + port;
 
