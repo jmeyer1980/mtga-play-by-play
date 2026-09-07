@@ -1207,8 +1207,8 @@ Add to `ScoreboardTests`:
     {
         Assert.That(Text(Board()), Does.Contain("· Ctrl+C to stop"));
         var lines = Scoreboard.Lines(Session(), [], null, null, "http://127.0.0.1:8787/", Updated,
-                                     78, 30, stopHint: "Ctrl+C or the icon's Quit to stop");
-        Assert.That(Text(lines), Does.Contain("· Ctrl+C or the icon's Quit to stop"));
+                                     78, 30, stopHint: "Ctrl+C or icon's Quit");
+        Assert.That(Text(lines), Does.Contain("· Ctrl+C or icon's Quit"));
     }
 ```
 
@@ -1660,7 +1660,7 @@ The `board.Draw(Scoreboard.Lines(...))` call gains a last argument:
                 tonight, beats, playing,
                 cfg.SuggestDeckRotation ? SessionCoach.NextUp(st, slug) : null,
                 server.Url, DateTime.Now, board.Width, board.Height,
-                stopHint: lease.Active ? "Ctrl+C or the icon's Quit to stop" : "Ctrl+C to stop"));
+                stopHint: lease.Active ? "Ctrl+C or icon's Quit" : "Ctrl+C to stop"));
 ```
 
 - [ ] **Step 6: `Usage()`**
@@ -1752,7 +1752,7 @@ git commit -m "Say how watch --tray works and how to stop it"
 - [ ] **Step 2: Typed into a terminal**
 
 `.\src\MtgaPbp.Cli\bin\Debug\net10.0\mtga-pbp.exe watch 8799 --tray`
-Expected: the banner; `serving`; `running in the notification area — right-click the icon to quit, or run: mtga-pbp stop 8799`; the window stays (a shell is attached); the board's footer reads `Ctrl+C or the icon's Quit to stop`; an icon in the notification area (look behind the ^ chevron) with the exe's own picture and the tooltip `mtga-pbp — watching · no matches yet · updated HH:MM`.
+Expected: the banner; `serving`; `running in the notification area — right-click the icon to quit, or run: mtga-pbp stop 8799`; the window stays (a shell is attached); the board's footer reads `Ctrl+C or icon's Quit`; an icon in the notification area (look behind the ^ chevron) with the exe's own picture and the tooltip `mtga-pbp — watching · no matches yet · updated HH:MM`.
 Right-click the icon → a menu **Open report** (bold) / **Quit**. Quit → the window prints `stopped.`, the icon is gone, `$LASTEXITCODE` is 0.
 
 - [ ] **Step 3: From a shortcut-style launch**

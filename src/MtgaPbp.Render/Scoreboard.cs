@@ -51,6 +51,10 @@ public static class Scoreboard
     /// taller than its window fights the scrollback and both lose, and the thing that
     /// gets pushed off is whatever notable line was printed above it.
     /// </param>
+    /// <param name="stopHint">
+    /// How this watch is stopped — Ctrl+C alone, or the icon's Quit as well under
+    /// <c>--tray</c>. Said in the footer because the footer is where the answer is looked for.
+    /// </param>
     public static IReadOnlyList<string> Lines(
         SessionRow? session,
         IReadOnlyList<Beat> beats,
@@ -59,7 +63,8 @@ public static class Scoreboard
         string url,
         DateTime updated,
         int width = 80,
-        int height = 24)
+        int height = 24,
+        string stopHint = "Ctrl+C to stop")
     {
         var fit = Fit(session?.Decks.Count ?? 0, beats.Count, height, nextUp is not null);
         var lines = new List<string> { new('-', Math.Clamp(width - 1, 10, 100)) };
@@ -107,7 +112,7 @@ public static class Scoreboard
 
         lines.Add("");
         if (nextUp is not null) lines.Add($"  next up if you switch: {Clip(nextUp, Math.Max(10, width - 28))}");
-        lines.Add($"  updated {updated:HH:mm:ss} · live at {url} · Ctrl+C to stop");
+        lines.Add($"  updated {updated:HH:mm:ss} · live at {url} · {stopHint}");
 
         return lines.Select(l => Clip(l, Math.Max(10, width - 1))).ToList();
     }
