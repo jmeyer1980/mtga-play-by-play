@@ -524,6 +524,15 @@ public static class Program
         // on top of it; it is the whole experience for anyone who has turned that off.
         Console.WriteLine($"serving  {server.Url}");
 
+        // One signal, three senders: Ctrl+C here, `mtga-pbp stop` from any other
+        // terminal, and — under --tray — the icon's Quit. Named after the port, so a
+        // second watch on another port is a different name (#213). Created before the
+        // first capture rather than after it: a `stop` typed during a long first build
+        // used to find nothing listening, and a Ctrl+C during it killed the process
+        // mid-write. Both now end the watch as soon as that build has landed.
+        using var stop = StopSignal.Listen(server.Port);
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Set(); };
+
         // On anything but a first run there is a report to show right now. A first
         // run has nothing yet — opening the browser onto a 404 with no script in it
         // would strand the user there, because a 404 cannot subscribe to the change
@@ -623,9 +632,6 @@ public static class Program
         // Drawn before the first match of the evening, so the window says what it is
         // watching from the moment it opens.
         if (firstStats is not null) Repaint(firstRows, firstStats, firstNudge);
-
-        var stop = new ManualResetEventSlim(false);
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Set(); };
 
         var logs = new LogGrowth();
         // A rebuild the archive has earned and the loop has not managed to run yet.
