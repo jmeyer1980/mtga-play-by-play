@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using MtgaPbp.Cli.Tray;
 using MtgaPbp.Core;
 using MtgaPbp.Render;
 
@@ -33,6 +34,10 @@ public static class Program
         // Ignore the build cache and re-derive every match. The flag has always named
         // this guarantee; until #122 there was no cache for it to bypass.
         var rebuild = args.Contains("--rebuild");
+        // Live in the notification area instead of a window. A flag rather than a config
+        // key: the same exe is started three ways (shortcut, Startup folder, terminal),
+        // and the target line of a shortcut is where the choice belongs (#213).
+        var tray = args.Contains("--tray");
 
         // Identity first, on every command that a person reads.
         if (command is not ("keep" or "unkeep" or "stop")) Banner.Write(command);
@@ -44,7 +49,7 @@ public static class Program
                 "capture" => Capture(cfg, prune),
                 "build" => Build(cfg, open, rebuild: rebuild),
                 "stats" => Stats(cfg),
-                "watch" => Watch(cfg, operands, open, prune, rebuild),
+                "watch" => Watch(cfg, operands, open, prune, rebuild, tray),
                 "stop" => StopCommand.Run(operands.FirstOrDefault(), TimeSpan.FromSeconds(10),
                                           Console.Out, Console.Error),
                 "collection" => ImportCollection(cfg, operands.FirstOrDefault()),
@@ -65,7 +70,7 @@ public static class Program
     private static readonly string[] Commands =
         ["capture", "build", "stats", "watch", "stop", "keep", "unkeep", "collection", "why"];
 
-    private static readonly string[] Options = ["--open", "--rebuild", "--prune"];
+    private static readonly string[] Options = ["--open", "--rebuild", "--prune", "--tray"];
 
     /// <summary>
     /// Splits the arguments into a command and its operands.
@@ -112,7 +117,8 @@ public static class Program
             mtga-pbp build --rebuild  rebuild every match, ignoring the build cache
                                       (on `watch`, applies to its first build only)
             mtga-pbp stats            unhandled annotations and unresolved cards
-            mtga-pbp watch [port]     serve the report and keep it live (default 8787)
+            mtga-pbp watch [port] [--tray] serve the report and keep it live (default 8787);
+                                      --tray puts it in the notification area
             mtga-pbp stop [port]      stop a running watch (default 8787)
             mtga-pbp collection <file> import a collection exported from elsewhere
             mtga-pbp why <matchId> [turns] show turns beside the log behind them,
@@ -454,7 +460,7 @@ public static class Program
     /// looks like it should stop that and does nothing (#170).
     /// </param>
     private static int Watch(
-        Config cfg, string[] operands, bool open, bool prune, bool rebuild)
+        Config cfg, string[] operands, bool open, bool prune, bool rebuild, bool tray)
     {
         var port = int.TryParse(operands.FirstOrDefault(), out var p) ? p : 8787;
         var interval = TimeSpan.FromSeconds(3);
@@ -509,9 +515,17 @@ public static class Program
         try { server.Start(); }
         catch (SocketException ex)
         {
-            Console.Error.WriteLine(
-                $"could not listen on port {port} ({ex.Message}). " +
-                "Pass a different one: mtga-pbp watch 9000");
+            var message = $"could not listen on port {port} ({ex.Message}). " +
+                          "Pass a different one: mtga-pbp watch 9000";
+            // Under --tray from a shortcut there is no window for the line below to land
+            // in, and a second watch started at logon beside a hand-started one is the
+            // usual way here. A box is the one thing that is seen either way.
+            if (tray && OperatingSystem.IsWindows())
+                NativeMethods.MessageBox(0,
+                    $"{message}\n\nIs another watch already running? Quit it from its icon, " +
+                    $"or run: mtga-pbp stop {port}",
+                    "mtga-pbp", NativeMethods.MB_OK | NativeMethods.MB_ICONWARNING);
+            Console.Error.WriteLine(message);
             return 2;
         }
 
@@ -542,6 +556,23 @@ public static class Program
             e.Cancel = true;
             stop.Set();
         };
+
+        using var lease = StartTray(tray, server, stop);
+        if (lease.Active)
+        {
+            Console.WriteLine("running in the notification area — right-click the icon to quit, " +
+                              $"or run: mtga-pbp stop {server.Port}");
+            // Let go of the window only when it is ours alone. Typed into a terminal, the
+            // shell is attached too, and it keeps its prompt and its Ctrl+C; from a
+            // shortcut or the Startup folder the window has said all it had to say.
+            if (OperatingSystem.IsWindows() &&
+                ConsoleOwnership.ShouldDetach(ConsoleOwnership.AttachedProcesses()))
+            {
+                lease.Balloon("mtga-pbp",
+                    $"Watching. The report is at {server.Url} — right-click this icon to quit.");
+                ConsoleOwnership.Detach();
+            }
+        }
 
         // On anything but a first run there is a report to show right now. A first
         // run has nothing yet — opening the browser onto a 404 with no script in it
@@ -587,6 +618,7 @@ public static class Program
         void Repaint(IReadOnlyList<MatchSummary> rows, IndexStats st, Nudge? nudge)
         {
             var tonight = st.Sessions.FirstOrDefault();
+            lease.Tip(TrayTip.Compose(tonight, DateTime.Now));
             var byId = rows.GroupBy(r => r.MatchId, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
@@ -626,7 +658,8 @@ public static class Program
             board.Draw(Scoreboard.Lines(
                 tonight, beats, playing,
                 cfg.SuggestDeckRotation ? SessionCoach.NextUp(st, slug) : null,
-                server.Url, DateTime.Now, board.Width, board.Height));
+                server.Url, DateTime.Now, board.Width, board.Height,
+                stopHint: lease.Active ? "Ctrl+C or icon's Quit" : "Ctrl+C to stop"));
         }
 
         // Read from the session's own deck list rather than from the by-deck records,
@@ -749,6 +782,58 @@ public static class Program
         Console.WriteLine();
         Console.WriteLine("stopped.");
         return 0;
+    }
+
+    /// <summary>
+    /// The icon's lifetime as a plain <see cref="IDisposable"/>: <see cref="TrayIcon"/> is
+    /// a Windows-only type, and every touch of it has to sit inside a platform check —
+    /// this holds those checks so that <see cref="Watch"/> can say <c>using var</c> and
+    /// move on. A lease with no icon is the ordinary, windowed watch.
+    /// </summary>
+    private sealed class TrayLease(TrayIcon? icon) : IDisposable
+    {
+        public bool Active => icon is not null;
+
+        public void Tip(string text)
+        {
+            if (OperatingSystem.IsWindows()) icon?.SetTip(text);
+        }
+
+        public void Balloon(string title, string text)
+        {
+            if (OperatingSystem.IsWindows()) icon?.Balloon(title, text);
+        }
+
+        public void Dispose()
+        {
+            if (OperatingSystem.IsWindows()) icon?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// The icon, or none — with the reason said, because a watch asked to live in the
+    /// notification area and left in a window should not leave that unexplained.
+    /// </summary>
+    private static TrayLease StartTray(bool wanted, LiveServer server, StopSignal stop)
+    {
+        if (!wanted) return new TrayLease(null);
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.Error.WriteLine("--tray needs Windows; staying in this window");
+            return new TrayLease(null);
+        }
+        try
+        {
+            return new TrayLease(TrayIcon.Start(
+                TrayTip.Compose(null, DateTime.Now),
+                openReport: () => OpenInBrowser(server.Url),
+                quit: stop.Set));
+        }
+        catch (InvalidOperationException e)
+        {
+            Console.Error.WriteLine($"no notification-area icon ({e.Message}); staying in this window");
+            return new TrayLease(null);
+        }
     }
 
     /// <summary>
