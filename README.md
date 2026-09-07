@@ -66,6 +66,7 @@ cd C:\path\to\mtga-pbp
 | `.\mtga-pbp.exe` | capture new matches, then rebuild the site |
 | `.\mtga-pbp.exe --open` | ... and open the report in your browser |
 | `.\mtga-pbp.exe watch` | serve the report and keep it live (see below) |
+| `.\mtga-pbp.exe stop [port]` | stop a running `watch` from any terminal (default 8787) |
 | `.\mtga-pbp.exe capture` | capture only |
 | `.\mtga-pbp.exe build` | re-derive the whole site from the archive |
 | `.\mtga-pbp.exe stats` | unhandled annotation types and unresolved cards |
@@ -115,7 +116,9 @@ The result looks like this, quotes and all:
 ```
 
 Double-click it and you get the live report, the ★ buttons, and a window you can
-actually read. Press Ctrl+C in that window, or just close it, when you are done.
+actually read. Press Ctrl+C in that window, or just close it, when you are done — or
+run `.\mtga-pbp.exe stop` from any terminal, which finds the watch by its port and says
+`stopped.` once the process has gone.
 
 Two things that trip people up:
 
@@ -323,6 +326,9 @@ schtasks /delete /tn "mtga-pbp watch" /f
 Either way you get a visible `watch` window at every logon — that is what `/it` is for
 above, and it is deliberate: the window is the scoreboard, and a `watch` started where
 you cannot see it is a `watch` you cannot tell is running.
+
+If one is running where you cannot see it — a task created without `/it`, say —
+`.\mtga-pbp.exe stop` ends it without Task Manager.
 
 It will **not** open a browser at every logon. `watch` opens the report only when
 `"OpenAfterBuild"` is on, the same setting the other commands use, and it is off unless
