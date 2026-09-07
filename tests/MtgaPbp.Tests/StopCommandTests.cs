@@ -53,10 +53,13 @@ public class StopCommandTests
             listener.Dispose();
         });
 
-        var (code, output, _) = Run(port.ToString());
-        Assert.That(code, Is.EqualTo(0));
-        Assert.That(output.Trim(), Is.EqualTo("stopped."));
-        watch.Wait();
+        try
+        {
+            var (code, output, _) = Run(port.ToString());
+            Assert.That(code, Is.EqualTo(0));
+            Assert.That(output.Trim(), Is.EqualTo("stopped."));
+        }
+        finally { watch.Wait(); }
     }
 
     [Test]

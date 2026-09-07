@@ -14,8 +14,10 @@ namespace MtgaPbp.Cli;
 /// with the process that created it — so "is a watch running on 8787" is answered by
 /// whether the name still opens (#213).
 /// <para>
-/// Named events are a Windows feature. Elsewhere the signal still serves the in-process
-/// callers; <c>stop</c> simply finds nothing, which is what it says.
+/// Named events are a Windows feature, and even there the name can be refused — held by
+/// an object of another kind, or by something this account may not touch. In every such
+/// case the signal degrades to a local one: the in-process senders still work, and
+/// <c>stop</c> simply finds nothing, which is what it says.
 /// </para>
 /// </remarks>
 public sealed class StopSignal : IDisposable
@@ -50,7 +52,7 @@ public sealed class StopSignal : IDisposable
                     new EventWaitHandle(false, EventResetMode.ManualReset, NameFor(port)),
                     named: true);
             }
-            catch (PlatformNotSupportedException) { /* the local one below still works */ }
+            catch (Exception e) when (Refused(e)) { /* the local one below still works */ }
         }
         return new StopSignal(new EventWaitHandle(false, EventResetMode.ManualReset), named: false);
     }
@@ -78,8 +80,15 @@ public sealed class StopSignal : IDisposable
         handle = null;
         if (!OperatingSystem.IsWindows()) return false;
         try { return EventWaitHandle.TryOpenExisting(NameFor(port), out handle); }
-        catch (PlatformNotSupportedException) { return false; }
+        catch (Exception e) when (Refused(e)) { return false; }
     }
+
+    /// <summary>
+    /// The ways a kernel object name can be refused short of a bug: no named events on this
+    /// platform, the name in use by an object of another kind, or no right to open it.
+    /// </summary>
+    private static bool Refused(Exception e) => e is PlatformNotSupportedException
+        or WaitHandleCannotBeOpenedException or UnauthorizedAccessException or IOException;
 
     public void Set() => _handle.Set();
 

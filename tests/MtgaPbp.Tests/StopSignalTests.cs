@@ -62,9 +62,13 @@ public class StopSignalTests
         var port = FreshPort();
         Assert.That(StopSignal.IsListening(port), Is.False);
         var listener = StopSignal.Listen(port);
-        Assert.That(StopSignal.IsListening(port), Is.True);
-        listener.Dispose();
-        Assert.That(StopSignal.IsListening(port), Is.False);
+        try
+        {
+            Assert.That(StopSignal.IsListening(port), Is.True);
+            listener.Dispose();
+            Assert.That(StopSignal.IsListening(port), Is.False);
+        }
+        finally { listener.Dispose(); }
     }
 
     [Test]
@@ -81,5 +85,19 @@ public class StopSignalTests
         Assert.That(listener.AlreadyRequested, Is.False);
         listener.Set();
         Assert.That(listener.AlreadyRequested, Is.True);
+    }
+
+    [Test]
+    public void A_name_taken_by_something_else_degrades_to_a_local_signal()
+    {
+        // A mutex under the same name: the event can be neither created nor opened there.
+        var port = FreshPort();
+        using var squatter = new Mutex(false, StopSignal.NameFor(port));
+        using var listener = StopSignal.Listen(port);
+        Assert.That(listener.IsNamed, Is.False);
+        Assert.That(StopSignal.Fire(port), Is.False);
+        Assert.That(StopSignal.IsListening(port), Is.False);
+        listener.Set();
+        Assert.That(listener.Wait(TimeSpan.Zero), Is.True, "the in-process senders still work");
     }
 }
