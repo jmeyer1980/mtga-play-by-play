@@ -157,7 +157,7 @@ under Settings › Personalization › Taskbar › Other system tray icons; a no
 start says it is there. Double-clicking does nothing the single click did not.
 
 To make a shortcut for it, build the `watch` shortcut as above and put ` --tray` after
-`watch`, outside the quotes: `"C:\path	o\mtga-pbp\mtga-pbp.exe" watch --tray`.
+`watch`, outside the quotes: `"C:\path\to\mtga-pbp\mtga-pbp.exe" watch --tray`.
 
 ### Rebuilds only touch what changed
 
