@@ -559,20 +559,8 @@ public static class Program
 
         using var lease = StartTray(tray, server, stop);
         if (lease.Active)
-        {
             Console.WriteLine("running in the notification area — right-click the icon to quit, " +
                               $"or run: mtga-pbp stop {server.Port}");
-            // Let go of the window only when it is ours alone. Typed into a terminal, the
-            // shell is attached too, and it keeps its prompt and its Ctrl+C; from a
-            // shortcut or the Startup folder the window has said all it had to say.
-            if (OperatingSystem.IsWindows() &&
-                ConsoleOwnership.ShouldDetach(ConsoleOwnership.AttachedProcesses()))
-            {
-                lease.Balloon("mtga-pbp",
-                    $"Watching. The report is at {server.Url} — right-click this icon to quit.");
-                ConsoleOwnership.Detach();
-            }
-        }
 
         // On anything but a first run there is a report to show right now. A first
         // run has nothing yet — opening the browser onto a 404 with no script in it
@@ -607,6 +595,20 @@ public static class Program
         // first run finally has something worth opening a browser onto.
         server.NotifyChanged();
         if (open && !hadReport) OpenInBrowser(server.Url);
+
+        // Let go of the window only now, with the first build landed, and only when it is
+        // ours alone. Before the build it would have taken a first run's one chance to say
+        // what went wrong — no card database, say — into a stream nobody reads (found in
+        // review). Typed into a terminal, the shell is attached too, and it keeps its
+        // prompt and its Ctrl+C; from a shortcut or the Startup folder the window has by
+        // now said all it had to say.
+        if (lease.Active && OperatingSystem.IsWindows() &&
+            ConsoleOwnership.ShouldDetach(ConsoleOwnership.AttachedProcesses()))
+        {
+            lease.Balloon("mtga-pbp",
+                $"Watching. The report is at {server.Url} — right-click this icon to quit.");
+            ConsoleOwnership.Detach();
+        }
 
         // The standing state is drawn once and repainted; only the notable lines scroll.
         // See LiveBoard for why that split exists — 41 lines an evening saying "report

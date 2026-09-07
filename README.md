@@ -140,9 +140,9 @@ folder the exe is in, not from the working directory.
 ```
 
 The same `watch`, living behind an icon in the notification area instead of a window.
-Started from a shortcut, the Startup folder or a scheduled task, its window closes as
-soon as it has said where the report is; started from a terminal you typed into, that
-terminal is kept — Ctrl+C still works — and the icon is added beside it.
+Started from a shortcut, the Startup folder or a scheduled task, its window closes once
+the first build has landed and the report is being served; started from a terminal you
+typed into, that terminal is kept — Ctrl+C still works — and the icon is added beside it.
 
 - **Left-click** the icon (or <kbd>Win</kbd>+<kbd>B</kbd>, arrow to it, <kbd>Enter</kbd>)
   to open the report.
