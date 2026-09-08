@@ -151,7 +151,9 @@ public sealed record Transcript(
     /// sorted by name. What was revealed during the match — never their whole deck,
     /// which appears nowhere in the log. Tokens are left out (a token is not a card
     /// from their deck), and so is anything the log never named: a face-down card or
-    /// a fog-of-war object was not seen, and listing it would claim it was.
+    /// a fog-of-war object was not seen, and listing it would claim it was. Each card
+    /// under its own printed name, so a clone is listed as the clone and not as what
+    /// it copied (#223).
     /// </summary>
     public IReadOnlyList<string> OpponentCards { get; init; } = [];
 
@@ -1050,18 +1052,33 @@ public sealed class EventExtractor(ICardDb cards)
     /// from the opponent's deck, and that is the question the list answers. Objects
     /// fold by name, so a card that changed instance ids across zones — which is all
     /// of them — appears once.
+    /// <para>
+    /// Named by the card printed on the object — its grpId — and not by the name the
+    /// object answers to (#223). Arena renames a clone to whatever it entered as, so
+    /// by name a Phyrexian Metamorph that copied Mindwhisker was listed as Mindwhisker,
+    /// which the real Mindwhisker already covered, and never as itself — while the
+    /// transcript said "Opponent casts Phyrexian Metamorph". Worse when the copied
+    /// card was yours: your creature's name landed in their list. The grpId is taken
+    /// through <see cref="ICardDb.CardForFace"/>, because an object can carry a face's
+    /// id rather than the card's — an Adventure on the stack, a transformed permanent,
+    /// an unlocked door — and a face is not a second card they own: Stomp folds into
+    /// Bonecrusher Giant, and a Room lists once under its whole name with both doors
+    /// beneath it (#221). An object with no grpId was never described and is left out
+    /// as before; the face-down card's grpId is in no database, so it drops out the
+    /// same way a placeholder did.
+    /// </para>
     /// </remarks>
-    private static IReadOnlyList<string> OpponentCardsOf(List<GameRun> games, PlayerInfo? opp)
+    private IReadOnlyList<string> OpponentCardsOf(List<GameRun> games, PlayerInfo? opp)
     {
         if (opp is null) return [];
         var names = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var g in games)
-            foreach (var (id, o) in g.Tracker.Objects)
+            foreach (var o in g.Tracker.Objects.Values)
             {
-                if (o.OwnerSeat != opp.Seat || o.Type != "GameObjectType_Card") continue;
-                var name = g.Tracker.NameOf(id);
-                if (!CardNames.IsPlaceholder(name) && name != CardNames.FaceDown)
-                    names.Add(name);
+                if (o.OwnerSeat != opp.Seat || o.Type != "GameObjectType_Card" || o.GrpId == 0)
+                    continue;
+                if (cards.CardForFace(o.GrpId) is { } card && !card.IsToken)
+                    names.Add(card.Name);
             }
         return names.ToList();
     }
