@@ -66,4 +66,25 @@ public static class TrayEvents
     /// <summary>The pointer position the shell packed into <c>wParam</c>: x low, y high, each signed.</summary>
     public static (int X, int Y) Point(nint wParam) =>
         ((short)(wParam & 0xFFFF), (short)((wParam >> 16) & 0xFFFF));
+
+    /// <summary>
+    /// Whether <paramref name="ev"/> is one of the mouse messages the shell relays to the icon
+    /// — <c>WM_MOUSEMOVE</c> through <c>WM_MBUTTONDBLCLK</c>, which version 4 still sends
+    /// beside its own <c>NIN_</c> events. The wheel is not one: it is not aimed at the icon.
+    /// </summary>
+    public static bool IsMouseMessage(uint ev) => ev is >= 0x0200 and <= 0x0209;
+
+    /// <summary>
+    /// Where the menu opens. From the mouse, under the pointer; from the keyboard, at the
+    /// anchor the shell sent.
+    /// </summary>
+    /// <remarks>
+    /// The anchor is not where the icon is when the icon lives behind the chevron: the
+    /// shell sends the chevron's own position, the bottom-right corner of the screen, and
+    /// that is where the menu opened for a right-click in the overflow flyout. The pointer
+    /// is where the click was, so a mouse-driven menu goes there. A keyboard-driven one has
+    /// no pointer to speak of and keeps the anchor.
+    /// </remarks>
+    public static (int X, int Y) MenuAt(bool fromMouse, (int X, int Y) cursor, (int X, int Y) anchor) =>
+        fromMouse ? cursor : anchor;
 }

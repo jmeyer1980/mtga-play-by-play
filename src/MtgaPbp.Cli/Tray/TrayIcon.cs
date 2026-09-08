@@ -40,6 +40,7 @@ public sealed class TrayIcon : IDisposable
     private uint _taskbarCreated;
     private string _tip;
     private volatile bool _added;
+    private long _lastMouseTicks;    // Environment.TickCount64 of the last mouse message over the icon
     private Exception? _failure;
 
     private TrayIcon(string tip, Action openReport, Action quit)
@@ -203,13 +204,20 @@ public sealed class TrayIcon : IDisposable
             return 0;
         }
 
+        if (msg == TrayEvents.WM_TRAY && TrayEvents.IsMouseMessage((uint)(lParam & 0xFFFF)))
+            _lastMouseTicks = Environment.TickCount64;
+
         switch (TrayEvents.For(msg, wParam, lParam, _taskbarCreated))
         {
             case TrayAction.OpenReport:
                 _openReport();
                 return 0;
             case TrayAction.ShowMenu:
-                ShowMenu(TrayEvents.Point(wParam));
+                // A right-click sends mouse messages just before WM_CONTEXTMENU; Shift+F10
+                // and the Apps key send none. Half a second tells the two apart.
+                var fromMouse = Environment.TickCount64 - _lastMouseTicks < 500;
+                GetCursorPos(out var cursor);
+                ShowMenu(TrayEvents.MenuAt(fromMouse, (cursor.X, cursor.Y), TrayEvents.Point(wParam)));
                 return 0;
             case TrayAction.Quit:
                 _quit();
@@ -235,7 +243,9 @@ public sealed class TrayIcon : IDisposable
             // Without the foreground call the menu stays up after the pointer leaves it
             // (Microsoft KB 135788); the WM_NULL afterwards is the same article's other half.
             SetForegroundWindow(_hwnd);
-            var chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, at.X, at.Y, _hwnd, 0);
+            // Bottom-aligned: the point is at taskbar height more often than not, and a menu
+            // that grows upward from it stays on the screen without the shell having to flip it.
+            var chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, at.X, at.Y, _hwnd, 0);
             PostMessage(_hwnd, WM_NULL, 0, 0);
             if (chosen != 0) PostMessage(_hwnd, TrayEvents.WM_COMMAND, chosen, 0);
         }
