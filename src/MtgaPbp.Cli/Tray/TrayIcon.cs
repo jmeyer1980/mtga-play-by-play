@@ -31,6 +31,13 @@ public sealed class TrayIcon : IDisposable
     /// <summary><c>WM_APP + 2</c>; <c>WM_APP + 1</c> is the icon's own callback.</summary>
     private const uint WM_APP_QUIT = 0x8000 + 2;
 
+    /// <summary>
+    /// How recently a mouse message must have reached the icon for a context-menu request
+    /// to count as the mouse's. A right-click sends its button messages just before
+    /// <c>WM_CONTEXTMENU</c>; Shift+F10 and the Apps key send none.
+    /// </summary>
+    private const long MouseRecencyMs = 500;
+
     private readonly Action _openReport;
     private readonly Action _quit;
     private readonly ManualResetEventSlim _ready = new(false);
@@ -225,10 +232,11 @@ public sealed class TrayIcon : IDisposable
                 _openReport();
                 return 0;
             case TrayAction.ShowMenu:
-                // A right-click sends mouse messages just before WM_CONTEXTMENU; Shift+F10
-                // and the Apps key send none. Half a second tells the two apart.
-                var fromMouse = Environment.TickCount64 - _lastMouseTicks < 500;
-                GetCursorPos(out var cursor);
+                // From the mouse only if the pointer can also be found: a failed
+                // GetCursorPos would otherwise open the menu at the top-left corner.
+                var cursor = default(POINT);
+                var fromMouse = Environment.TickCount64 - _lastMouseTicks < MouseRecencyMs
+                                && GetCursorPos(out cursor);
                 ShowMenu(TrayEvents.MenuAt(fromMouse, (cursor.X, cursor.Y), TrayEvents.Point(wParam)));
                 return 0;
             case TrayAction.Quit:
