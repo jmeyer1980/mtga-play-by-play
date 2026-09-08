@@ -43,6 +43,34 @@ public static partial class AbilityText
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace();
 
+    // A Class card's level abilities, as Arena's renderer wants them: the level a rule
+    // works from, an always-empty second bracket, then the rule — or several rules, one
+    // bracket each (Ranger Class, Ninja Teen). Measured over the live database: 64 such
+    // rows on 32 cards, levels 2+ and 3+ only, the middle bracket empty on every one.
+    [GeneratedRegex(@"^\s*CLASSLEVEL\s*\[[^\]]*\]\s*\[[^\]]*\]\s*((?:\[[^\]]*\]\s*)+)$", RegexOptions.Singleline)]
+    private static partial Regex ClassLevel();
+
+    [GeneratedRegex(@"\[([^\]]*)\]")]
+    private static partial Regex Bracketed();
+
+    /// <summary>Whether this is a class-level wrapper rather than a rule (#230).</summary>
+    public static bool IsClassLevel(string raw) => ClassLevel().IsMatch(raw);
+
+    /// <summary>
+    /// The rules a class-level wrapper holds, one per bracket, still raw; any other
+    /// text comes back as the one rule it is. The level itself is not words: the card
+    /// states it on the "{W}: Level 2" line above the rule, and the wrapper only tells
+    /// the client which rules to grey out until then.
+    /// </summary>
+    public static IReadOnlyList<string> Unwrap(string raw)
+    {
+        var wrapper = ClassLevel().Match(raw);
+        if (!wrapper.Success) return [raw];
+        return Bracketed().Matches(wrapper.Groups[1].Value)
+            .Select(rule => rule.Groups[1].Value)
+            .ToList();
+    }
+
     /// <summary>
     /// The text as a clause a grant line can end with: markup resolved, and a bare
     /// keyword lowercased so it sits mid-sentence — "Enter the Avatar State gives
@@ -68,11 +96,11 @@ public static partial class AbilityText
             : text;
     }
 
-    /// <summary>Markup resolved, nothing else decided: tags stripped, symbol runs
-    /// unpacked, CARDNAME replaced, whitespace collapsed.</summary>
+    /// <summary>Markup resolved, nothing else decided: a class-level wrapper unwrapped,
+    /// tags stripped, symbol runs unpacked, CARDNAME replaced, whitespace collapsed.</summary>
     public static string Plain(string raw)
     {
-        var text = Tags().Replace(Reminder().Replace(raw, " "), "");
+        var text = Tags().Replace(Reminder().Replace(string.Join(" ", Unwrap(raw)), " "), "");
 
         text = SymbolRun().Replace(text, run =>
             string.Concat(Symbol().Matches(run.Value)

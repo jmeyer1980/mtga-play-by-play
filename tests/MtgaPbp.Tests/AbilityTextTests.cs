@@ -28,6 +28,43 @@ public class AbilityTextTests
         Assert.That(keyword, Is.False);
     }
 
+    /// <summary>
+    /// A Class card's level abilities come wrapped for Arena's own renderer —
+    /// <c>CLASSLEVEL [2+] [] [rule]</c> marks the level a rule works from — and the
+    /// wrapper is not words (#230). Unwrapped, the rule reads as printed; the level is
+    /// already stated by the "{W}: Level 2" line above it on the card.
+    /// </summary>
+    [TestCase("CLASSLEVEL [2+] [] [When this Class becomes level 2, create a token that's a copy of target token you control.]",
+              "When this Class becomes level 2, create a token that's a copy of target token you control.")]
+    [TestCase("CLASSLEVEL [3+] [] [Creature tokens you control get <nobr>+2/+2</nobr>.]",
+              "Creature tokens you control get +2/+2.")]
+    public void A_class_level_wrapper_is_unwrapped_to_its_rule(string raw, string expected)
+    {
+        Assert.That(AbilityText.Plain(raw), Is.EqualTo(expected));
+        Assert.That(AbilityText.IsClassLevel(raw), Is.True);
+        Assert.That(AbilityText.IsClassLevel(expected), Is.False);
+    }
+
+    /// <summary>
+    /// One wrapper can hold several rules, a bracket each — Ranger Class and Ninja Teen
+    /// do. Unwrapped they are separate rules; as one clause they are one sentence after
+    /// another.
+    /// </summary>
+    [Test]
+    public void A_wrapper_with_several_rules_yields_each_of_them()
+    {
+        const string raw = "CLASSLEVEL [3+] [] [You may look at the top card of your library any time.] [You may cast creature spells from the top of your library.]";
+
+        Assert.That(AbilityText.Unwrap(raw), Is.EqualTo(new[]
+        {
+            "You may look at the top card of your library any time.",
+            "You may cast creature spells from the top of your library.",
+        }));
+        Assert.That(AbilityText.Plain(raw), Is.EqualTo(
+            "You may look at the top card of your library any time. You may cast creature spells from the top of your library."));
+        Assert.That(AbilityText.Unwrap("Flying"), Is.EqualTo(new[] { "Flying" }), "a rule is the one rule it is");
+    }
+
     [TestCase("{oT}: Add {oG}.", "{T}: Add {G}.")]
     [TestCase("{o3oW}, {oT}: Do a thing.", "{3}{W}, {T}: Do a thing.")]
     [TestCase("Pay {oXoR}.", "Pay {X}{R}.")]

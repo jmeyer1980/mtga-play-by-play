@@ -187,4 +187,29 @@ public class CardDbIntegrationTests
         Assert.That(db.CardForFace(70262)!.Name, Is.EqualTo("Bonecrusher Giant"), "a card is its own card");
         Assert.That(db.CardForFace(54281)!.Name, Is.EqualTo("Mutavault"));
     }
+
+    /// <summary>
+    /// Caretaker's Talent's face, from the real rows (#230): the five lines the printed
+    /// card has, each level rule once, and no CLASSLEVEL wrapper. Warlock Class is the
+    /// one card whose plain row adds reminder text the wrapper leaves out, and shows
+    /// that row, once.
+    /// </summary>
+    [Test]
+    public void Real_database_class_faces_read_as_printed()
+    {
+        using var db = Open();
+        Assert.That(db.FaceForName("Caretaker's Talent")!.RulesText, Is.EqualTo(new[]
+        {
+            "Whenever one or more tokens you control enter, draw a card. This ability triggers only once each turn.",
+            "{W}: Level 2",
+            "When this Class becomes level 2, create a token that's a copy of target token you control.",
+            "{3}{W}: Level 3",
+            "Creature tokens you control get +2/+2.",
+        }));
+
+        var warlock = db.FaceForName("Warlock Class")!.RulesText;
+        Assert.That(warlock, Has.None.Contains("CLASSLEVEL"));
+        Assert.That(warlock.Count(r => r.StartsWith("At the beginning of your end step, each opponent loses life equal", StringComparison.Ordinal)),
+            Is.EqualTo(1));
+    }
 }

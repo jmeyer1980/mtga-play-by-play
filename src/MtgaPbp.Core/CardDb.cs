@@ -263,19 +263,43 @@ public sealed class CardDb : ICardDb, IDisposable
             ? type ?? ""
             : $"{type} — {subtype}";
 
-        var rules = new List<string>();
+        // The raw rows in printed order. CARDNAME is resolved to the face's own name
+        // first: a face, unlike a grant, knows exactly whose text it is showing.
+        var raws = new List<string>();
         foreach (var pair in row.Abilities.Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
             var colon = pair.IndexOf(':');
             if (colon < 0 || !int.TryParse(pair[(colon + 1)..], out var textLocId))
                 continue;
-            // Through the same cleaner every ability text on the page goes through —
-            // the raw rows carry Arena's renderer markup and o-packed symbol runs.
-            // CARDNAME is resolved to the face's own name first: a face, unlike a
-            // grant, knows exactly whose text it is showing.
             if (NameForLocId(textLocId) is { } text && !string.IsNullOrWhiteSpace(text))
-                rules.Add(Core.AbilityText.Plain(
-                    text.Replace("CARDNAME", row.Name, StringComparison.Ordinal)));
+                raws.Add(text.Replace("CARDNAME", row.Name, StringComparison.Ordinal));
+        }
+
+        // Through the same cleaner every ability text on the page goes through — the
+        // raw rows carry Arena's renderer markup and o-packed symbol runs. A Class card
+        // carries each level ability twice (#230): once wrapped for the client, marking
+        // the level it works from, and once plain, right after — and on Warlock Class
+        // the plain row adds reminder text the wrapper leaves out. The face shows the
+        // rule where the printed card has it, so a wrapper's rule is left out whenever
+        // a plain row on the card begins with it, and kept — as its rule, not its
+        // wrapper — when none does.
+        var plainRows = raws.Where(r => !Core.AbilityText.IsClassLevel(r))
+            .Select(Core.AbilityText.Plain)
+            .ToList();
+        var rules = new List<string>();
+        foreach (var raw in raws)
+        {
+            if (!Core.AbilityText.IsClassLevel(raw))
+            {
+                rules.Add(Core.AbilityText.Plain(raw));
+                continue;
+            }
+            foreach (var rule in Core.AbilityText.Unwrap(raw))
+            {
+                var plain = Core.AbilityText.Plain(rule);
+                if (!plainRows.Any(p => p.StartsWith(plain, StringComparison.Ordinal)))
+                    rules.Add(plain);
+            }
         }
 
         return new CardFace(row.Name, CardFace.DecodeMana(row.Mana), typeLine, rules,
