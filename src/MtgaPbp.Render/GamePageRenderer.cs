@@ -1066,21 +1066,35 @@ public static partial class GamePageRenderer
           var shown = null;
           var closing = 0;
 
-          // Below the name, or above it when the bottom of the window is nearer, and
-          // never off either edge.
+          // Above and to the right of the name (#227): off the cursor, off the line the
+          // name is on, and off the lines below it — the ones read and hovered next,
+          // which a box under the name hid and stood in the way of. Below only when the
+          // room above is the smaller side and the box does not fit in it. Whichever
+          // side, the box is capped to the room there and scrolls inside itself, so it
+          // never slides over the name's line the way a viewport clamp did; sideways it
+          // is clamped to the window, which on a wide window puts it in the margin
+          // beside the text and on a narrow one over the tails of lines already read.
           function place(span) {
             var r = span.getBoundingClientRect();
-            var gap = 4;
+            var gap = 6;
             var vw = document.documentElement.clientWidth;
             var vh = document.documentElement.clientHeight;
             tip.style.left = '0px';
             tip.style.top = '0px';
+            tip.style.maxHeight = '';
             var w = tip.offsetWidth;
             var h = tip.offsetHeight;
-            var left = Math.max(gap, Math.min(r.left, vw - w - gap));
-            var top = r.bottom + gap;
-            if (top + h > vh - gap && r.top - gap - h >= gap) top = r.top - gap - h;
-            top = Math.max(gap, Math.min(top, vh - h - gap));
+            var above = r.top - 2 * gap;
+            var below = vh - r.bottom - 2 * gap;
+            var up = h <= above || above >= below;
+            var room = Math.max(up ? above : below, 4 * gap);
+            if (h > room) {
+              tip.style.maxHeight = room + 'px';
+              w = tip.offsetWidth;
+              h = tip.offsetHeight;
+            }
+            var left = Math.max(gap, Math.min(r.right + gap, vw - w - gap));
+            var top = up ? r.top - gap - h : r.bottom + gap;
             tip.style.left = left + 'px';
             tip.style.top = top + 'px';
           }

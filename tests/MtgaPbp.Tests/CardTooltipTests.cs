@@ -282,6 +282,33 @@ public class CardTooltipTests
             "a face no line names changes nothing");
     }
 
+    /// The box sits above and to the right of the name (#227): off the cursor, off the
+    /// line the name is on, and off the lines below it — the ones read and hovered
+    /// next, which a box below the name hid and blocked. Below only when the room above
+    /// is the smaller side and too small for the box; and on whichever side, the box is
+    /// capped to the room there and scrolls, so it never slides over the name's line the
+    /// way the old viewport clamp did. The geometry was driven with a real pointer in a
+    /// browser on the pull request; this pins the rule the script encodes.
+    /// </summary>
+    [Test]
+    public void The_box_sits_above_and_right_of_the_name_and_never_on_its_line()
+    {
+        var html = GamePageRenderer.Render(Named(), faces: Faces(Hare));
+        var script = html[html.LastIndexOf("<script>", StringComparison.Ordinal)..];
+
+        // To the right of the name's end, clamped to the window.
+        Assert.That(script, Does.Contain("var left = Math.max(gap, Math.min(r.right + gap, vw - w - gap));"));
+        // Room measured on both sides of the line, above preferred.
+        Assert.That(script, Does.Contain("var above = r.top - 2 * gap;"));
+        Assert.That(script, Does.Contain("var below = vh - r.bottom - 2 * gap;"));
+        Assert.That(script, Does.Contain("var up = h <= above || above >= below;"));
+        // Capped to the chosen side, so it scrolls rather than grows over the line.
+        Assert.That(script, Does.Contain("tip.style.maxHeight = room + 'px';"));
+        Assert.That(script, Does.Contain("var top = up ? r.top - gap - h : r.bottom + gap;"));
+        // The clamp that slid the box over the name is gone.
+        Assert.That(script, Does.Not.Contain("Math.min(top, vh - h - gap)"));
+    }
+
     /// <summary>
     /// A placeholder and the card back are not cards, and a face keyed by one — which
     /// the database could never produce, but a caller could — is ignored.
