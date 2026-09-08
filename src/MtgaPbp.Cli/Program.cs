@@ -1093,15 +1093,27 @@ public static class Program
 
             var transcript = extractor.Extract(matchId, lines);
 
-            // Every name the deck section will print, resolved to a face where the
-            // database has one. Per transcript for the renderer's sake, but the
-            // lookups are cached in CardDb, so a name costs one query per build.
+            // Every name the page will print — the two card lists, and every card a
+            // narrated line names, for the face under the pointer (#201) — resolved
+            // to a face where the database has one. The narrated names go in raw: a
+            // label such as "Hare Apparent 3/3" or "Hare Apparent's ability" is its
+            // own string here and misses, while the bare name inside it is in
+            // CardsSeen and hits. Per transcript for the renderer's sake, but the
+            // lookups are cached in CardDb, so a string costs one query per build:
+            // 12,837 distinct strings across 1,516 matches, inside a 28 s walk of the
+            // archive (2026-09-08). Placeholders and the card back are not cards, and
+            // are not asked about.
             var faces = new Dictionary<string, CardFace>(StringComparer.Ordinal);
             foreach (var name in transcript.Deck.Select(d => d.Name)
                          .Concat(transcript.Commanders)
                          .Concat(transcript.OpponentCommanders)
-                         .Concat(transcript.OpponentCards))
-                if (!faces.ContainsKey(name) && cards.FaceForName(name) is { } face)
+                         .Concat(transcript.OpponentCards)
+                         .Concat(transcript.CardsSeen)
+                         .Concat(transcript.Events.SelectMany(e =>
+                             new[] { e.SourceName, e.TargetName, e.CauseName }))
+                         .OfType<string>())
+                if (!CardNames.IsPlaceholder(name) && name != CardNames.FaceDown
+                    && !faces.ContainsKey(name) && cards.FaceForName(name) is { } face)
                     faces[name] = face;
 
             File.WriteAllText(gamePath,

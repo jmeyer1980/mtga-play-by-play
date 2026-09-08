@@ -55,14 +55,18 @@ public static partial class GamePageRenderer
 
         AppendDeck(sb, t, faces);
         AppendOpponentCards(sb, t, faces);
-        AppendSection(sb, t, Density.Beats, manaLedger);
-        AppendSection(sb, t, Density.Verbose, manaLedger);
+
+        // The same faces under the pointer as in the lists (#201). One set for both
+        // densities, so a card is in the island once however many lines name it.
+        var marks = CardMarks.For(faces);
+        AppendSection(sb, t, Density.Beats, manaLedger, marks);
+        AppendSection(sb, t, Density.Verbose, manaLedger, marks);
 
         sb.Append($"""
             </main>
             {Nav(nav)}
             <footer class="build">{E(BuildInfo.Line)}</footer>
-            <script>{Script}</script></body></html>
+            {Faces(marks)}<script>{Script}</script>{Tip(marks)}</body></html>
             """);
         return sb.ToString();
     }
@@ -215,10 +219,21 @@ public static partial class GamePageRenderer
     /// click: Scryfall by exact name, because the Alchemy "A-" rebalances make any
     /// id-based mapping lie occasionally, and a name search never does. The page
     /// itself still makes no request — the link is the reader's to follow.
+    /// <para>
+    /// The same face is what the tooltip shows (#201), rendered here and nowhere else
+    /// so the two mounts cannot drift into different answers to the same question.
+    /// With a <paramref name="key"/> the face is the island's copy: it carries the
+    /// name the script looks it up by, and no link — a link inside a hover tooltip
+    /// cannot be reached, because the pointer has to leave the name to get to it and
+    /// the tooltip goes with it. The peek keeps its link, and that is where a reader
+    /// who wants to click out already is.
+    /// </para>
     /// </remarks>
-    private static void AppendFace(StringBuilder sb, CardFace f)
+    private static void AppendFace(StringBuilder sb, CardFace f, string? key = null)
     {
-        sb.Append("""<div class="face">""");
+        sb.Append(key is null
+            ? """<div class="face">"""
+            : $"""<div class="face" data-card="{E(key)}">""");
         var cost = f.ManaCost.Length > 0
             ? $""" <span class="face-cost">{E(f.ManaCost)}</span>"""
             : "";
@@ -229,7 +244,8 @@ public static partial class GamePageRenderer
             sb.Append($"""<p class="face-text">{E(line)}</p>""");
         if (f.Power is not null && f.Toughness is not null)
             sb.Append($"""<p class="face-pt">{E(f.Power)}/{E(f.Toughness)}</p>""");
-        sb.Append($"""<p class="face-link"><a href="https://scryfall.com/search?q={Uri.EscapeDataString($"!\"{f.Name}\"")}" target="_blank" rel="noopener">Scryfall<span class="vh">, opens in a new tab</span> <span aria-hidden="true">&#8599;</span></a></p>""");
+        if (key is null)
+            sb.Append($"""<p class="face-link"><a href="https://scryfall.com/search?q={Uri.EscapeDataString($"!\"{f.Name}\"")}" target="_blank" rel="noopener">Scryfall<span class="vh">, opens in a new tab</span> <span aria-hidden="true">&#8599;</span></a></p>""");
         sb.Append("</div>");
     }
 
@@ -244,7 +260,8 @@ public static partial class GamePageRenderer
     /// is always exactly one list, whatever order the extractor emits.
     /// </summary>
     private static void AppendSection(
-        StringBuilder sb, Transcript t, Density density, bool manaLedger = false)
+        StringBuilder sb, Transcript t, Density density, bool manaLedger = false,
+        CardMarks? marks = null)
     {
         var beats = density == Density.Beats;
         var slug = beats ? "beats" : "verbose";
@@ -281,7 +298,7 @@ public static partial class GamePageRenderer
             // `list-style:none` makes Safari drop the list role, and the markers would
             // be noise here, so the role is stated rather than inferred.
             if (!open) { sb.Append("""<ol class="turn" role="list">"""); open = true; }
-            sb.Append($"""<li class="{(line.IsBoard ? "board" : "beat")}">{Speech(line.Text)}</li>""");
+            sb.Append($"""<li class="{(line.IsBoard ? "board" : "beat")}">{Speech(line.Text, marks)}</li>""");
         }
         if (open) sb.Append("</ol>");
 
@@ -302,7 +319,7 @@ public static partial class GamePageRenderer
     /// speech gets words and a comma instead, which is what actually makes a
     /// synthesiser pause.
     /// </summary>
-    private static string Speech(string text)
+    private static string Speech(string text, CardMarks? marks = null)
     {
         // A leading count means the run was a crowd rather than a repetition — see
         // Narrator.Collapse. The glyph is hidden for the same reason the decklist hides
@@ -314,7 +331,7 @@ public static partial class GamePageRenderer
         {
             var n = crowd.Groups[1].Value;
             return $"""<span class="run" aria-hidden="true">{E(n)}× </span>""" +
-                   Separated(text[crowd.Length..]) +
+                   Separated(text[crowd.Length..], marks) +
                    $"""<span class="vh">, {E(n)} of them, one each</span>""";
         }
 
@@ -323,11 +340,11 @@ public static partial class GamePageRenderer
             int.TryParse(text.AsSpan(i + 2), NumberStyles.None, CultureInfo.InvariantCulture,
                 out var run) && run > 1)
         {
-            return Separated(text[..i]) +
+            return Separated(text[..i], marks) +
                    $"""<span class="run" aria-hidden="true"> ×{run}</span>""" +
                    $"""<span class="vh">, {run} times in a row</span>""";
         }
-        return Separated(text);
+        return Separated(text, marks);
     }
 
     /// <summary>
@@ -335,11 +352,11 @@ public static partial class GamePageRenderer
     /// "·" with a numeric reference, so it is no longer there to find by the time the
     /// text is safe to emit.
     /// </summary>
-    private static string Separated(string text) =>
-        string.Join(Spoken(" · ", ", "), text.Split(" · ").Select(Became));
+    private static string Separated(string text, CardMarks? marks) =>
+        string.Join(Spoken(" · ", ", "), text.Split(" · ").Select(s => Became(s, marks)));
 
-    private static string Became(string text) =>
-        string.Join(Spoken(" → ", " becomes "), text.Split(" → ").Select(Statlines));
+    private static string Became(string text, CardMarks? marks) =>
+        string.Join(Spoken(" → ", " becomes "), text.Split(" → ").Select(s => Statlines(s, marks)));
 
     private static string Spoken(string glyph, string words) =>
         $"""<span aria-hidden="true">{glyph}</span><span class="vh">{words}</span>""";
@@ -401,10 +418,33 @@ public static partial class GamePageRenderer
     [GeneratedRegex(@"(?<![\w/+-])([+-]?\d+)/([+-]?\d+)(?![\w/])")]
     private static partial Regex Statline();
 
-    private static string Statlines(string text)
+    private static string Statlines(string text, CardMarks? marks = null)
     {
-        var encoded = E(text);
+        if (marks is null) return Sized(E(text));
 
+        // Names are found in the raw text, and each run of prose between them is
+        // encoded and given its twins on its own — so the statline and count patterns
+        // never see the inside of a span, and a name that is not there after encoding
+        // (an apostrophe is "&#39;" by then) is never searched for. The span is the
+        // last thing added:
+        // the crowd prefix, the trailing run and the separators have all had their
+        // turn by the time a segment reaches here, which is what keeps a span from
+        // being sliced through a name (#201).
+        var sb = new StringBuilder();
+        var at = 0;
+        foreach (Match m in marks.Find(text))
+        {
+            sb.Append(Sized(E(text[at..m.Index])));
+            sb.Append(marks.Span(m.Value));
+            at = m.Index + m.Length;
+        }
+        sb.Append(Sized(E(text[at..])));
+        return sb.ToString();
+    }
+
+    /// <summary>The statline and count twins, on text that is already encoded.</summary>
+    private static string Sized(string encoded)
+    {
         var spoken = Statline().Replace(encoded, m =>
         {
             var power = m.Groups[1].Value;
@@ -508,6 +548,98 @@ public static partial class GamePageRenderer
 
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 
+    /// <summary>
+    /// The names a page can show under the pointer (#201): every key of the face
+    /// dictionary that is a card, and the pattern that finds them in a narrated line.
+    /// </summary>
+    /// <remarks>
+    /// Exact strings from this transcript's own name set — never a dictionary of every
+    /// card, never a guess at what looks like a name. Longest first, so that
+    /// "Sheoldred, the Apocalypse" is never cut down to a "Sheoldred" that happens to be
+    /// on the same page: the alternation tries its branches in order and keeps the
+    /// first that fits. A name has to stand on its own — a letter or digit on either
+    /// side means it is inside a longer word — but punctuation is not a boundary, so a
+    /// possessive ("Hare Apparent's ability") and a label ("Hare Apparent A 3/3") leave
+    /// the name clean and keep the rest for themselves.
+    /// <para>
+    /// Never a placeholder and never the card back: neither is a card, and the rule is
+    /// that no face means no span. What a span is: a bare wrapper with a class around
+    /// the name, and no role, no title and no ARIA of any kind. A span with no role adds
+    /// no node to the accessibility tree, which is the property the whole feature rests
+    /// on — the two listening tests behind the peeks stay valid without a re-run.
+    /// </para>
+    /// <para>
+    /// The name is the key, not an attribute repeating it: the span holds exactly one
+    /// text node, so its text is the name by construction, and the script looks the
+    /// face up by that. Measured across the archive before the attribute was dropped,
+    /// 521,461 spans on 1,516 pages put a page up by a median 28 KB, and the attribute
+    /// was the larger half of every span.
+    /// </para>
+    /// </remarks>
+    private sealed class CardMarks
+    {
+        private readonly IReadOnlyDictionary<string, CardFace> _faces;
+        private readonly Regex _names;
+
+        /// <summary>Every name that got a span, in name order: the island holds exactly these.</summary>
+        public SortedSet<string> Used { get; } = new(StringComparer.Ordinal);
+
+        private CardMarks(IReadOnlyDictionary<string, CardFace> faces, Regex names)
+        {
+            _faces = faces;
+            _names = names;
+        }
+
+        public static CardMarks? For(IReadOnlyDictionary<string, CardFace>? faces)
+        {
+            if (faces is null || faces.Count == 0) return null;
+
+            var names = faces.Keys
+                .Where(n => n.Length > 0 && !CardNames.IsPlaceholder(n) && n != CardNames.FaceDown)
+                .OrderByDescending(n => n.Length)
+                .ThenBy(n => n, StringComparer.Ordinal)
+                .Select(Regex.Escape)
+                .ToList();
+            if (names.Count == 0) return null;
+
+            var pattern = @"(?<![\p{L}\p{N}])(?:" + string.Join("|", names) + @")(?![\p{L}\p{N}])";
+            return new CardMarks(faces, new Regex(pattern, RegexOptions.CultureInvariant));
+        }
+
+        public MatchCollection Find(string text) => _names.Matches(text);
+
+        public string Span(string name)
+        {
+            Used.Add(name);
+            return $"""<span class="card">{E(name)}</span>""";
+        }
+
+        public CardFace Face(string name) => _faces[name];
+    }
+
+    /// <summary>
+    /// One copy of every face a line on this page can show, inert until the script
+    /// clones one into the tooltip (#201). A template's content is a document fragment:
+    /// not rendered, not in the accessibility tree, not found by find-in-page and not
+    /// text to a selection — so a page that names Hare Apparent thirty times carries
+    /// its rules once, and a screen reader, the clipboard and Ctrl+F meet nothing they
+    /// did not before. Absent when no name was wrapped, which is what keeps a build
+    /// with no card database byte-identical to what it was.
+    /// </summary>
+    private static string Faces(CardMarks? marks)
+    {
+        if (marks is null || marks.Used.Count == 0) return "";
+        var sb = new StringBuilder();
+        sb.Append("""<template id="card-faces">""");
+        foreach (var name in marks.Used) AppendFace(sb, marks.Face(name), key: name);
+        sb.Append("</template>");
+        return sb.ToString();
+    }
+
+    /// <summary>The tooltip's script, only on a page that has something to show.</summary>
+    private static string Tip(CardMarks? marks) =>
+        marks is null || marks.Used.Count == 0 ? "" : $"<script>{TipScript}</script>";
+
     // Contrast, measured against both backdrops `color-scheme: light dark` produces
     // (#000 on #fff, and white on a #121212–#1e1e1e canvas): the `opacity` dimming
     // here all clears 4.5:1 because it sits on a 21:1 base, so it stays. What did not
@@ -553,6 +685,16 @@ public static partial class GamePageRenderer
         .face-text{font-size:.92em}
         .face-pt{text-align:right;font-weight:600}
         .face-link{font-size:.85em}
+        /* Under the pointer only (#201): a name with a face highlights on hover and
+           shows the face in a floating box. Nothing is drawn at rest, so a page reads
+           as it did, and a touch screen keeps the peeks. */
+        @media (hover:hover) and (pointer:fine){
+          .card:hover{background:rgba(128,128,128,.22);border-radius:.2em}
+        }
+        #card-tip{position:fixed;z-index:1;max-width:min(26rem,calc(100vw - .5rem));
+                  max-height:calc(100vh - .5rem);overflow:auto;background:Canvas;
+                  border-radius:.4rem;box-shadow:0 .2rem .8rem rgba(0,0,0,.3)}
+        #card-tip .face{margin:0}
         .note{font-size:.9rem;opacity:.75;margin:.4rem 0 0 1.5rem}
         .build{margin-top:2rem;padding-top:.8rem;font-size:.8rem;opacity:.55;
                border-top:1px solid currentColor}
@@ -582,7 +724,7 @@ public static partial class GamePageRenderer
            worse for a keyboard user than one that is always there. */
         @media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
         @media print{
-          .controls,.back,.pager{display:none}
+          .controls,.back,.pager,#card-tip{display:none}
           body{padding-bottom:0}
           details{display:block}
           details>summary{list-style:none}
@@ -593,6 +735,7 @@ public static partial class GamePageRenderer
         @media (forced-colors:active){
           .sub,.board,.warn,.status,.back a,h2,h3,.note,.deck .unseen,.build,.pager .top{opacity:1}
           #names-toggle[aria-pressed=true]{background:Highlight;color:HighlightText}
+          .card:hover{background:Highlight;color:HighlightText}
         }
         """;
 
@@ -828,6 +971,114 @@ public static partial class GamePageRenderer
               copyText(copyId.dataset.id || '', copyId, 'Game ID copied.');
             });
           }
+        })();
+        """;
+
+    /// <summary>
+    /// The card under the pointer (#201). Pixels only: the trigger spans carry no ARIA,
+    /// the box is <c>aria-hidden</c> and lives outside the transcript, and nothing here
+    /// runs without a fine pointer that can hover — touch keeps the peeks, and a tap
+    /// keeps meaning select or scroll. WCAG 1.4.13 shapes the rest: the box can be
+    /// dismissed with Escape without moving the pointer, the pointer can cross onto it
+    /// (hiding is deferred, and cancelled on arrival), and it never times out.
+    /// </summary>
+    private const string TipScript = """
+        (function () {
+          if (!window.matchMedia ||
+              !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+          var island = document.getElementById('card-faces');
+          if (!island || !island.content) return;
+
+          // Keyed by card name, so a null prototype: a plain object answers to
+          // "constructor" and "__proto__" whether or not they are in the island.
+          var faces = Object.create(null);
+          var each = island.content.querySelectorAll('[data-card]');
+          for (var i = 0; i < each.length; i++) {
+            faces[each[i].getAttribute('data-card')] = each[i];
+          }
+
+          // One box for the whole page, outside the transcript and out of the
+          // accessibility tree: the tree is what the listening tests measured, and
+          // it has to stay as it was.
+          var tip = document.createElement('div');
+          tip.id = 'card-tip';
+          tip.setAttribute('aria-hidden', 'true');
+          tip.hidden = true;
+          document.body.appendChild(tip);
+
+          var shown = null;
+          var closing = 0;
+
+          // Below the name, or above it when the bottom of the window is nearer, and
+          // never off either edge.
+          function place(span) {
+            var r = span.getBoundingClientRect();
+            var gap = 4;
+            var vw = document.documentElement.clientWidth;
+            var vh = document.documentElement.clientHeight;
+            tip.style.left = '0px';
+            tip.style.top = '0px';
+            var w = tip.offsetWidth;
+            var h = tip.offsetHeight;
+            var left = Math.max(gap, Math.min(r.left, vw - w - gap));
+            var top = r.bottom + gap;
+            if (top + h > vh - gap && r.top - gap - h >= gap) top = r.top - gap - h;
+            top = Math.max(gap, Math.min(top, vh - h - gap));
+            tip.style.left = left + 'px';
+            tip.style.top = top + 'px';
+          }
+
+          // The span's text is the name: one text node, nothing else in it.
+          function show(span) {
+            var face = faces[span.textContent];
+            if (!face) return;
+            clearTimeout(closing);
+            if (shown !== span) {
+              while (tip.firstChild) tip.removeChild(tip.firstChild);
+              tip.appendChild(face.cloneNode(true));
+              shown = span;
+            }
+            tip.hidden = false;
+            place(span);
+          }
+
+          function hide() {
+            clearTimeout(closing);
+            tip.hidden = true;
+            shown = null;
+          }
+
+          // Deferred, so the pointer can cross the gap onto the box. Nothing else
+          // ever closes it on its own.
+          function hideSoon() {
+            clearTimeout(closing);
+            closing = setTimeout(hide, 150);
+          }
+
+          function cardOf(node) {
+            return node && node.closest ? node.closest('.card') : null;
+          }
+
+          document.addEventListener('mouseover', function (e) {
+            var span = cardOf(e.target);
+            if (span) show(span);
+            else if (tip.contains(e.target)) clearTimeout(closing);
+            else if (!tip.hidden) hideSoon();
+          });
+          document.addEventListener('mouseout', function (e) {
+            if (tip.hidden) return;
+            var to = e.relatedTarget;
+            if (to && (tip.contains(to) || cardOf(to))) return;
+            hideSoon();
+          });
+          document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !tip.hidden) hide();
+          });
+          // The box was placed beside the name; once the page has moved it is not.
+          // Scrolling the box itself is reading it, and keeps it.
+          document.addEventListener('scroll', function (e) {
+            if (!tip.hidden && !tip.contains(e.target)) hide();
+          }, true);
         })();
         """;
 }

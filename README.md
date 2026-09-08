@@ -272,6 +272,20 @@ Each game page has two buttons:
 - **Copy transcript** puts the game on your clipboard as markdown, matching whichever
   density is currently on screen. The buttons themselves are never included.
 
+The deck section, and the *Seen from the opponent* section beneath it, list every card
+with a disclosure that opens into the card itself — cost, type line, rules text and
+statline, resolved from Arena's own database, with a Scryfall link for anyone who wants
+the picture. The transcript answers the same question without the trip: with a mouse,
+resting the pointer on a card name in any line shows that face beside it, and Escape
+puts it away. That is a pointer convenience and nothing more. It adds nothing a screen
+reader hears, nothing the clipboard copies and nothing Ctrl+F matches, and a touch
+screen keeps the disclosures. Keyboard and screen-reader readers have the same faces
+in the two card lists; measured across the 1,516 matches in the archive on 2026-09-08,
+176 pages name a card the lists do not carry — nearly always the Adventure half of a
+listed card — and giving those a home in a list is
+[#221](https://github.com/jmeyer1980/mtga-play-by-play/issues/221), not a tab stop on
+every name.
+
 ### Run it whenever, including mid-session
 
 **You do not need to quit Arena.** Finish a match, alt-tab, run `mtga-pbp`, and read
