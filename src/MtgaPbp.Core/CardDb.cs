@@ -10,6 +10,8 @@ public sealed class CardDb : ICardDb, IDisposable
     private readonly Dictionary<(string Type, int Value), string?> _enumCache = new();
     private readonly Dictionary<int, string?> _abilityCache = new();
     private readonly Dictionary<string, CardFace?> _faceCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<int, CardInfo?> _faceCardCache = new();
+    private readonly Dictionary<int, bool> _cardTitleCache = new();
 
     public CardDb(string dbPath)
     {
@@ -163,7 +165,7 @@ public sealed class CardDb : ICardDb, IDisposable
     }
 
     /// <summary>The columns a face is built from, for one printing.</summary>
-    private sealed record FaceRow(int GrpId, string Name, string? Mana, int? TypeId,
+    private sealed record FaceRow(int GrpId, int TitleId, string Name, string? Mana, int? TypeId,
         int? SubtypeId, string Abilities, string? Power, string? Toughness, string Linked);
 
     /// <summary>
@@ -177,7 +179,7 @@ public sealed class CardDb : ICardDb, IDisposable
         // CardForGrpId.
         cmd.CommandText = """
             SELECT c.GrpId, l.Loc, c.OldSchoolManaText, c.TypeTextId, c.SubtypeTextId,
-                   c.AbilityIds, c.Power, c.Toughness, c.LinkedFaceGrpIds
+                   c.AbilityIds, c.Power, c.Toughness, c.LinkedFaceGrpIds, c.TitleId
             FROM Cards c
             LEFT JOIN Localizations_enUS l ON l.LocId = c.TitleId
             WHERE c.GrpId = $id AND c.IsToken = 0
@@ -188,13 +190,60 @@ public sealed class CardDb : ICardDb, IDisposable
         using var r = cmd.ExecuteReader();
         if (!r.Read() || r.IsDBNull(1)) return null;
         return new FaceRow(
-            r.GetInt32(0), r.GetString(1),
+            r.GetInt32(0), r.GetInt32(9), r.GetString(1),
             r.IsDBNull(2) ? null : r.GetString(2),
             r.IsDBNull(3) ? null : r.GetInt32(3),
             r.IsDBNull(4) ? null : r.GetInt32(4),
             r.IsDBNull(5) ? "" : r.GetString(5),
             Stat(r, 6), Stat(r, 7),
             r.IsDBNull(8) ? "" : r.GetString(8));
+    }
+
+    /// <summary>
+    /// The card a grpId belongs to (#223): the row itself when its title is a card's,
+    /// otherwise the first linked row whose title is — the creature for an Adventure,
+    /// the front for a back face, the whole "A // B" card for a door — and the row
+    /// itself again when no link leads anywhere better.
+    /// </summary>
+    /// <remarks>
+    /// What tells a face's title from a card's is that no printing of a face is ever
+    /// the primary one: every card has a printing with <c>IsPrimaryCard = 1</c>
+    /// somewhere in the database, while Stomp, Tibalt, Cosmic Impostor and Dollmaker's
+    /// Shop have rows with 0 and nothing else (checked across all 23,000 non-token
+    /// rows, 2026-09-08). A reprint of a card has 0 too, but shares its title with
+    /// the printing that has 1, so the test is on the title, not the row. A prototype
+    /// card's second row carries the card's own title and so stays itself; a melded
+    /// card's row has no primary printing and links to its parts, so a melded
+    /// permanent lists as the part it is printed on. Tokens have no face rows and fall
+    /// straight through to <see cref="CardForGrpId"/>.
+    /// </remarks>
+    public CardInfo? CardForFace(int grpId)
+    {
+        if (_faceCardCache.TryGetValue(grpId, out var hit)) return hit;
+        CardInfo? card = null;
+        if (Row(grpId) is { } row && !IsCardTitle(row.TitleId))
+            foreach (var id in Ids(row.Linked))
+                if (Row(id) is { } linked && IsCardTitle(linked.TitleId))
+                {
+                    card = CardForGrpId(id);
+                    break;
+                }
+        card ??= CardForGrpId(grpId);
+        _faceCardCache[grpId] = card;
+        return card;
+    }
+
+    /// <summary>Whether some non-token printing under this title is the primary one.</summary>
+    private bool IsCardTitle(int titleId)
+    {
+        if (_cardTitleCache.TryGetValue(titleId, out var hit)) return hit;
+        using var cmd = _con.CreateCommand();
+        cmd.CommandText =
+            "SELECT 1 FROM Cards WHERE TitleId = $title AND IsToken = 0 AND IsPrimaryCard = 1 LIMIT 1";
+        cmd.Parameters.AddWithValue("$title", titleId);
+        var isCard = cmd.ExecuteScalar() is not null;
+        _cardTitleCache[titleId] = isCard;
+        return isCard;
     }
 
     /// <summary>

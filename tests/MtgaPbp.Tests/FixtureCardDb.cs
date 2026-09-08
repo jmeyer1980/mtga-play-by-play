@@ -41,6 +41,14 @@ public sealed class FixtureCardDb : ICardDb
         /// card-names.json written before abilities existed still deserializes.
         /// </summary>
         public Dictionary<int, string> Abilities { get; init; } = [];
+
+        /// <summary>
+        /// Face grpId to the grpId of the card it is printed on, for the objects the
+        /// fixture matches carried as a face (#223); the card itself is in
+        /// <see cref="Cards"/>. Same init-with-default shape as the others, for the
+        /// same reason.
+        /// </summary>
+        public Dictionary<int, int> FaceCards { get; init; } = [];
     }
 
     private readonly Data _data;
@@ -83,4 +91,7 @@ public sealed class FixtureCardDb : ICardDb
 
     public string? AbilityText(int abilityGrpId) =>
         _data.Abilities.TryGetValue(abilityGrpId, out var text) ? text : null;
+
+    public CardInfo? CardForFace(int grpId) =>
+        CardForGrpId(_data.FaceCards.TryGetValue(grpId, out var card) ? card : grpId);
 }

@@ -54,14 +54,27 @@ public class EventExtractorTests
         public CardInfo? CardForGrpId(int grpId) => grpId switch
         {
             5 => new CardInfo(5, "Llanowar Elves", "2", "1", "1", false),
+            // The opponent-card tests (#101, #223) name cards by grpId now, as the real
+            // database would for any card, so the planeswalker they list needs a row.
+            7 => new CardInfo(7, "Elspeth, Storm Slayer", "8", null, null, false),
             41 => new CardInfo(41, "Lembas", "1", null, null, false),
             42 => new CardInfo(42, "Iron Man, Futurist Paragon", "1,2", "4", "4", false),
             43 => new CardInfo(43, "Shuri, Wakandan Inventor", "2", "3", "2", false),
             44 => new CardInfo(44, "Waxen Shapethief", "2", "3", "3", false),
             45 => new CardInfo(45, "Taskmaster, Mercenary Mimic", "2", "1", "1", false),
             46 => new CardInfo(46, "Toby, Beastie Befriender", "2", "2", "3", false),
+
+            // The Adventure pair the #71 tests build: the creature and the spell face
+            // under the grpIds Arena really uses, so the opponent list can fold the
+            // face into its card (#223).
+            103476 => new CardInfo(103476, "Gloin the Mighty", "2", "3", "3", false),
+            103477 => new CardInfo(103477, "Easy Pickings", "10", null, null, false),
             _ => null
         };
+
+        /// <summary>The one face here: Easy Pickings is printed on Gloin the Mighty.</summary>
+        public CardInfo? CardForFace(int grpId) =>
+            CardForGrpId(grpId == 103477 ? 103476 : grpId);
         public string? EnumName(string type, int value) => (type, value) switch
         {
             ("Phase", 3) => "Combat",
@@ -420,6 +433,59 @@ public class EventExtractorTests
 
         Assert.That(t.OpponentCards, Is.EqualTo(new[] { "Llanowar Elves" }),
             "the local player is seat 2, so seat 1 is the opponent");
+    }
+
+    /// <summary>
+    /// A clone is listed as the card it is, not the card it copied (#223). Arena
+    /// renames an object to whatever it became — a Phyrexian Metamorph that entered
+    /// as a copy of Mindwhisker answers to Mindwhisker from then on — but the card the
+    /// opponent owns is the one printed on it, which is what its grpId says. Named the
+    /// other way, a clone of your own creature put your card in their list and the
+    /// clone itself was listed nowhere, while the transcript said its name.
+    /// </summary>
+    [Test]
+    public void Opponent_cards_names_a_clone_by_its_own_card_not_the_one_it_copied()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+          "gameObjects": [
+            { "instanceId": 501, "grpId": 43, "name": 2043, "type": "GameObjectType_Card",
+              "ownerSeatId": 1, "controllerSeatId": 1, "zoneId": 28 },
+            { "instanceId": 502, "grpId": 44, "name": 2043, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 28 },
+            { "instanceId": 503, "grpId": 5, "name": 1001, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 28 },
+            { "instanceId": 504, "grpId": 3, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 28 } ] }
+        """));
+
+        Assert.That(t.OpponentCards, Is.EqualTo(new[] { "Llanowar Elves", "Waxen Shapethief" }),
+            "the clone under its printed name; the card it copied is yours; the face-down card unnamed");
+    }
+
+    /// <summary>
+    /// An Adventure on the stack carries the Adventure's own grpId, and a face is not a
+    /// second card the opponent owns: the list names the creature it is printed on,
+    /// once, whether or not the creature itself was ever seen (#223). The face keeps
+    /// its peek on the page beneath that entry (#221).
+    /// </summary>
+    [Test]
+    public void Opponent_cards_folds_an_adventure_face_into_its_card()
+    {
+        var t = Run(RoomLine, MulliganLine, Gre("""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 27, "type": "ZoneType_Stack" },
+                     { "zoneId": 28, "type": "ZoneType_Battlefield" } ],
+          "gameObjects": [
+            { "instanceId": 501, "grpId": 103477, "name": 1011, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 27 },
+            { "instanceId": 502, "grpId": 103476, "name": 1011, "type": "GameObjectType_Card",
+              "ownerSeatId": 2, "controllerSeatId": 2, "zoneId": 28 } ] }
+        """));
+
+        Assert.That(t.OpponentCards, Is.EqualTo(new[] { "Gloin the Mighty" }),
+            "one card, whichever face each object carried");
     }
 
     // ---------- stat mods and the battlefield (issue #97) ----------

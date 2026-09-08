@@ -30,7 +30,8 @@ public class LinkedFaceDbTests
         Exec(con, @"CREATE TABLE Cards (GrpId INT PRIMARY KEY, TitleId INT, IsToken BOOLEAN,
                                         IsPrimaryCard BOOLEAN, OldSchoolManaText TEXT,
                                         TypeTextId INT, SubtypeTextId INT, AbilityIds TEXT,
-                                        Power TEXT, Toughness TEXT, LinkedFaceGrpIds TEXT)");
+                                        Power TEXT, Toughness TEXT, LinkedFaceGrpIds TEXT,
+                                        Types TEXT, ColorIdentity TEXT)");
         Exec(con, @"CREATE TABLE Localizations_enUS (LocId INT, Formatted INT, Loc TEXT,
                                                      PRIMARY KEY (LocId, Formatted))");
 
@@ -93,7 +94,7 @@ public class LinkedFaceDbTests
         string mana, int typeId, int subtypeId, string abilities, string power, string toughness,
         string linked, bool token = false) =>
         Exec(con, $"INSERT INTO Cards VALUES ({grpId}, {titleId}, {(token ? 1 : 0)}, {(primary ? 1 : 0)}, " +
-                  $"'{mana}', {typeId}, {subtypeId}, '{abilities}', '{power}', '{toughness}', '{linked}')");
+                  $"'{mana}', {typeId}, {subtypeId}, '{abilities}', '{power}', '{toughness}', '{linked}', '2', '')");
 
     private static string[] Names(CardFace face) => face.OtherFaces.Select(f => f.Name).ToArray();
 
@@ -186,6 +187,48 @@ public class LinkedFaceDbTests
         var giant = db.FaceForName("Bonecrusher Giant")!;
         Assert.That(giant.Power, Is.EqualTo("4"));
         Assert.That(giant.Toughness, Is.EqualTo("3"));
+    }
+
+    // ---------- the card a face belongs to (issue #223) ----------
+
+    /// <summary>
+    /// A game object on the stack as an Adventure carries the Adventure's own grpId;
+    /// the card the opponent owns is the creature. The reprint's Adventure row links
+    /// to the reprint's creature row, whose title is a card's title all the same.
+    /// </summary>
+    [Test]
+    public void An_adventure_face_belongs_to_its_creature()
+    {
+        using var db = new CardDb(_dbPath);
+        Assert.That(db.CardForFace(70488)!.Name, Is.EqualTo("Bonecrusher Giant"));
+        Assert.That(db.CardForFace(73725)!.Name, Is.EqualTo("Bonecrusher Giant"), "reprint");
+        Assert.That(db.CardForFace(70262)!.GrpId, Is.EqualTo(70262), "the creature is already the card");
+    }
+
+    [Test]
+    public void A_door_belongs_to_the_whole_room()
+    {
+        using var db = new CardDb(_dbPath);
+        Assert.That(db.CardForFace(92061)!.Name, Is.EqualTo("Dollmaker's Shop // Porcelain Gallery"));
+        Assert.That(db.CardForFace(92062)!.Name, Is.EqualTo("Dollmaker's Shop // Porcelain Gallery"));
+        Assert.That(db.CardForFace(92060)!.GrpId, Is.EqualTo(92060));
+    }
+
+    /// <summary>
+    /// A prototype card's second row carries the card's own title, and a card with a
+    /// link to nowhere, a plain card, a token and an unknown id all answer as
+    /// <c>CardForGrpId</c> does: the fallback is the row itself.
+    /// </summary>
+    [Test]
+    public void Everything_that_is_not_a_face_is_its_own_card()
+    {
+        using var db = new CardDb(_dbPath);
+        Assert.That(db.CardForFace(83682)!.Name, Is.EqualTo("Autonomous Assembler"));
+        Assert.That(db.CardForFace(83682)!.GrpId, Is.EqualTo(83682));
+        Assert.That(db.CardForFace(55555)!.Name, Is.EqualTo("Lonely Half"));
+        Assert.That(db.CardForFace(96179)!.Name, Is.EqualTo("Plains"));
+        Assert.That(db.CardForFace(91843)!.IsToken, Is.True);
+        Assert.That(db.CardForFace(999999), Is.Null);
     }
 
     [Test]

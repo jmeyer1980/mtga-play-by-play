@@ -57,6 +57,14 @@
       "IsToken": false,
       "ColorIdentity": "1"
     },
+    "86855": {
+      "Name": "Torch the Tower",
+      "Types": "4",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false,
+      "ColorIdentity": "4"
+    },
     "86974": {
       "Name": "Agatha\u0027s Soul Cauldron",
       "Types": "1",
@@ -160,6 +168,14 @@
       "Toughness": "1",
       "IsToken": false,
       "ColorIdentity": "1"
+    },
+    "92356": {
+      "Name": "Blazemire Verge",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false,
+      "ColorIdentity": "3,4"
     },
     "93636": {
       "Name": "Hinterland Sanctifier",
@@ -273,6 +289,14 @@
       "IsToken": true,
       "ColorIdentity": ""
     },
+    "95192": {
+      "Name": "Plains",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false,
+      "ColorIdentity": "1"
+    },
     "95526": {
       "Name": "Elspeth, Storm Slayer",
       "Types": "8",
@@ -313,11 +337,27 @@
       "IsToken": false,
       "ColorIdentity": "3"
     },
+    "98436": {
+      "Name": "Requiting Hex",
+      "Types": "4",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false,
+      "ColorIdentity": "3"
+    },
     "98528": {
       "Name": "Boggart Cursecrafter",
       "Types": "2",
       "Power": "2",
       "Toughness": "3",
+      "IsToken": false,
+      "ColorIdentity": "3,4"
+    },
+    "98584": {
+      "Name": "Blood Crypt",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
       "IsToken": false,
       "ColorIdentity": "3,4"
     },
@@ -344,6 +384,30 @@
       "Toughness": "2",
       "IsToken": false,
       "ColorIdentity": "1"
+    },
+    "105160": {
+      "Name": "Dark Fortress",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false,
+      "ColorIdentity": "3,4"
+    },
+    "105178": {
+      "Name": "Swamp",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false,
+      "ColorIdentity": "3"
+    },
+    "105180": {
+      "Name": "Mountain",
+      "Types": "5",
+      "Power": "",
+      "Toughness": "",
+      "IsToken": false,
+      "ColorIdentity": "4"
     },
     "105275": {
       "Name": "Plains",
@@ -375,7 +439,7 @@
   "Abilities": {
     "6": "First strike",
     "117109": "{oT}, Sacrifice CARDNAME: It deals 1 damage to any target.",
-    "173825": "When this Class becomes level 2, create a token that\u0027s a copy of target token you control.",
     "193925": "Pay 1 life, Blight 2: Target opponent blights 2. Activate only as a sorcery."
-  }
+  },
+  "FaceCards": {}
 }

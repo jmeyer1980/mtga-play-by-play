@@ -119,6 +119,15 @@ public interface ICardDb
     CardInfo? CardForGrpId(int grpId);
 
     /// <summary>
+    /// The card a game object's grpId belongs to (#223). For an ordinary card that is
+    /// the row itself; for a face — an Adventure on the stack, the back of a
+    /// transformed permanent, an unlocked door of a Room — it is the card the face is
+    /// printed on, the one Arena's decklist would name. Defaults to
+    /// <see cref="CardForGrpId"/>, which is all a source with no face links can say.
+    /// </summary>
+    CardInfo? CardForFace(int grpId) => CardForGrpId(grpId);
+
+    /// <summary>
     /// A localized enum label, e.g. EnumName("Step", 5) is "Declare Attackers".
     /// Null when the value has no label — Phase 0 and Step 0 are both blank.
     /// </summary>

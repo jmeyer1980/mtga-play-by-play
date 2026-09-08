@@ -26,6 +26,7 @@ public class CardNameFixtureGenerator
         public readonly Dictionary<int, FixtureCardDb.Card> Cards = [];
         public readonly Dictionary<string, string> Enums = [];
         public readonly Dictionary<int, string> Abilities = [];
+        public readonly Dictionary<int, int> FaceCards = [];
 
         public string? NameForLocId(int locId)
         {
@@ -58,6 +59,20 @@ public class CardNameFixtureGenerator
             var text = inner.AbilityText(abilityGrpId);
             if (text is not null) Abilities[abilityGrpId] = text;
             return text;
+        }
+
+        /// <summary>
+        /// The card it answers with goes through <see cref="CardForGrpId"/>, so the
+        /// fixture can answer for it; the mapping is recorded only where the answer is
+        /// a different row from the one asked about.
+        /// </summary>
+        public CardInfo? CardForFace(int grpId)
+        {
+            var card = inner.CardForFace(grpId);
+            if (card is null) return null;
+            CardForGrpId(card.GrpId);
+            if (card.GrpId != grpId) FaceCards[grpId] = card.GrpId;
+            return card;
         }
     }
 
@@ -93,6 +108,8 @@ public class CardNameFixtureGenerator
                           .ToDictionary(k => k.Key, v => v.Value))
         {
             Abilities = recorder.Abilities.OrderBy(k => k.Key)
+                                          .ToDictionary(k => k.Key, v => v.Value),
+            FaceCards = recorder.FaceCards.OrderBy(k => k.Key)
                                           .ToDictionary(k => k.Key, v => v.Value)
         };
 
@@ -106,7 +123,7 @@ public class CardNameFixtureGenerator
 
         TestContext.Out.WriteLine(
             $"wrote {target}\n  locs={data.Locs.Count} cards={data.Cards.Count} " +
-            $"enums={data.Enums.Count} abilities={data.Abilities.Count} " +
+            $"enums={data.Enums.Count} abilities={data.Abilities.Count} faces={data.FaceCards.Count} " +
             $"size={new FileInfo(target).Length:N0} bytes");
     }
 }

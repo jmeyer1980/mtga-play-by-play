@@ -169,4 +169,22 @@ public class CardDbIntegrationTests
         Assert.That(stomp.Power, Is.Null);
         Assert.That(stomp.Toughness, Is.Null);
     }
+
+    /// <summary>
+    /// The card a face belongs to, from the real rows (#223): Stomp on the stack is a
+    /// Bonecrusher Giant, Tibalt is the back of Valki, a Room's door is the Room, and
+    /// The Prismatic Bridge — the face of a Brawl commander that is cast most — is
+    /// Esika, God of the Tree.
+    /// </summary>
+    [Test]
+    public void Real_database_maps_a_face_to_the_card_it_is_printed_on()
+    {
+        using var db = Open();
+        Assert.That(db.CardForFace(70488)!.Name, Is.EqualTo("Bonecrusher Giant"));
+        Assert.That(db.CardForFace(75156)!.Name, Is.EqualTo("Valki, God of Lies"));
+        Assert.That(db.CardForFace(92061)!.Name, Is.EqualTo("Dollmaker's Shop // Porcelain Gallery"));
+        Assert.That(db.CardForFace(75213)!.Name, Is.EqualTo("Esika, God of the Tree"));
+        Assert.That(db.CardForFace(70262)!.Name, Is.EqualTo("Bonecrusher Giant"), "a card is its own card");
+        Assert.That(db.CardForFace(54281)!.Name, Is.EqualTo("Mutavault"));
+    }
 }
