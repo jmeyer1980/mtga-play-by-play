@@ -69,6 +69,24 @@ public class LinkedFaceDbTests
         Card(con, 96179, 400, primary: true, "", 16, 17, "", "", "", "");
         Loc(con, 500, "Lonely Half");
         Card(con, 55555, 500, primary: true, "o1", 12, 0, "", "", "", "999999");
+
+        // A Class card as the database lays one out (#230): each level ability wrapped
+        // for the client and then plain, one wrapper holding two rules, one plain twin
+        // carrying reminder text the wrapper does not — and a second Class whose
+        // wrapper has no plain twin at all.
+        Loc(con, 600, "Tinker's Talent"); Loc(con, 20, "Class");
+        Loc(con, 601, "When this Class enters, draw a card.");
+        Loc(con, 602, "{oW}: Level 2");
+        Loc(con, 603, "CLASSLEVEL [2+] [] [Creatures you control get <nobr>+1/+1</nobr>.]");
+        Loc(con, 604, "Creatures you control get <nobr>+1/+1</nobr>.");
+        Loc(con, 605, "{o3oW}: Level 3");
+        Loc(con, 606, "CLASSLEVEL [3+] [] [You may look at the top card of your library any time.] [Each opponent loses life equal to the life they lost this turn.]");
+        Loc(con, 607, "You may look at the top card of your library any time.");
+        Loc(con, 608, "Each opponent loses life equal to the life they lost this turn. (Damage causes loss of life.)");
+        Card(con, 60000, 600, primary: true, "o1oW", 14, 20, "1:601,2:602,3:603,4:604,5:605,6:606,7:607,8:608", "", "", "");
+        Loc(con, 610, "Lone Class");
+        Loc(con, 611, "CLASSLEVEL [2+] [] [Whenever you attack, draw a card.]");
+        Card(con, 61000, 610, primary: true, "o1oB", 14, 20, "1:602,2:611", "", "", "");
         Card(con, 91843, 100, primary: false, "", 10, 11, "", "4", "3", "", token: true);
     }
 
@@ -229,6 +247,40 @@ public class LinkedFaceDbTests
         Assert.That(db.CardForFace(96179)!.Name, Is.EqualTo("Plains"));
         Assert.That(db.CardForFace(91843)!.IsToken, Is.True);
         Assert.That(db.CardForFace(999999), Is.Null);
+    }
+
+    // ---------- class-level wrappers (issue #230) ----------
+
+    /// <summary>
+    /// The face reads as the printed card: intro, level line, rule, level line, rules —
+    /// each level rule once, at the plain row's place, with the reminder text that row
+    /// carries, and never a wrapper.
+    /// </summary>
+    [Test]
+    public void A_class_card_shows_each_level_rule_once_and_no_wrapper()
+    {
+        using var db = new CardDb(_dbPath);
+        var talent = db.FaceForName("Tinker's Talent")!;
+
+        Assert.That(talent.RulesText, Is.EqualTo(new[]
+        {
+            "When this Class enters, draw a card.",
+            "{W}: Level 2",
+            "Creatures you control get +1/+1.",
+            "{3}{W}: Level 3",
+            "You may look at the top card of your library any time.",
+            "Each opponent loses life equal to the life they lost this turn. (Damage causes loss of life.)",
+        }));
+        Assert.That(talent.RulesText, Has.None.Contains("CLASSLEVEL"));
+    }
+
+    /// <summary>A wrapper with no plain twin keeps its rule — as the rule, not the wrapper.</summary>
+    [Test]
+    public void A_wrapper_without_a_plain_twin_keeps_its_rule()
+    {
+        using var db = new CardDb(_dbPath);
+        Assert.That(db.FaceForName("Lone Class")!.RulesText,
+            Is.EqualTo(new[] { "{W}: Level 2", "Whenever you attack, draw a card." }));
     }
 
     [Test]
