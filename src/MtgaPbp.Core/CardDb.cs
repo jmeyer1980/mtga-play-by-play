@@ -112,9 +112,10 @@ public sealed class CardDb : ICardDb, IDisposable
     }
 
     /// <summary>
-    /// The face the decklist peek shows (#99), looked up by exact title. Null when no
-    /// real card carries the name — token-only names and the extractor's "Card #123"
-    /// fallbacks land there, and the caller simply shows no peek.
+    /// The face the decklist peek shows (#99), looked up by exact title, with the
+    /// card's other faces beside it (#221). Null when no real card carries the name —
+    /// token-only names and the extractor's "Card #123" fallbacks land there, and the
+    /// caller simply shows no peek.
     /// </summary>
     /// <remarks>
     /// Non-token rows only, primary printing first: a card reprinted across sets has a
@@ -122,14 +123,26 @@ public sealed class CardDb : ICardDb, IDisposable
     /// carry a promo oddity. Rules text comes from <c>AbilityIds</c>, whose entries are
     /// <c>abilityId:textLocId</c> pairs — the second half resolves through the same
     /// localization table as everything else, no join through Abilities needed.
+    /// <para>
+    /// Other faces come from <c>LinkedFaceGrpIds</c>, one hop from the printing that
+    /// answered: an Adventure creature links to its Adventure and back, a double-faced
+    /// card to its other face, a meld piece to what it melds into. A split card or a
+    /// Room is shaped differently — each half links to a row for the whole card,
+    /// titled "A // B", which links to both halves, and that row is the one Arena's
+    /// decklist names. The whole card is never offered as a face, because it is the
+    /// card and not a face of it: reached from a half it stands in for the other
+    /// halves, and asked for by its own name it yields them. A prototype card links to
+    /// a second row with its own title, and a face is not another face of itself.
+    /// Nothing reached this way carries links of its own: one hop, because the reader
+    /// started at the card.
+    /// </para>
     /// </remarks>
     public CardFace? FaceForName(string name)
     {
         if (_faceCache.TryGetValue(name, out var hit)) return hit;
         using var cmd = _con.CreateCommand();
         cmd.CommandText = """
-            SELECT c.OldSchoolManaText, c.TypeTextId, c.SubtypeTextId, c.AbilityIds,
-                   c.Power, c.Toughness
+            SELECT c.GrpId
             FROM Cards c
             JOIN Localizations_enUS l ON l.LocId = c.TitleId
             WHERE l.Loc = $name AND c.IsToken = 0
@@ -137,42 +150,113 @@ public sealed class CardDb : ICardDb, IDisposable
             LIMIT 1
             """;
         cmd.Parameters.AddWithValue("$name", name);
-        using var r = cmd.ExecuteReader();
         CardFace? face = null;
-        if (r.Read())
+        if (cmd.ExecuteScalar() is long grpId && Row((int)grpId) is { } row)
         {
-            var type = r.IsDBNull(1) ? null : NameForLocId(r.GetInt32(1));
-            var subtype = r.IsDBNull(2) ? null : NameForLocId(r.GetInt32(2));
-            var typeLine = string.IsNullOrWhiteSpace(subtype)
-                ? type ?? ""
-                : $"{type} — {subtype}";
-
-            var rules = new List<string>();
-            foreach (var pair in (r.IsDBNull(3) ? "" : r.GetString(3))
-                         .Split(',', StringSplitOptions.RemoveEmptyEntries))
-            {
-                var colon = pair.IndexOf(':');
-                if (colon < 0 || !int.TryParse(pair[(colon + 1)..], out var textLocId))
-                    continue;
-                // Through the same cleaner every ability text on the page goes
-                // through — the raw rows carry Arena's renderer markup and o-packed
-                // symbol runs. CARDNAME is resolved to the card's own name first: a
-                // face, unlike a grant, knows exactly whose text it is showing.
-                if (NameForLocId(textLocId) is { } text && !string.IsNullOrWhiteSpace(text))
-                    rules.Add(Core.AbilityText.Plain(
-                        text.Replace("CARDNAME", name, StringComparison.Ordinal)));
-            }
-
-            face = new CardFace(
-                name,
-                CardFace.DecodeMana(r.IsDBNull(0) ? null : r.GetString(0)),
-                typeLine,
-                rules,
-                r.IsDBNull(4) ? null : r.GetString(4),
-                r.IsDBNull(5) ? null : r.GetString(5));
+            // Under the name asked for, exactly as before; the row's own title is the
+            // same string, and the cache and the callers key on this one.
+            var self = row with { Name = name };
+            face = Build(self, OtherFacesOf(self));
         }
         _faceCache[name] = face;
         return face;
+    }
+
+    /// <summary>The columns a face is built from, for one printing.</summary>
+    private sealed record FaceRow(int GrpId, string Name, string? Mana, int? TypeId,
+        int? SubtypeId, string Abilities, string? Power, string? Toughness, string Linked);
+
+    /// <summary>
+    /// One printing's face columns by grpId, or null for a token or an id the database
+    /// does not have — a link that goes nowhere is simply not followed.
+    /// </summary>
+    private FaceRow? Row(int grpId)
+    {
+        using var cmd = _con.CreateCommand();
+        // Titles live at Formatted = 1; ORDER BY keeps this deterministic, as in
+        // CardForGrpId.
+        cmd.CommandText = """
+            SELECT c.GrpId, l.Loc, c.OldSchoolManaText, c.TypeTextId, c.SubtypeTextId,
+                   c.AbilityIds, c.Power, c.Toughness, c.LinkedFaceGrpIds
+            FROM Cards c
+            LEFT JOIN Localizations_enUS l ON l.LocId = c.TitleId
+            WHERE c.GrpId = $id AND c.IsToken = 0
+            ORDER BY l.Formatted
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("$id", grpId);
+        using var r = cmd.ExecuteReader();
+        if (!r.Read() || r.IsDBNull(1)) return null;
+        return new FaceRow(
+            r.GetInt32(0), r.GetString(1),
+            r.IsDBNull(2) ? null : r.GetString(2),
+            r.IsDBNull(3) ? null : r.GetInt32(3),
+            r.IsDBNull(4) ? null : r.GetInt32(4),
+            r.IsDBNull(5) ? "" : r.GetString(5),
+            Stat(r, 6), Stat(r, 7),
+            r.IsDBNull(8) ? "" : r.GetString(8));
+    }
+
+    /// <summary>
+    /// A power or toughness, or null where the card has none. The column is the empty
+    /// string on every row that is not a creature — <c>TEXT NOT NULL</c>, never null —
+    /// and a face that carried that forward drew a bare "/" under every instant,
+    /// sorcery and enchantment: 1,501 of 1,516 archived pages, 2026-09-08.
+    /// </summary>
+    private static string? Stat(SqliteDataReader r, int column) =>
+        r.IsDBNull(column) || r.GetString(column).Length == 0 ? null : r.GetString(column);
+
+    private CardFace Build(FaceRow row, IReadOnlyList<CardFace> others)
+    {
+        var type = row.TypeId is { } t ? NameForLocId(t) : null;
+        var subtype = row.SubtypeId is { } s ? NameForLocId(s) : null;
+        var typeLine = string.IsNullOrWhiteSpace(subtype)
+            ? type ?? ""
+            : $"{type} — {subtype}";
+
+        var rules = new List<string>();
+        foreach (var pair in row.Abilities.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var colon = pair.IndexOf(':');
+            if (colon < 0 || !int.TryParse(pair[(colon + 1)..], out var textLocId))
+                continue;
+            // Through the same cleaner every ability text on the page goes through —
+            // the raw rows carry Arena's renderer markup and o-packed symbol runs.
+            // CARDNAME is resolved to the face's own name first: a face, unlike a
+            // grant, knows exactly whose text it is showing.
+            if (NameForLocId(textLocId) is { } text && !string.IsNullOrWhiteSpace(text))
+                rules.Add(Core.AbilityText.Plain(
+                    text.Replace("CARDNAME", row.Name, StringComparison.Ordinal)));
+        }
+
+        return new CardFace(row.Name, CardFace.DecodeMana(row.Mana), typeLine, rules,
+            row.Power, row.Toughness)
+        { OtherFaces = others };
+    }
+
+    /// <summary>The faces one hop from a row, built without links of their own.</summary>
+    private IReadOnlyList<CardFace> OtherFacesOf(FaceRow row)
+    {
+        var others = new List<CardFace>();
+        var named = new HashSet<string>(StringComparer.Ordinal) { row.Name };
+        foreach (var id in Ids(row.Linked))
+        {
+            if (Row(id) is not { } linked) continue;
+            // The whole card stands in for its other halves.
+            IEnumerable<FaceRow> faces = linked.Name.Contains(" // ", StringComparison.Ordinal)
+                ? Ids(linked.Linked).Select(Row).OfType<FaceRow>()
+                : [linked];
+            foreach (var f in faces)
+                if (named.Add(f.Name)) others.Add(Build(f, []));
+        }
+        return others;
+    }
+
+    private static IEnumerable<int> Ids(string commaList)
+    {
+        foreach (var part in commaList.Split(',',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (int.TryParse(part, out var id)) yield return id;
     }
 
     public string? AbilityText(int abilityGrpId)

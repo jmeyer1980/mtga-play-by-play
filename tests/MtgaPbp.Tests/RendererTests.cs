@@ -2309,7 +2309,7 @@ public class RendererTests
         // face exists behind its disclosure; the pasted transcript should match what
         // the markdown export produces, which carries neither.
         var html = GamePageRenderer.Render(Repeating());
-        Assert.That(html, Does.Contain("clone.querySelectorAll('.vh, .face')"));
+        Assert.That(html, Does.Contain("clone.querySelectorAll('.vh, .face, .faces')"));
         Assert.That(html, Does.Contain("h2, h3, li.beat, li.board"));
     }
 

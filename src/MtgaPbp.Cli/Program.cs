@@ -1118,7 +1118,7 @@ public static class Program
 
             File.WriteAllText(gamePath,
                 GamePageRenderer.Render(transcript, neighbours, faces, cfg.ManaLedger));
-            File.WriteAllText(textPath, MarkdownRenderer.Render(transcript, cfg.ManaLedger));
+            File.WriteAllText(textPath, MarkdownRenderer.Render(transcript, cfg.ManaLedger, faces));
 
             // Both files carry the match's time rather than the build's, so that a
             // directory of them sorts the way the report does — see OutputStamp (#147).

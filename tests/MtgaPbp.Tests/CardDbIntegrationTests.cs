@@ -132,4 +132,41 @@ public class CardDbIntegrationTests
         Assert.That(viaReal.DeckColors, Is.Not.Null,
             "the sample match registers a deck, so the real database can colour it");
     }
+
+    // ---------- other faces (issue #221) ----------
+
+    [Test]
+    public void Real_database_links_an_adventure_creature_and_its_adventure_both_ways()
+    {
+        using var db = Open();
+        var giant = db.FaceForName("Bonecrusher Giant")!;
+        Assert.That(giant.OtherFaces.Select(f => f.Name), Is.EqualTo(new[] { "Stomp" }));
+        Assert.That(giant.OtherFaces[0].TypeLine, Is.EqualTo("Instant — Adventure"));
+        Assert.That(giant.OtherFaces[0].ManaCost, Is.EqualTo("{1}{R}"));
+
+        var stomp = db.FaceForName("Stomp")!;
+        Assert.That(stomp.OtherFaces.Select(f => f.Name), Is.EqualTo(new[] { "Bonecrusher Giant" }));
+    }
+
+    [Test]
+    public void Real_database_links_a_room_to_its_doors_and_a_door_to_the_other()
+    {
+        using var db = Open();
+        Assert.That(db.FaceForName("Dollmaker's Shop // Porcelain Gallery")!.OtherFaces.Select(f => f.Name),
+            Is.EqualTo(new[] { "Dollmaker's Shop", "Porcelain Gallery" }));
+        Assert.That(db.FaceForName("Dollmaker's Shop")!.OtherFaces.Select(f => f.Name),
+            Is.EqualTo(new[] { "Porcelain Gallery" }));
+    }
+
+    [Test]
+    public void Real_database_gives_a_plain_card_no_other_faces_and_a_spell_no_statline()
+    {
+        using var db = Open();
+        Assert.That(db.FaceForName("Hare Apparent")!.OtherFaces, Is.Empty);
+
+        // Power and Toughness are the empty string on the real rows, never null.
+        var stomp = db.FaceForName("Stomp")!;
+        Assert.That(stomp.Power, Is.Null);
+        Assert.That(stomp.Toughness, Is.Null);
+    }
 }

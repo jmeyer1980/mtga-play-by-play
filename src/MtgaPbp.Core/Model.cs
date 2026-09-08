@@ -48,6 +48,21 @@ public sealed record CardFace(
             sb.Append('{').Append(symbol.Trim('(', ')')).Append('}');
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The card's other faces, when it has any (#221): the Adventure an Adventure
+    /// creature carries, the back of a transforming or modal double-faced card, the
+    /// doors of a Room, the halves of a split card, what a meld piece melds into. Empty
+    /// for the ordinary card, and always empty on the faces listed here — one hop, because
+    /// a face's other faces are the card, and the card is where the reader started.
+    /// </summary>
+    /// <remarks>
+    /// An init property with a default rather than a seventh positional parameter, for
+    /// the reason <see cref="CardInfo.ColorIdentity"/> is one: the test doubles that
+    /// build a face have nothing to say about other faces, and a positional parameter
+    /// would make every one of them say so.
+    /// </remarks>
+    public IReadOnlyList<CardFace> OtherFaces { get; init; } = [];
 }
 
 /// <summary>Names <see cref="GameStateTracker.NameOf"/> falls back to when it cannot resolve.</summary>

@@ -5,7 +5,8 @@ namespace MtgaPbp.Render;
 
 public static class MarkdownRenderer
 {
-    public static string Render(Transcript t, bool manaLedger = false)
+    public static string Render(Transcript t, bool manaLedger = false,
+        IReadOnlyDictionary<string, CardFace>? faces = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# {TranscriptSummary.Title(t)}");
@@ -30,8 +31,15 @@ public static class MarkdownRenderer
             sb.AppendLine($"## {TranscriptSummary.DeckHeading(t)}").AppendLine();
             if (TranscriptSummary.CommanderLine(t) is { } commander)
                 sb.AppendLine(commander).AppendLine();
+            // A card's other faces two spaces in beneath it (#221), the same names
+            // under the same entries as the page, because FaceHomes decides for both.
+            var homes = FaceHomes.Of(t.Deck.Select(d => d.Name), faces);
             foreach (var card in t.Deck)
+            {
                 sb.AppendLine($"- {TranscriptSummary.DeckLine(card)}");
+                foreach (var other in homes.Under(card.Name))
+                    sb.AppendLine($"  - {other.Name}");
+            }
             sb.AppendLine().AppendLine($"*{TranscriptSummary.DeckNote}*");
         }
 
@@ -46,8 +54,13 @@ public static class MarkdownRenderer
             // deck: it was never revealed by a play, it was public from turn zero.
             if (TranscriptSummary.OpponentCommanderLine(t) is { } theirCommander)
                 sb.AppendLine(theirCommander).AppendLine();
+            var theirHomes = FaceHomes.Of(t.OpponentCards, faces);
             foreach (var name in t.OpponentCards)
+            {
                 sb.AppendLine($"- {name}");
+                foreach (var other in theirHomes.Under(name))
+                    sb.AppendLine($"  - {other.Name}");
+            }
             sb.AppendLine().AppendLine($"*{TranscriptSummary.OpponentNote}*");
         }
 

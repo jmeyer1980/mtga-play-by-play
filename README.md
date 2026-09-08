@@ -280,11 +280,15 @@ resting the pointer on a card name in any line shows that face beside it, and Es
 puts it away. That is a pointer convenience and nothing more. It adds nothing a screen
 reader hears, nothing the clipboard copies and nothing Ctrl+F matches, and a touch
 screen keeps the disclosures. Keyboard and screen-reader readers have the same faces
-in the two card lists; measured across the 1,516 matches in the archive on 2026-09-08,
-176 pages name a card the lists do not carry — nearly always the Adventure half of a
-listed card — and giving those a home in a list is
-[#221](https://github.com/jmeyer1980/mtga-play-by-play/issues/221), not a tab stop on
-every name.
+in the two card lists, and a card with more than one face — an Adventure creature, a
+Room, a double-faced card — lists its other faces beneath it, each with a disclosure of
+its own, so the Adventure the transcript says was cast has a home on the page even
+though the deck names the creature. That is a list entry rather than a tab stop on every
+name, by design ([#221](https://github.com/jmeyer1980/mtga-play-by-play/issues/221)).
+Measured across the 1,516 matches in the archive on 2026-09-08, it leaves 35 pages
+naming a card no list carries — token copies, which the opponent's list leaves out on
+purpose, and clones, which it knows by the name they copied
+([#223](https://github.com/jmeyer1980/mtga-play-by-play/issues/223)).
 
 ### Run it whenever, including mid-session
 
