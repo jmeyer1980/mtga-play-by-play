@@ -735,6 +735,7 @@ public static partial class GamePageRenderer
         @media (forced-colors:active){
           .sub,.board,.warn,.status,.back a,h2,h3,.note,.deck .unseen,.build,.pager .top{opacity:1}
           #names-toggle[aria-pressed=true]{background:Highlight;color:HighlightText}
+          .card:hover{background:Highlight;color:HighlightText}
         }
         """;
 

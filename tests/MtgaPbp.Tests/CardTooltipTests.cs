@@ -228,16 +228,37 @@ public class CardTooltipTests
         Assert.That(deck.Descendants("a").Any(a => a.Attribute("href")!.Value.Contains("scryfall")), Is.True);
     }
 
+    /// <summary>
+    /// WCAG 1.4.13, read off the script the way the rest of this suite reads scripts:
+    /// dismissible (Escape), hoverable (the only path that hides on leaving is deferred,
+    /// and arriving on the box cancels it) and persistent (that deferred hide is the
+    /// one timer in the script, so nothing closes the box on its own). The behaviour
+    /// itself was driven with a real pointer in a browser on the pull request.
+    /// </summary>
     [Test]
-    public void The_tooltip_is_pointer_only_and_dismissible()
+    public void The_tooltip_is_pointer_only_dismissible_hoverable_and_persistent()
     {
         var html = GamePageRenderer.Render(Named(), faces: Faces(Hare));
+        // The tooltip's script is the last one on the page, after the island.
+        var script = html[html.LastIndexOf("<script>", StringComparison.Ordinal)..];
 
-        Assert.That(html, Does.Contain("matchMedia('(hover: hover) and (pointer: fine)')"));
+        Assert.That(script, Does.Contain("matchMedia('(hover: hover) and (pointer: fine)')"));
         Assert.That(html, Does.Contain("@media (hover:hover) and (pointer:fine)"));
-        Assert.That(html, Does.Contain("e.key === 'Escape'"));
-        Assert.That(html, Does.Contain("tip.setAttribute('aria-hidden', 'true')"));
+        Assert.That(script, Does.Contain("tip.setAttribute('aria-hidden', 'true')"));
         Assert.That(html, Does.Contain(".controls,.back,.pager,#card-tip{display:none}"));
+
+        // Dismissible.
+        Assert.That(script, Does.Contain("if (e.key === 'Escape' && !tip.hidden) hide();"));
+
+        // Hoverable: leaving the name only schedules the hide, and entering the box
+        // cancels the schedule.
+        Assert.That(script, Does.Contain("closing = setTimeout(hide, 150);"));
+        Assert.That(script, Does.Contain("else if (tip.contains(e.target)) clearTimeout(closing);"));
+        Assert.That(script, Does.Contain("if (to && (tip.contains(to) || cardOf(to))) return;"));
+
+        // Persistent: that deferred hide is the only timer there is.
+        Assert.That(script.Split("setTimeout(").Length - 1, Is.EqualTo(1));
+        Assert.That(script, Does.Not.Contain("setInterval("));
     }
 
     /// <summary>
