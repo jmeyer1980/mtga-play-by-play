@@ -142,16 +142,28 @@ public sealed class TrayIcon : IDisposable
         }
     }
 
+    /// <summary>
+    /// Adds the icon without a tooltip, then gives it one — in that order on purpose.
+    /// </summary>
+    /// <remarks>
+    /// Measured on Windows 11 (build 26200) with UI Automation: the taskbar composes an
+    /// icon's accessible name as the tooltip it was ADDED with, a space, and the tooltip it
+    /// has NOW, and it keeps that first one for the icon's whole life. An icon added with
+    /// "no matches yet" and later told the score was read by NVDA as both sentences, one
+    /// after the other. Added with no tooltip at all, the name is a space and the live
+    /// tooltip, replaced on every change — which is also how Windows Security's own icon
+    /// reads. The gap between the two calls is microseconds; nobody meets an unnamed icon.
+    /// </remarks>
     private bool Add()
     {
-        var data = Data(NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP);
+        var data = Data(NIF_MESSAGE | NIF_ICON);
         data.uCallbackMessage = TrayEvents.WM_TRAY;
         data.hIcon = _icon;
-        data.szTip = _tip;
         if (!Shell_NotifyIcon(NIM_ADD, ref data)) return false;
         data.uTimeoutOrVersion = NOTIFYICON_VERSION_4;
         Shell_NotifyIcon(NIM_SETVERSION, ref data);
         _added = true;
+        SetTip(_tip);
         return true;
     }
 
