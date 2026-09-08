@@ -70,4 +70,24 @@ public class TrayEventsTests
         Assert.That(TrayEvents.Point(Pack(-100, 50)), Is.EqualTo((-100, 50)));
         Assert.That(TrayEvents.Point(Pack(2184, 1528)), Is.EqualTo((2184, 1528)));
     }
+
+    [Test]
+    public void Mouse_messages_are_the_0x0200_block_and_nothing_else()
+    {
+        Assert.That(TrayEvents.IsMouseMessage(0x0200 /* WM_MOUSEMOVE */), Is.True);
+        Assert.That(TrayEvents.IsMouseMessage(0x0205 /* WM_RBUTTONUP */), Is.True);
+        Assert.That(TrayEvents.IsMouseMessage(0x0209 /* WM_MBUTTONDBLCLK */), Is.True);
+        Assert.That(TrayEvents.IsMouseMessage(TrayEvents.WM_CONTEXTMENU), Is.False);
+        Assert.That(TrayEvents.IsMouseMessage(TrayEvents.NIN_SELECT), Is.False);
+        Assert.That(TrayEvents.IsMouseMessage(0x020A /* WM_MOUSEWHEEL */), Is.False);
+    }
+
+    [Test]
+    public void A_menu_from_the_mouse_opens_at_the_pointer_and_one_from_the_keyboard_at_the_icon()
+    {
+        // The anchor the shell sends for an icon behind the chevron is the chevron itself,
+        // which is where the menu opened until this test existed.
+        Assert.That(TrayEvents.MenuAt(fromMouse: true, cursor: (900, 700), anchor: (2187, 1528)), Is.EqualTo((900, 700)));
+        Assert.That(TrayEvents.MenuAt(fromMouse: false, cursor: (900, 700), anchor: (2187, 1528)), Is.EqualTo((2187, 1528)));
+    }
 }

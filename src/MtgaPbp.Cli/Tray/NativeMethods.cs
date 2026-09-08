@@ -56,7 +56,7 @@ internal static class NativeMethods
     public const uint NOTIFYICON_VERSION_4 = 4;
     public const uint NIIF_INFO = 1;
     public const uint MF_STRING = 0x0000, MF_SEPARATOR = 0x0800;
-    public const uint TPM_RIGHTBUTTON = 0x0002, TPM_RETURNCMD = 0x0100;
+    public const uint TPM_RIGHTBUTTON = 0x0002, TPM_BOTTOMALIGN = 0x0020, TPM_RETURNCMD = 0x0100;
     public const uint MB_OK = 0x0000, MB_ICONWARNING = 0x0030;
     public const uint WM_NULL = 0x0000, WM_DESTROY = 0x0002;
 
@@ -117,6 +117,9 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", ExactSpelling = true)]
     public static extern bool SetForegroundWindow(nint h);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    public static extern bool GetCursorPos(out POINT point);
 
     [DllImport("user32.dll", ExactSpelling = true)]
     public static extern bool DestroyIcon(nint h);

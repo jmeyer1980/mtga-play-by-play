@@ -31,6 +31,13 @@ public sealed class TrayIcon : IDisposable
     /// <summary><c>WM_APP + 2</c>; <c>WM_APP + 1</c> is the icon's own callback.</summary>
     private const uint WM_APP_QUIT = 0x8000 + 2;
 
+    /// <summary>
+    /// How recently a mouse message must have reached the icon for a context-menu request
+    /// to count as the mouse's. A right-click sends its button messages just before
+    /// <c>WM_CONTEXTMENU</c>; Shift+F10 and the Apps key send none.
+    /// </summary>
+    private const long MouseRecencyMs = 500;
+
     private readonly Action _openReport;
     private readonly Action _quit;
     private readonly ManualResetEventSlim _ready = new(false);
@@ -40,6 +47,7 @@ public sealed class TrayIcon : IDisposable
     private uint _taskbarCreated;
     private string _tip;
     private volatile bool _added;
+    private long _lastMouseTicks;    // Environment.TickCount64 of the last mouse message over the icon
     private Exception? _failure;
 
     private TrayIcon(string tip, Action openReport, Action quit)
@@ -141,16 +149,28 @@ public sealed class TrayIcon : IDisposable
         }
     }
 
+    /// <summary>
+    /// Adds the icon without a tooltip, then gives it one — in that order on purpose.
+    /// </summary>
+    /// <remarks>
+    /// Measured on Windows 11 (build 26200) with UI Automation: the taskbar composes an
+    /// icon's accessible name as the tooltip it was ADDED with, a space, and the tooltip it
+    /// has NOW, and it keeps that first one for the icon's whole life. An icon added with
+    /// "no matches yet" and later told the score was read by NVDA as both sentences, one
+    /// after the other. Added with no tooltip at all, the name is a space and the live
+    /// tooltip, replaced on every change — which is also how Windows Security's own icon
+    /// reads. The gap between the two calls is microseconds; nobody meets an unnamed icon.
+    /// </remarks>
     private bool Add()
     {
-        var data = Data(NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP);
+        var data = Data(NIF_MESSAGE | NIF_ICON);
         data.uCallbackMessage = TrayEvents.WM_TRAY;
         data.hIcon = _icon;
-        data.szTip = _tip;
         if (!Shell_NotifyIcon(NIM_ADD, ref data)) return false;
         data.uTimeoutOrVersion = NOTIFYICON_VERSION_4;
         Shell_NotifyIcon(NIM_SETVERSION, ref data);
         _added = true;
+        SetTip(_tip);
         return true;
     }
 
@@ -203,13 +223,21 @@ public sealed class TrayIcon : IDisposable
             return 0;
         }
 
+        if (msg == TrayEvents.WM_TRAY && TrayEvents.IsMouseMessage((uint)(lParam & 0xFFFF)))
+            _lastMouseTicks = Environment.TickCount64;
+
         switch (TrayEvents.For(msg, wParam, lParam, _taskbarCreated))
         {
             case TrayAction.OpenReport:
                 _openReport();
                 return 0;
             case TrayAction.ShowMenu:
-                ShowMenu(TrayEvents.Point(wParam));
+                // From the mouse only if the pointer can also be found: a failed
+                // GetCursorPos would otherwise open the menu at the top-left corner.
+                var cursor = default(POINT);
+                var fromMouse = Environment.TickCount64 - _lastMouseTicks < MouseRecencyMs
+                                && GetCursorPos(out cursor);
+                ShowMenu(TrayEvents.MenuAt(fromMouse, (cursor.X, cursor.Y), TrayEvents.Point(wParam)));
                 return 0;
             case TrayAction.Quit:
                 _quit();
@@ -235,7 +263,9 @@ public sealed class TrayIcon : IDisposable
             // Without the foreground call the menu stays up after the pointer leaves it
             // (Microsoft KB 135788); the WM_NULL afterwards is the same article's other half.
             SetForegroundWindow(_hwnd);
-            var chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, at.X, at.Y, _hwnd, 0);
+            // Bottom-aligned: the point is at taskbar height more often than not, and a menu
+            // that grows upward from it stays on the screen without the shell having to flip it.
+            var chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, at.X, at.Y, _hwnd, 0);
             PostMessage(_hwnd, WM_NULL, 0, 0);
             if (chosen != 0) PostMessage(_hwnd, TrayEvents.WM_COMMAND, chosen, 0);
         }
