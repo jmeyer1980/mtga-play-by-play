@@ -230,4 +230,27 @@ public class CardPeekTests
         Assert.That(GamePageRenderer.Render(t, faces: Faces(stranger)), Is.EqualTo(plain),
             "a face for a card not in this deck changes nothing");
     }
+
+    /// <summary>
+    /// The opponent's commander line reaches the clipboard the way it reaches the
+    /// export (#225). Two hand-copied blocks drifted — the deck's carried its
+    /// commander, the opponent's never did, for as long as it existed — so the script
+    /// has one function for both card sections, and this pins that there is one, that
+    /// both sections go through it, and that it reads the commander line.
+    /// </summary>
+    [Test]
+    public void The_copy_script_carries_both_commander_lines_through_one_function()
+    {
+        var t = RendererTests.Sample(deck: [new DeckEntry("Plains", 33, true)])
+            with
+        { OpponentCards = ["Mountain"], OpponentCommanders = ["Shuri, Wakandan Inventor"] };
+        var html = GamePageRenderer.Render(t);
+
+        Assert.That(html, Does.Contain("function cardSection(section)"));
+        Assert.That(html, Does.Contain("cardSection(document.getElementById('deck'))"));
+        Assert.That(html, Does.Contain("cardSection(document.getElementById('their-cards'))"));
+        Assert.That(html, Does.Contain("section.querySelector('.commander')"));
+        Assert.That(html, Does.Not.Contain("deck.querySelector('.commander')"),
+            "no second, hand-copied version of the section walk");
+    }
 }

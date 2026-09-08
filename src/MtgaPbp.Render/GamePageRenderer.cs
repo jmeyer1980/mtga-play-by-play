@@ -941,27 +941,23 @@ public static partial class GamePageRenderer
 
             // Copied whether or not it is expanded, and in the same place the markdown
             // export puts it: the two are meant to be the same document, and a reader
-            // who collapsed a list did not ask to leave it out of the paste.
-            var deck = document.getElementById('deck');
-            if (deck) {
-              out.push('## ' + textOf(deck.querySelector('summary')), '');
-              // The commander travels with the deck it commands, as a plain sentence
-              // rather than a list line — the same shape the markdown export writes.
-              var commander = deck.querySelector('.commander');
+            // who collapsed a list did not ask to leave it out of the paste. One
+            // function for both card sections, because the export writes them in one
+            // shape — heading, commander line, cards, note — and two hand-copied
+            // walks of that shape drifted: the opponent's went without its commander
+            // line for as long as it existed (#225). The commander travels as a plain
+            // sentence rather than a list line, as the export writes it, and the peek
+            // faces stay behind in both.
+            function cardSection(section) {
+              if (!section) return;
+              out.push('## ' + textOf(section.querySelector('summary')), '');
+              var commander = section.querySelector('.commander');
               if (commander) out.push(textOf(commander), '');
-              cardLines(deck);
-              out.push('', '*' + textOf(deck.querySelector('.note')) + '*', '');
+              cardLines(section);
+              out.push('', '*' + textOf(section.querySelector('.note')) + '*', '');
             }
-
-            // The opponent's section travels the same way the deck does, because the
-            // page, the export and the clipboard are one document — the peek faces
-            // stay behind, exactly as they do for the deck above.
-            var theirs = document.getElementById('their-cards');
-            if (theirs) {
-              out.push('## ' + textOf(theirs.querySelector('summary')), '');
-              cardLines(theirs);
-              out.push('', '*' + textOf(theirs.querySelector('.note')) + '*', '');
-            }
+            cardSection(document.getElementById('deck'));
+            cardSection(document.getElementById('their-cards'));
 
             // h3 as well as h2. A multi-game page puts its games at h2 and demotes the
             // openings and turns beneath them to h3, so selecting only h2 copied the
