@@ -207,7 +207,7 @@ public class CardPeekTests
         var t = RendererTests.Sample(deck: [new DeckEntry("Hare Apparent", 26, true)]);
         var html = GamePageRenderer.Render(t, faces: Faces(Hare));
 
-        Assert.That(html, Does.Contain("querySelectorAll('.vh, .face')"));
+        Assert.That(html, Does.Contain("querySelectorAll('.vh, .face, .faces')"));
     }
 
     /// <summary>

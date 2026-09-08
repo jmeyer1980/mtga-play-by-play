@@ -108,7 +108,11 @@ public static partial class GamePageRenderer
             if (commanderFaces.Count > 0)
             {
                 sb.Append($"""<details class="peek"><summary><span class="commander">{E(commander)}</span></summary>""");
-                foreach (var f in commanderFaces) AppendFace(sb, f);
+                foreach (var f in commanderFaces)
+                {
+                    AppendFace(sb, f);
+                    foreach (var other in f.OtherFaces) AppendPeek(sb, other);
+                }
                 sb.Append("</details>");
             }
             else
@@ -119,6 +123,7 @@ public static partial class GamePageRenderer
 
         sb.Append("""<ul class="cards" role="list">""");
 
+        var homes = FaceHomes.Of(t.Deck.Select(d => d.Name), faces);
         foreach (var card in t.Deck)
         {
             // "4×" is read as "4" by synthesisers that skip U+00D7, which next to a
@@ -130,7 +135,7 @@ public static partial class GamePageRenderer
             var seen = card.Seen ? "" : $"""{Spoken(" · ", ", ")}not seen""";
             var entry = $"""<span aria-hidden="true">{card.Count}×</span><span class="vh">{card.Count} {copies} of</span> {E(card.Name)}{seen}""";
             AppendCardLi(sb, card.Seen ? "seen" : "unseen",
-                entry, faces?.GetValueOrDefault(card.Name));
+                entry, faces?.GetValueOrDefault(card.Name), homes.Under(card.Name));
         }
 
         sb.Append($"""
@@ -168,7 +173,11 @@ public static partial class GamePageRenderer
             if (commanderFaces.Count > 0)
             {
                 sb.Append($"""<details class="peek"><summary><span class="commander">{E(theirCommander)}</span></summary>""");
-                foreach (var f in commanderFaces) AppendFace(sb, f);
+                foreach (var f in commanderFaces)
+                {
+                    AppendFace(sb, f);
+                    foreach (var other in f.OtherFaces) AppendPeek(sb, other);
+                }
                 sb.Append("</details>");
             }
             else
@@ -178,8 +187,9 @@ public static partial class GamePageRenderer
         }
 
         sb.Append("""<ul class="cards" role="list">""");
+        var homes = FaceHomes.Of(t.OpponentCards, faces);
         foreach (var name in t.OpponentCards)
-            AppendCardLi(sb, null, E(name), faces?.GetValueOrDefault(name));
+            AppendCardLi(sb, null, E(name), faces?.GetValueOrDefault(name), homes.Under(name));
         sb.Append($"""
             </ul>
             <p class="note">{E(TranscriptSummary.OpponentNote)}</p>
@@ -194,19 +204,54 @@ public static partial class GamePageRenderer
     /// renders as it always has, which is also what keeps a build without a card
     /// database byte-identical to before.
     /// </summary>
-    private static void AppendCardLi(StringBuilder sb, string? cls, string entry, CardFace? face)
+    /// <remarks>
+    /// The card's other faces (#221) — the Adventure a creature carries, a Room's other
+    /// door, the back of a double-faced card — follow the entry as a list of their
+    /// own, one step in, each with its own peek. Under the entry rather than in it:
+    /// the entry's line, its count and its "not seen" mark are facts about the card,
+    /// said once; the nested line is the face's name and nothing else. And a list
+    /// rather than a face inside the peek, because it has to be there at rest — a
+    /// name the transcript says should be one Ctrl+F, or one list-item quick key,
+    /// away, not behind a disclosure the reader has no reason to open. Which faces go
+    /// under which entry is <see cref="FaceHomes"/>'s call, so the export agrees.
+    /// </remarks>
+    private static void AppendCardLi(StringBuilder sb, string? cls, string entry, CardFace? face,
+        IReadOnlyList<CardFace> under)
     {
-        var open = cls is null ? "<li>" : $"""<li class="{cls}">""";
+        sb.Append(cls is null ? "<li>" : $"""<li class="{cls}">""");
         if (face is { } f)
         {
-            sb.Append($"""{open}<details class="peek"><summary>{entry}</summary>""");
+            sb.Append($"""<details class="peek"><summary>{entry}</summary>""");
             AppendFace(sb, f);
-            sb.Append("</details></li>");
+            sb.Append("</details>");
         }
         else
         {
-            sb.Append($"{open}{entry}</li>");
+            sb.Append(entry);
         }
+        if (under.Count > 0)
+        {
+            sb.Append("""<ul class="faces" role="list">""");
+            foreach (var other in under)
+            {
+                sb.Append("<li>");
+                AppendPeek(sb, other);
+                sb.Append("</li>");
+            }
+            sb.Append("</ul>");
+        }
+        sb.Append("</li>");
+    }
+
+    /// <summary>
+    /// A face behind its own name: the shape an other face takes wherever it lands,
+    /// under a list entry or inside a commander's peek.
+    /// </summary>
+    private static void AppendPeek(StringBuilder sb, CardFace face)
+    {
+        sb.Append($"""<details class="peek"><summary>{E(face.Name)}</summary>""");
+        AppendFace(sb, face);
+        sb.Append("</details>");
     }
 
     /// <summary>
@@ -675,6 +720,11 @@ public static partial class GamePageRenderer
         .deck .cards li{margin:.1rem 0}
         .deck .unseen{opacity:.65}
         .peek summary{cursor:pointer}
+        /* A card's other faces (#221), under the card they belong to: a list of their
+           own, one step in, each with its own peek. A commander has no list to sit
+           in, so its other face is a peek inside the commander's, one step in too. */
+        .deck .faces{list-style:none;margin:.1rem 0 .3rem;padding:0 0 0 1.5rem}
+        .peek .peek{margin-left:1.1rem}
         .face{margin:.4rem 0 .6rem 1.1rem;padding:.5rem .7rem;max-width:24rem;
               border:1px solid rgba(128,128,128,.45);border-radius:.4rem;
               background:rgba(128,128,128,.08)}
@@ -838,10 +888,12 @@ public static partial class GamePageRenderer
           // "×3" the glyph shows, so pasted text matches the markdown export. Card
           // faces are dropped the same way: textContent reads through a closed
           // details, so without this a copied decklist carried every face and its
-          // Scryfall link — text the markdown export has never contained.
+          // Scryfall link — text the markdown export has never contained. So is the
+          // list of a card's other faces (#221): those are lines of their own, and an
+          // entry's text has to stop where they start.
           function textOf(node) {
             var clone = node.cloneNode(true);
-            var hidden = clone.querySelectorAll('.vh, .face');
+            var hidden = clone.querySelectorAll('.vh, .face, .faces');
             for (var i = 0; i < hidden.length; i++) {
               hidden[i].parentNode.removeChild(hidden[i]);
             }
@@ -861,6 +913,17 @@ public static partial class GamePageRenderer
             // of those is a copied transcript that misleads.
             var warns = document.querySelectorAll('.warn');
             var out = [];
+
+            // One line per card, then the card's other faces two spaces in beneath
+            // it — the shape the markdown export writes (#221).
+            function cardLines(section) {
+              var entries = section.querySelectorAll('.cards > li');
+              for (var c = 0; c < entries.length; c++) {
+                out.push('- ' + textOf(entries[c]));
+                var faces = entries[c].querySelectorAll('.faces li');
+                for (var f = 0; f < faces.length; f++) out.push('  - ' + textOf(faces[f]));
+              }
+            }
 
             // The only line of a transcript that names either player. The body says
             // "You" and "Opponent" already — checked across 400 archived transcripts,
@@ -886,8 +949,7 @@ public static partial class GamePageRenderer
               // rather than a list line — the same shape the markdown export writes.
               var commander = deck.querySelector('.commander');
               if (commander) out.push(textOf(commander), '');
-              var cards = deck.querySelectorAll('li');
-              for (var c = 0; c < cards.length; c++) out.push('- ' + textOf(cards[c]));
+              cardLines(deck);
               out.push('', '*' + textOf(deck.querySelector('.note')) + '*', '');
             }
 
@@ -897,8 +959,7 @@ public static partial class GamePageRenderer
             var theirs = document.getElementById('their-cards');
             if (theirs) {
               out.push('## ' + textOf(theirs.querySelector('summary')), '');
-              var seen = theirs.querySelectorAll('li');
-              for (var s = 0; s < seen.length; s++) out.push('- ' + textOf(seen[s]));
+              cardLines(theirs);
               out.push('', '*' + textOf(theirs.querySelector('.note')) + '*', '');
             }
 
