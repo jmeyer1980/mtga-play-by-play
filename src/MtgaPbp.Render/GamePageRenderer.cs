@@ -989,7 +989,9 @@ public static partial class GamePageRenderer
           var island = document.getElementById('card-faces');
           if (!island || !island.content) return;
 
-          var faces = {};
+          // Keyed by card name, so a null prototype: a plain object answers to
+          // "constructor" and "__proto__" whether or not they are in the island.
+          var faces = Object.create(null);
           var each = island.content.querySelectorAll('[data-card]');
           for (var i = 0; i < each.length; i++) {
             faces[each[i].getAttribute('data-card')] = each[i];
