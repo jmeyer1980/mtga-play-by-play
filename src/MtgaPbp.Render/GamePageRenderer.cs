@@ -424,9 +424,9 @@ public static partial class GamePageRenderer
 
         // Names are found in the raw text, and each run of prose between them is
         // encoded and given its twins on its own — so the statline and count patterns
-        // never see the inside of a span, neither the name nor the attribute that
-        // repeats it, and a name that is not there after encoding (an apostrophe is
-        // "&#39;" by then) is never searched for. The span is the last thing added:
+        // never see the inside of a span, and a name that is not there after encoding
+        // (an apostrophe is "&#39;" by then) is never searched for. The span is the
+        // last thing added:
         // the crowd prefix, the trailing run and the separators have all had their
         // turn by the time a segment reaches here, which is what keeps a span from
         // being sliced through a name (#201).
