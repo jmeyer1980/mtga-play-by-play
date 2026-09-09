@@ -97,8 +97,22 @@ public static class Program
     public static string[] UnknownOptions(string[] args) =>
         args.Where(a => a.StartsWith("--", StringComparison.Ordinal) &&
                         !Options.Contains(a, StringComparer.Ordinal) &&
-                        !Commands.Contains(a.TrimStart('-'), StringComparer.Ordinal))
+                        DashedCommand(a) is null)
             .ToArray();
+
+    /// <summary>
+    /// The command an argument names in its dashed spelling — <c>--watch</c> for
+    /// <c>watch</c> — or null when it names none.
+    /// </summary>
+    /// <remarks>
+    /// Exactly two dashes. Trimming every dash read <c>---watch</c> as the command
+    /// too, so a three-dash typo picked a command silently instead of being named as
+    /// the unknown option it is (found in review). Shared with <see cref="Parse"/> so
+    /// the two cannot disagree about what counts as a command.
+    /// </remarks>
+    private static string? DashedCommand(string arg) =>
+        arg.StartsWith("--", StringComparison.Ordinal) &&
+        Commands.Contains(arg[2..], StringComparer.Ordinal) ? arg[2..] : null;
 
     /// <summary>
     /// Splits the arguments into a command and its operands.
@@ -107,6 +121,8 @@ public static class Program
     /// Tolerates <c>--watch</c> for <c>watch</c>: the dashed form is a natural thing
     /// to type, and it used to be discarded as an unknown option, which ran a plain
     /// capture-and-build instead and looked exactly like watch starting and exiting.
+    /// Only that exact spelling, though — <c>---watch</c> is an unknown option, and
+    /// is now said to be one (see <see cref="UnknownOptions"/>).
     /// The command and its operands have to be worked out together, because with
     /// <c>--watch 8793</c> the port is the first positional argument rather than the
     /// second.
@@ -120,8 +136,7 @@ public static class Program
         if (positional.Length > 0 && Commands.Contains(positional[0], StringComparer.Ordinal))
             return (positional[0], positional[1..]);
 
-        var dashed = args.Select(a => a.TrimStart('-'))
-                         .FirstOrDefault(a => Commands.Contains(a, StringComparer.Ordinal));
+        var dashed = args.Select(DashedCommand).FirstOrDefault(c => c is not null);
         if (dashed is not null) return (dashed, positional);
 
         // An unrecognised word still goes to the switch, which answers with usage.

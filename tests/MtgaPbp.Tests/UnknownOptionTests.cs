@@ -44,4 +44,37 @@ public class UnknownOptionTests
     [Test]
     public void Every_recognised_option_passes() =>
         Assert.That(Program.UnknownOptions(["build", "--open", "--rebuild", "--prune", "--tray"]), Is.Empty);
+
+    [Test]
+    public void Three_dashes_before_a_command_are_a_typo_not_a_command() =>
+        Assert.That(Program.UnknownOptions(["---watch"]), Is.EqualTo(new[] { "---watch" }));
+
+    [Test]
+    public void A_three_dash_command_is_reported_rather_than_run()
+    {
+        var port = FreshPort().ToString();
+        var stderr = Run(["---stop", port]);
+        Assert.That(stderr, Does.Contain("warning: ignoring unknown option ---stop"));
+        Assert.That(stderr, Does.Not.Contain("no watch is running"), "stop must not have run");
+    }
+
+    [Test]
+    public void The_two_dash_spelling_of_a_command_still_runs_it()
+    {
+        var port = FreshPort().ToString();
+        var stderr = Run(["--stop", port]);
+        Assert.That(stderr, Does.Contain($"no watch is running on port {port}"));
+        Assert.That(stderr, Does.Not.Contain("warning:"));
+    }
+
+    /// <summary>Main's stderr for one command line.</summary>
+    private static string Run(string[] args)
+    {
+        var stderr = new StringWriter();
+        var kept = Console.Error;
+        Console.SetError(stderr);
+        try { Program.Main(args); }
+        finally { Console.SetError(kept); }
+        return stderr.ToString();
+    }
 }
