@@ -137,10 +137,10 @@ public sealed class Config
             if (loaded.OpenAfterBuild is { } open) cfg.OpenAfterBuild = open;
             if (loaded.ManaLedger is { } ledger) cfg.ManaLedger = ledger;
 
-            // The one setting whose default is true, which is why it is stated the same
+            // The settings whose default is true, which is why they are stated the same
             // way rather than as "if it says true". A layer has to be able to say false,
-            // or switching the suggestion off would be undone by the next release
-            // rewriting the shipped file.
+            // or switching one off would be undone by the next release rewriting the
+            // shipped file.
             if (loaded.SuggestDeckRotation is { } rotate) cfg.SuggestDeckRotation = rotate;
             if (loaded.WhyFiles is { } why) cfg.WhyFiles = why;
 
