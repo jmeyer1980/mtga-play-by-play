@@ -53,9 +53,9 @@ public class BuildCacheTests
 
     private CachedMatch? Ask(BuildCache c, long size = Size, long modified = Modified,
                              Neighbours? around = null, string cardDb = CardDb,
-                             string? page = null, string? text = null) =>
+                             string? page = null, string? text = null, string? why = null) =>
         c.Reusable("m1", size, modified, around ?? Around,
-                   page ?? _page, text ?? _text, cardDb);
+                   page ?? _page, text ?? _text, cardDb, why);
 
     [Test]
     public void Nothing_moved_means_the_match_can_be_left_alone()
@@ -108,6 +108,24 @@ public class BuildCacheTests
         File.WriteAllText(_page, "<html></html>");
         File.Delete(_text);
         Assert.That(Ask(cache), Is.Null, "the markdown counts as much as the page");
+    }
+
+    /// <summary>
+    /// The third file is asked about only when the build means to write one (#232), so
+    /// switching <c>WhyFiles</c> on fills the folder on the next build without
+    /// <c>--rebuild</c>, and switching it off does not make every match look stale.
+    /// </summary>
+    [Test]
+    public void A_missing_why_file_is_rebuilt_only_when_one_is_expected()
+    {
+        var cache = Saved();
+        var why = Path.Combine(_out, "m1.txt");
+
+        Assert.That(Ask(cache, why: why), Is.Null, "expected and absent");
+        Assert.That(Ask(cache), Is.Not.Null, "not expected, so not looked for");
+
+        File.WriteAllText(why, "=== turn 1: what the log says ===");
+        Assert.That(Ask(cache, why: why), Is.Not.Null, "expected and present");
     }
 
     [Test]

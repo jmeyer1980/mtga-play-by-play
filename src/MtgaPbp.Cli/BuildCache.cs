@@ -126,9 +126,16 @@ public sealed class BuildCache
     /// The card database's own stamp. Names, faces and ability text all come from it, so
     /// a database that has been updated can change a page whose match never moved.
     /// </param>
+    /// <param name="whyPath">
+    /// The match's why dump, when the build means to write one, or null when it does
+    /// not (#232). Asked about only in the first case, so switching the files on fills
+    /// the folder on the next build without <c>--rebuild</c>, and switching them off
+    /// does not make every match look stale.
+    /// </param>
     public CachedMatch? Reusable(
         string matchId, long rawSize, long rawModifiedMs,
-        Neighbours neighbours, string gamePath, string textPath, string cardDb)
+        Neighbours neighbours, string gamePath, string textPath, string cardDb,
+        string? whyPath = null)
     {
         // Compared per match rather than at load, so the rule sits with the rest of
         // them and a test can reach it.
@@ -147,6 +154,7 @@ public sealed class BuildCache
         // Cheap, and the only thing standing between a deleted output file and a report
         // that links to a page which is not there.
         if (!File.Exists(gamePath) || !File.Exists(textPath)) return null;
+        if (whyPath is not null && !File.Exists(whyPath)) return null;
 
         return hit;
     }

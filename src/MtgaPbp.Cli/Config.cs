@@ -39,6 +39,21 @@ public sealed class Config
     public bool SuggestDeckRotation { get; set; } = true;
 
     /// <summary>
+    /// Write <c>out/why/&lt;matchId&gt;.txt</c> beside each match's page and markdown:
+    /// every turn's transcript lines, what the game asked, and the raw annotations
+    /// behind them with ids resolved — what <c>mtga-pbp why</c> shows for the whole
+    /// match. On by default; set it to false to stop writing them.
+    /// </summary>
+    /// <remarks>
+    /// A build already holds the match open to write the other two files, and the one
+    /// time this was done from outside — a shell loop over <c>why</c>, one process per
+    /// match — it took 35 minutes, missed every Bo3, refused every match with a gap in
+    /// its turn numbers, and left the files in three encodings (#232). Off stops the
+    /// writing and nothing else: files already written stay where they are.
+    /// </remarks>
+    public bool WhyFiles { get; set; } = true;
+
+    /// <summary>
     /// Keep at most this many matches, dropping the oldest as new ones arrive.
     /// Favourites never count against it and are never dropped. Zero means no limit,
     /// which is the default — deleting someone's match history on the first run after
@@ -127,6 +142,7 @@ public sealed class Config
             // or switching the suggestion off would be undone by the next release
             // rewriting the shipped file.
             if (loaded.SuggestDeckRotation is { } rotate) cfg.SuggestDeckRotation = rotate;
+            if (loaded.WhyFiles is { } why) cfg.WhyFiles = why;
 
             // Applied whenever the key is present, zero included. Zero is this
             // setting's way of saying "no limit", so a layer that could not state it
@@ -160,6 +176,7 @@ public sealed class Config
         public bool? OpenAfterBuild { get; set; }
         public bool? ManaLedger { get; set; }
         public bool? SuggestDeckRotation { get; set; }
+        public bool? WhyFiles { get; set; }
         public int? MaxArchivedMatches { get; set; }
     }
 }

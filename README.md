@@ -71,7 +71,7 @@ cd C:\path\to\mtga-pbp
 | `.\mtga-pbp.exe build` | re-derive the whole site from the archive |
 | `.\mtga-pbp.exe stats` | unhandled annotation types and unresolved cards |
 | `.\mtga-pbp.exe collection <file>` | import a collection exported from elsewhere |
-| `.\mtga-pbp.exe why <matchId> [turns]` | show turns beside what the game asked you and the log behind them — one (`13`), several (`13 14`, or `13,14` as PowerShell leaves it) or a range (`13-15`) |
+| `.\mtga-pbp.exe why <matchId> [turns]` | show turns beside what the game asked you and the log behind them — one (`13`), several (`13 14`, or `13,14` as PowerShell leaves it) or a range (`13-15`); `build` already writes the whole match this way to `out/why/<matchId>.txt` |
 | `.\mtga-pbp.exe keep <matchId>` | never prune this match |
 | `.\mtga-pbp.exe unkeep <matchId>` | allow it to be pruned again |
 
@@ -166,7 +166,7 @@ the rest alone, so capturing one match does not re-parse the whole archive. Meas
 1,223 matches: **32.4s cold, 0.69s warm**.
 
 A match is rebuilt when its archived slice changes, when the links to the matches either
-side of it change, when its page or markdown is missing, when Arena's card database is
+side of it change, when its page, markdown or why file is missing, when Arena's card database is
 updated, or when you upgrade the tool — a new build throws the whole cache away, so a
 parser fix reaches every match you have ever played, which is the guarantee the archive
 exists for.
@@ -181,7 +181,7 @@ mtga-pbp build --rebuild
 ### Keeping the archive from growing forever
 
 Set `"MaxArchivedMatches": 60` in `mtga-pbp.json` and the oldest match is dropped
-whenever a new one arrives, deleting its archive, page and markdown together.
+whenever a new one arrives, deleting its archive, page, markdown and why file together.
 
 **Starred matches never count against the cap and are never deleted** — a cap of 60
 with 70 kept matches keeps all 70. The cap defaults to `0`, meaning no limit, so
@@ -232,6 +232,7 @@ archive/inventory.json           gold, gems, vault and wildcards, appended when 
 out/index.html                   all games, most recent first, searchable
 out/games/<matchId>.html         one self-contained page per game
 out/text/<matchId>.md            markdown, for pasting into chat
+out/why/<matchId>.txt            every turn beside the raw log behind it, ids resolved
 ```
 
 Open `out/index.html` in any browser. Search filters on opponent, event, result,
@@ -426,6 +427,16 @@ One line per player per phase, naming the colours and the permanents that produc
 them, so a devotion turn or a colour screw reads at a glance. Off by default — the
 archive holds some 57,000 mana payments, and on every phase of every game that is a
 diagnostic view rather than a reading one.
+
+`"WhyFiles": false` stops `build` writing `out/why/<matchId>.txt`. That file is the
+whole match as `why` shows it — each turn's transcript lines, what the game asked you,
+and the raw annotations behind them with ids resolved — written beside the page and
+the markdown from the same pass, so every match has one the moment it is captured and
+a parser fix reaches all of them on the next build. On by default; about 85 KB per
+match, and about a third on top of a full rebuild's time (measured at 1,554 matches:
+39.6 s without, 53.1 s with). Switching it off stops the writing and nothing else — files already written
+stay where they are, and switching it back on fills in the missing ones on the next
+build without `--rebuild`.
 
 ## What it can and cannot tell you
 

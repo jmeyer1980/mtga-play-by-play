@@ -1,3 +1,4 @@
+using System.Text;
 using MtgaPbp.Core;
 using MtgaPbp.Render;
 
@@ -139,7 +140,7 @@ public static class Why
             return plan.ExitCode;
         }
 
-        var games = transcript.Games.Select(g => g.Number).DefaultIfEmpty(1).ToList();
+        var games = Games(transcript);
         var reached = headers.Select(l => (l.Turn, l.Game)).ToHashSet();
 
         // Turn numbers are per game, so a turn the match reached is not a turn every
@@ -151,6 +152,60 @@ public static class Why
                        where games.Count == 1 || reached.Contains((turn, game))
                        select (Turn: turn, Game: game)).ToList();
 
+        foreach (var line in Sections(lines, raw, cards, showing, numbered: games.Count > 1))
+            Console.WriteLine(line);
+
+        return 0;
+    }
+
+    /// <summary>
+    /// The whole match as <c>why</c> would show it, for the file <c>build</c> writes
+    /// beside each page and markdown (#232).
+    /// </summary>
+    /// <remarks>
+    /// Every turn the match reached, in the order the transcript tells them — a Bo3
+    /// reads game one through, then game two — rather than the turn-major order the
+    /// console uses when handed a range, because a file is read top to bottom and the
+    /// console answers a question about particular turns. The sections themselves are
+    /// the console's, from the same writer, so the two cannot say different things
+    /// about a turn.
+    /// <para>
+    /// Opens with the title and subtitle and closes with the build stamp, like the
+    /// markdown: a file found on its own a month later has to say which match it is
+    /// and which build of the parser produced it.
+    /// </para>
+    /// </remarks>
+    public static string Export(
+        Transcript transcript, IReadOnlyList<string> raw, ICardDb cards, bool manaLedger)
+    {
+        var lines = Narrator.Narrate(transcript, Density.Verbose, manaLedger);
+        var reached = lines.Where(l => l.IsTurnHeader && l.Turn > 0)
+                           .Select(l => (Turn: l.Turn, Game: l.Game))
+                           .ToList();
+
+        var sb = new StringBuilder();
+        sb.Append(TranscriptSummary.Title(transcript)).Append('\n');
+        sb.Append(TranscriptSummary.Subtitle(transcript)).Append('\n');
+        sb.Append('\n');
+        foreach (var line in Sections(lines, raw, cards, reached, numbered: Games(transcript).Count > 1))
+            sb.Append(line).Append('\n');
+        sb.Append(BuildInfo.Line).Append('\n');
+        return sb.ToString();
+    }
+
+    /// <summary>The games a match has, or one when it recorded none.</summary>
+    private static List<int> Games(Transcript transcript) =>
+        transcript.Games.Select(g => g.Number).DefaultIfEmpty(1).ToList();
+
+    /// <summary>
+    /// The three sections of each turn asked for — what the transcript says, what the
+    /// game asked, what the log says — as lines, for the console and the file alike.
+    /// </summary>
+    /// <param name="numbered">Whether to say which game a turn belongs to.</param>
+    private static IEnumerable<string> Sections(
+        IReadOnlyList<Line> lines, IReadOnlyList<string> raw, ICardDb cards,
+        IReadOnlyList<(int Turn, int Game)> showing, bool numbered)
+    {
         // Every section asked for, from one walk of the archived match. Asking a turn
         // at a time re-parsed the whole log once per turn, which a whole-match dump
         // paid for in full.
@@ -158,10 +213,10 @@ public static class Why
 
         foreach (var (turn, game) in showing)
         {
-            var of = games.Count > 1 ? $" of game {game}" : "";
-            Console.WriteLine($"=== turn {turn}{of}: what the transcript says ===");
+            var of = numbered ? $" of game {game}" : "";
+            yield return $"=== turn {turn}{of}: what the transcript says ===";
             foreach (var l in lines.Where(l => l.Turn == turn && l.Game == game))
-                Console.WriteLine($"  {(l.IsTurnHeader ? "" : "- ")}{l.Text}");
+                yield return $"  {(l.IsTurnHeader ? "" : "- ")}{l.Text}";
 
             // Between the two, and only when there is something to say. It answers a
             // different question from either neighbour — not what happened but what the
@@ -171,19 +226,17 @@ public static class Why
             var asked = dump[(turn, game)].Negotiations;
             if (asked.Count > 0)
             {
-                Console.WriteLine();
-                Console.WriteLine($"=== turn {turn}{of}: what the game asked you ===");
-                foreach (var l in asked) Console.WriteLine($"  {l}");
+                yield return "";
+                yield return $"=== turn {turn}{of}: what the game asked you ===";
+                foreach (var l in asked) yield return $"  {l}";
             }
 
-            Console.WriteLine();
-            Console.WriteLine($"=== turn {turn}{of}: what the log says ===");
+            yield return "";
+            yield return $"=== turn {turn}{of}: what the log says ===";
             foreach (var l in dump[(turn, game)].Annotations)
-                Console.WriteLine($"  {l}");
-            Console.WriteLine();
+                yield return $"  {l}";
+            yield return "";
         }
-
-        return 0;
     }
 
     /// <summary>
