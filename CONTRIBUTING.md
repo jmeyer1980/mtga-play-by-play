@@ -53,7 +53,7 @@ errors. `dotnet format` is the one people forget; run it before pushing.
 Capture and rendering are deliberately separate:
 
 ```
-Player.log  →  archive/raw/<matchId>.json.gz  →  out/*.html, out/text/*.md
+Player.log  →  archive/raw/<matchId>.json.gz  →  out/*.html, out/text/*.md, out/why/*.txt
 ```
 
 The archive is the source of truth and is never edited. Everything downstream is

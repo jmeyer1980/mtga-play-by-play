@@ -139,6 +139,9 @@ public static class Program
             Set "OpenAfterBuild": true in mtga-pbp.json to always open the report —
             useful when launching by double-click, where this window closes too fast
             to read the path below.
+
+            Set "WhyFiles": false in mtga-pbp.json to stop writing out/why/<matchId>.txt,
+            the whole match as `why` shows it, beside each page and markdown.
             """);
         return 1;
     }
@@ -414,6 +417,7 @@ public static class Program
             {
                 Path.Combine(cfg.OutputDir, "games", $"{id}.html"),
                 Path.Combine(cfg.OutputDir, "text", $"{id}.md"),
+                Path.Combine(cfg.OutputDir, "why", $"{id}.txt"),
             })
                 if (File.Exists(path)) File.Delete(path);
         }
@@ -1001,8 +1005,10 @@ public static class Program
 
         var gamesDir = Path.Combine(cfg.OutputDir, "games");
         var textDir = Path.Combine(cfg.OutputDir, "text");
+        var whyDir = Path.Combine(cfg.OutputDir, "why");
         Directory.CreateDirectory(gamesDir);
         Directory.CreateDirectory(textDir);
+        if (cfg.WhyFiles) Directory.CreateDirectory(whyDir);
 
         var extractor = new EventExtractor(cards);
         var summaries = new List<MatchSummary>();
@@ -1057,6 +1063,9 @@ public static class Program
         {
             var gamePath = Path.Combine(gamesDir, $"{matchId}.html");
             var textPath = Path.Combine(textDir, $"{matchId}.md");
+            // Null when the switch is off, which is also how the cache is told not to
+            // look for it (#232).
+            var whyPath = cfg.WhyFiles ? Path.Combine(whyDir, $"{matchId}.txt") : null;
 
             // Read once. Every Meta call takes the ledger lock now (#146), and this
             // loop wanted the same entry twice — for the row's star and for the file
@@ -1068,7 +1077,7 @@ public static class Program
             // about a match that changes without the match changing.
             if (archive.RawStamp(matchId) is { } raw &&
                 cache.Reusable(matchId, raw.Size, raw.ModifiedMs,
-                               neighbours, gamePath, textPath, cardStamp) is { } hit)
+                               neighbours, gamePath, textPath, cardStamp, whyPath) is { } hit)
             {
                 summaries.Add(hit.Summary with { Favorite = meta?.Favorite ?? false });
                 foreach (var c in hit.Unresolved) unresolved.Add(c);
@@ -1120,9 +1129,16 @@ public static class Program
                 GamePageRenderer.Render(transcript, neighbours, faces, cfg.ManaLedger));
             File.WriteAllText(textPath, MarkdownRenderer.Render(transcript, cfg.ManaLedger, faces));
 
-            // Both files carry the match's time rather than the build's, so that a
+            // The whole match as `why` shows it, from the transcript already in hand
+            // and the raw lines already read — the one place this can be written
+            // without paying the card database and the parse again per match (#232).
+            if (whyPath is not null)
+                File.WriteAllText(whyPath, Why.Export(transcript, lines, cards, cfg.ManaLedger));
+
+            // Every file carries the match's time rather than the build's, so that a
             // directory of them sorts the way the report does — see OutputStamp (#147).
-            OutputStamp.MatchTime(meta?.StartedAtMs ?? 0, gamePath, textPath);
+            OutputStamp.MatchTime(meta?.StartedAtMs ?? 0,
+                whyPath is null ? [gamePath, textPath] : [gamePath, textPath, whyPath]);
 
             var summary = IndexRenderer.Summarize(transcript);
             summaries.Add(summary with { Favorite = meta?.Favorite ?? false });

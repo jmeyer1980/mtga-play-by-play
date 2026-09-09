@@ -209,6 +209,31 @@ public class ConfigTests
     }
 
     [Test]
+    public void Why_files_are_written_until_the_user_says_otherwise()
+    {
+        Assert.That(Config.Default().WhyFiles, Is.True);
+
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile), """{ "WhyFiles": false }""");
+        Assert.That(Config.Load(_dir).WhyFiles, Is.False);
+    }
+
+    /// <summary>
+    /// The same rule as the rotation line, for the same reason: the shipped layer is
+    /// rewritten by every release, so a layer has to be able to say false or the
+    /// user's choice would last exactly one upgrade. The shipped file here says true
+    /// outright, so the test is of the precedence and not of an absent key.
+    /// </summary>
+    [Test]
+    public void An_upgrade_cannot_switch_why_files_back_on()
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile), """{ "WhyFiles": false }""");
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "OpenAfterBuild": true, "WhyFiles": true }""");
+
+        Assert.That(Config.Load(_dir).WhyFiles, Is.False);
+    }
+
+    [Test]
     public void Load_keeps_defaults_for_fields_the_config_omits()
     {
         File.WriteAllText(Path.Combine(_dir, "mtga-pbp.json"), """
