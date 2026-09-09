@@ -220,13 +220,15 @@ public class ConfigTests
     /// <summary>
     /// The same rule as the rotation line, for the same reason: the shipped layer is
     /// rewritten by every release, so a layer has to be able to say false or the
-    /// user's choice would last exactly one upgrade.
+    /// user's choice would last exactly one upgrade. The shipped file here says true
+    /// outright, so the test is of the precedence and not of an absent key.
     /// </summary>
     [Test]
     public void An_upgrade_cannot_switch_why_files_back_on()
     {
         File.WriteAllText(Path.Combine(_dir, Config.UserFile), """{ "WhyFiles": false }""");
-        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile), """{ "OpenAfterBuild": true }""");
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "OpenAfterBuild": true, "WhyFiles": true }""");
 
         Assert.That(Config.Load(_dir).WhyFiles, Is.False);
     }

@@ -71,7 +71,7 @@ cd C:\path\to\mtga-pbp
 | `.\mtga-pbp.exe build` | re-derive the whole site from the archive |
 | `.\mtga-pbp.exe stats` | unhandled annotation types and unresolved cards |
 | `.\mtga-pbp.exe collection <file>` | import a collection exported from elsewhere |
-| `.\mtga-pbp.exe why <matchId> [turns]` | show turns beside what the game asked you and the log behind them — one (`13`), several (`13 14`, or `13,14` as PowerShell leaves it) or a range (`13-15`); `build` already writes the whole match this way to `out/why/<matchId>.txt` |
+| `.\mtga-pbp.exe why <matchId> [turns]` | show turns beside what the game asked you and the log behind them — one (`13`), several (`13 14`, or `13,14` as PowerShell leaves it) or a range (`13-15`); unless `"WhyFiles"` is off, `build` writes the whole match this way to `out/why/<matchId>.txt` |
 | `.\mtga-pbp.exe keep <matchId>` | never prune this match |
 | `.\mtga-pbp.exe unkeep <matchId>` | allow it to be pruned again |
 
@@ -166,7 +166,8 @@ the rest alone, so capturing one match does not re-parse the whole archive. Meas
 1,223 matches: **32.4s cold, 0.69s warm**.
 
 A match is rebuilt when its archived slice changes, when the links to the matches either
-side of it change, when its page, markdown or why file is missing, when Arena's card database is
+side of it change, when its page or markdown is missing — or its why file, while
+`"WhyFiles"` is on — when Arena's card database is
 updated, or when you upgrade the tool — a new build throws the whole cache away, so a
 parser fix reaches every match you have ever played, which is the guarantee the archive
 exists for.
