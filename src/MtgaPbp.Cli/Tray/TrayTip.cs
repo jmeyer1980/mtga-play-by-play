@@ -15,6 +15,9 @@ public static class TrayTip
     /// <summary>What fits in <c>NOTIFYICONDATA.szTip</c> beside its terminator.</summary>
     public const int MaxLength = 127;
 
+    /// <summary>What fits in <c>NOTIFYICONDATA.szInfo</c> beside its terminator.</summary>
+    public const int MaxBalloonLength = 255;
+
     public static string Compose(SessionRow? session, DateTime updated)
     {
         var record = session is null
@@ -25,6 +28,27 @@ public static class TrayTip
         return Clip($"mtga-pbp — watching · {record} · updated {updated:HH:mm}");
     }
 
-    public static string Clip(string s) =>
-        s.Length <= MaxLength ? s : s[..(MaxLength - 1)] + "…";
+    /// <summary>
+    /// The balloon shown as the window lets go: where the report is, how to quit, and
+    /// any flag on the command line that nothing acted on.
+    /// </summary>
+    /// <remarks>
+    /// The flags are repeated here because this balloon is shown at the moment the
+    /// console goes away. From a shortcut, the window the warning line landed in closes
+    /// once the first build is up, so a typo in the shortcut's target — <c>---open</c>,
+    /// say — would otherwise have been said only to a window nobody was reading. A
+    /// message box was the other candidate and is not used: it is modal, and a watch
+    /// started at logon would wait behind it, not serving, until someone clicked.
+    /// </remarks>
+    public static string Detached(string url, IReadOnlyList<string> ignored)
+    {
+        var text = $"Watching. The report is at {url} — right-click this icon to quit.";
+        if (ignored.Count > 0)
+            text += $" Ignoring unknown option{(ignored.Count == 1 ? "" : "s")} " +
+                    $"{string.Join(", ", ignored)}.";
+        return Clip(text, MaxBalloonLength);
+    }
+
+    public static string Clip(string s, int max = MaxLength) =>
+        s.Length <= max ? s : s[..(max - 1)] + "…";
 }

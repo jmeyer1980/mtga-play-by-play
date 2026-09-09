@@ -27,6 +27,14 @@ public static class Program
         var exeDir = AppContext.BaseDirectory;
         var cfg = Config.Load(exeDir);
         var (command, operands) = Parse(args);
+        // On every command line, not only the one with no command on it. Parse
+        // answers as soon as it has a verb, and the loop that named a mistyped flag
+        // sat after those returns — so a shortcut whose target read `watch ---tray
+        // ---open` ran a plain windowed watch on the default port without a word,
+        // and looked like tray mode not working.
+        var unknown = UnknownOptions(args);
+        foreach (var option in unknown)
+            Console.Error.WriteLine($"warning: ignoring unknown option {option}");
         var open = cfg.OpenAfterBuild || args.Contains("--open");
         // Opt-in for a prune large enough to look like a mistake. Deliberately a flag
         // and not a config key — see Prune.
@@ -51,7 +59,7 @@ public static class Program
                 "capture" => Capture(cfg, prune),
                 "build" => Build(cfg, open, rebuild: rebuild),
                 "stats" => Stats(cfg),
-                "watch" => Watch(cfg, operands, open, prune, rebuild, tray),
+                "watch" => Watch(cfg, operands, open, prune, rebuild, tray, unknown),
                 "stop" => StopCommand.Run(operands.FirstOrDefault(), TimeSpan.FromSeconds(10),
                                           Console.Out, Console.Error),
                 "collection" => ImportCollection(cfg, operands.FirstOrDefault()),
@@ -73,6 +81,24 @@ public static class Program
         ["capture", "build", "stats", "watch", "stop", "keep", "unkeep", "collection", "why"];
 
     private static readonly string[] Options = ["--open", "--rebuild", "--prune", "--tray"];
+
+    /// <summary>
+    /// The dashed arguments nothing will act on: not an option, and not a command in
+    /// its dashed spelling.
+    /// </summary>
+    /// <remarks>
+    /// Its own question rather than a side effect of <see cref="Parse"/>, which
+    /// returns as soon as it has a command. The warning used to follow those returns,
+    /// so it was only ever said on a command line with no command on it — and a typo
+    /// in a flag is exactly as likely beside <c>watch</c> as without it. Returned
+    /// rather than printed because the tray's balloon repeats it; see
+    /// <see cref="TrayTip.Detached"/>.
+    /// </remarks>
+    public static string[] UnknownOptions(string[] args) =>
+        args.Where(a => a.StartsWith("--", StringComparison.Ordinal) &&
+                        !Options.Contains(a, StringComparer.Ordinal) &&
+                        !Commands.Contains(a.TrimStart('-'), StringComparer.Ordinal))
+            .ToArray();
 
     /// <summary>
     /// Splits the arguments into a command and its operands.
@@ -100,11 +126,6 @@ public static class Program
 
         // An unrecognised word still goes to the switch, which answers with usage.
         if (positional.Length > 0) return (positional[0], positional[1..]);
-
-        foreach (var unknown in args.Where(a =>
-                     a.StartsWith("--", StringComparison.Ordinal) &&
-                     !Options.Contains(a, StringComparer.Ordinal)))
-            Console.Error.WriteLine($"warning: ignoring unknown option {unknown}");
 
         return ("all", []);
     }
@@ -465,8 +486,13 @@ public static class Program
     /// recommending it at logon, where it means a tab every morning and a setting that
     /// looks like it should stop that and does nothing (#170).
     /// </param>
+    /// <param name="unknown">
+    /// The flags nothing acted on, for the balloon shown as the window lets go. From a
+    /// shortcut, the warning line that named them closes with that window.
+    /// </param>
     private static int Watch(
-        Config cfg, string[] operands, bool open, bool prune, bool rebuild, bool tray)
+        Config cfg, string[] operands, bool open, bool prune, bool rebuild, bool tray,
+        string[] unknown)
     {
         var port = int.TryParse(operands.FirstOrDefault(), out var p) ? p : 8787;
         var interval = TimeSpan.FromSeconds(3);
@@ -611,8 +637,7 @@ public static class Program
         if (lease.Active && OperatingSystem.IsWindows() &&
             ConsoleOwnership.ShouldDetach(ConsoleOwnership.AttachedProcesses()))
         {
-            lease.Balloon("mtga-pbp",
-                $"Watching. The report is at {server.Url} — right-click this icon to quit.");
+            lease.Balloon("mtga-pbp", TrayTip.Detached(server.Url, unknown));
             ConsoleOwnership.Detach();
         }
 

@@ -41,4 +41,27 @@ public class TrayTipTests
         var exact = new string('x', TrayTip.MaxLength);
         Assert.That(TrayTip.Clip(exact), Is.EqualTo(exact));
     }
+
+    [Test]
+    public void The_balloon_at_detach_says_where_the_report_is_and_how_to_quit() =>
+        Assert.That(TrayTip.Detached("http://127.0.0.1:8799/", []),
+                    Is.EqualTo("Watching. The report is at http://127.0.0.1:8799/ — right-click this icon to quit."));
+
+    [Test]
+    public void A_flag_nothing_acted_on_is_repeated_in_the_balloon() =>
+        Assert.That(TrayTip.Detached("http://127.0.0.1:8799/", ["---open"]),
+                    Does.EndWith("to quit. Ignoring unknown option ---open."));
+
+    [Test]
+    public void Several_such_flags_are_listed_together() =>
+        Assert.That(TrayTip.Detached("http://127.0.0.1:8799/", ["---open", "--opne"]),
+                    Does.EndWith("Ignoring unknown options ---open, --opne."));
+
+    [Test]
+    public void The_balloon_fits_the_shell_s_256_characters()
+    {
+        var text = TrayTip.Detached("http://127.0.0.1:8799/", [new string('x', 300)]);
+        Assert.That(text.Length, Is.EqualTo(TrayTip.MaxBalloonLength));
+        Assert.That(text, Does.EndWith("…"));
+    }
 }
