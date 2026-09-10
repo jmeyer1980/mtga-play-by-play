@@ -144,6 +144,13 @@ Started from a shortcut, the Startup folder or a scheduled task, its window clos
 the first build has landed and the report is being served; started from a terminal you
 typed into, that terminal is kept — Ctrl+C still works — and the icon is added beside it.
 
+The window closes on its own; closing it yourself before then ends the watch, the same
+as Ctrl+C would. A flag the exe does not know is reported in that window as
+`warning: ignoring unknown option` and then ignored: `watch ---tray`, three dashes, is
+a plain windowed watch that says so. When the window does let go, the notification it
+leaves behind repeats any such warning, since the line naming it has just closed with
+the window; typed into a terminal, the line simply stays in that terminal.
+
 - **Left-click** the icon (or <kbd>Win</kbd>+<kbd>B</kbd>, arrow to it, <kbd>Enter</kbd>)
   to open the report.
 - **Right-click** it (or <kbd>Shift</kbd>+<kbd>F10</kbd>) for the menu: **Open report**
