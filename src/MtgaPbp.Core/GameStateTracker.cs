@@ -147,6 +147,19 @@ public sealed class GameStateTracker(ICardDb cards)
     private readonly Dictionary<int, int> _life = [];
     private readonly Dictionary<int, string> _zoneTypes = [];
     private readonly Dictionary<int, int> _zoneOwners = [];
+
+    /// <summary>
+    /// Each zone's membership as Arena last stated it, from a zone entry's
+    /// <c>objectInstanceIds</c>. Present only for zones the log has actually enumerated.
+    /// </summary>
+    /// <remarks>
+    /// This is the surface the hand is read through, because the object descriptions
+    /// cannot be trusted alone: Arena's London mulligan re-deal deals a fresh seven under
+    /// fresh instance ids and never re-describes the old ones out of the hand, so a hand
+    /// read from objects alone kept every mulliganed card forever (#236 — the transcript
+    /// of 8436f4bc said "You mulligan to six" and then listed fourteen cards).
+    /// </remarks>
+    private readonly Dictionary<int, List<int>> _zoneMembers = [];
     private readonly Dictionary<int, List<int>> _commandZoneCards = [];
     private readonly Dictionary<int, List<int>> _targets = [];   // source id -> target ids
     private readonly Dictionary<int, List<StatSample>> _stats = [];
@@ -226,6 +239,19 @@ public sealed class GameStateTracker(ICardDb cards)
     /// <c>Visibility_Private</c>, and the opponent has zero. So fog of war holds by
     /// construction, and a caller cannot leak a hand by forgetting to check.
     /// <para>
+    /// Two surfaces say what a hand holds, and each goes stale in the opposite
+    /// direction, so a card is in hand only while both agree. The zone's
+    /// <c>objectInstanceIds</c> is Arena's own membership list, restated whole with
+    /// every change — and the one change that matters most restates it completely: the
+    /// London mulligan re-deal deals a fresh seven under fresh instance ids and never
+    /// re-describes the old ones, so a hand read from objects alone kept every
+    /// mulliganed card forever (#236). But Arena can also move a card out of a hand
+    /// without restating the zone (object 556 of 49db34eb left for Limbo while the
+    /// hand's membership still listed it), so membership alone overcounts too. Where a
+    /// hand zone's membership has never been stated at all, the object descriptions are
+    /// all there is, and they are used alone as before.
+    /// </para>
+    /// <para>
     /// A card with no grpId is left out. That is a card the log moved into a hand
     /// without ever describing — naming it "Unknown card" would put a placeholder in a
     /// list whose whole value is being an exact seven.
@@ -240,6 +266,7 @@ public sealed class GameStateTracker(ICardDb cards)
             if (o.Type != "GameObjectType_Card") continue;
             if (!_zoneTypes.TryGetValue(o.ZoneId, out var zone)) continue;
             if (zone != "ZoneType_Hand") continue;
+            if (MembershipStated(seat) && !IsMember(seat, o.InstanceId)) continue;
             held.Add(o);
         }
 
@@ -253,6 +280,20 @@ public sealed class GameStateTracker(ICardDb cards)
         }
         return names;
     }
+
+    /// <summary>
+    /// Whether any of a seat's hand zones has ever had its membership enumerated. Until
+    /// one has, the object descriptions are the only evidence there is.
+    /// </summary>
+    private bool MembershipStated(int seat) =>
+        _zoneMembers.Any(kv => _zoneTypes.GetValueOrDefault(kv.Key) == "ZoneType_Hand" &&
+                               _zoneOwners.GetValueOrDefault(kv.Key) == seat);
+
+    /// <summary>Whether Arena's own membership lists still place a card in a hand.</summary>
+    private bool IsMember(int seat, int instanceId) =>
+        _zoneMembers.Any(kv => _zoneTypes.GetValueOrDefault(kv.Key) == "ZoneType_Hand" &&
+                               _zoneOwners.GetValueOrDefault(kv.Key) == seat &&
+                               kv.Value.Contains(instanceId));
 
     /// <summary>
     /// Whose zone this is, for the zones that belong to a player. Null for the shared
@@ -416,12 +457,26 @@ public sealed class GameStateTracker(ICardDb cards)
 
         foreach (var z in Json.Array(gsm, "zones"))
         {
-            if (Json.Int(z, "zoneId") is { } zid && Json.Str(z, "type") is { } zt)
-                _zoneTypes[zid] = zt;
+            if (Json.Int(z, "zoneId") is not { } zid) continue;
+            if (Json.Str(z, "type") is { } zt) _zoneTypes[zid] = zt;
             // Only the per-player zones carry one — a hand, a library, a graveyard.
             // The battlefield, the stack and exile are shared and name no owner.
-            if (Json.Int(z, "zoneId") is { } oid && Json.Int(z, "ownerSeatId") is { } os2)
-                _zoneOwners[oid] = os2;
+            if (Json.Int(z, "ownerSeatId") is { } os2) _zoneOwners[zid] = os2;
+            // A zone entry that names its members is Arena's own statement of who is in
+            // the zone, restated whole with every change to it — a mulligan re-deal
+            // above all. Absence is not an empty hand; it is a zone not enumerated here.
+            // Each element goes through Json.Int like every other numeric field: Arena
+            // sends numbers as strings often enough that reading one directly is a
+            // crash, and a dropped entry would leave a stated membership that excludes
+            // a card the log did describe.
+            if (z.TryGetProperty("objectInstanceIds", out var members) &&
+                members.ValueKind == JsonValueKind.Array)
+            {
+                var ids = new List<int>();
+                foreach (var m in members.EnumerateArray())
+                    if (Json.Int(m) is { } id) ids.Add(id);
+                _zoneMembers[zid] = ids;
+            }
         }
 
         foreach (var go in Json.Array(gsm, "gameObjects")) UpsertObject(go);
