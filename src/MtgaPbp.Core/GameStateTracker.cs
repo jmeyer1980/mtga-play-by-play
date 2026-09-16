@@ -465,11 +465,17 @@ public sealed class GameStateTracker(ICardDb cards)
             // A zone entry that names its members is Arena's own statement of who is in
             // the zone, restated whole with every change to it — a mulligan re-deal
             // above all. Absence is not an empty hand; it is a zone not enumerated here.
+            // Each element goes through Json.Int like every other numeric field: Arena
+            // sends numbers as strings often enough that reading one directly is a
+            // crash, and a dropped entry would leave a stated membership that excludes
+            // a card the log did describe.
             if (z.TryGetProperty("objectInstanceIds", out var members) &&
                 members.ValueKind == JsonValueKind.Array)
                 _zoneMembers[zid] = members.EnumerateArray()
-                    .Where(m => m.ValueKind == JsonValueKind.Number)
-                    .Select(m => m.GetInt32()).ToList();
+                    .Select(Json.Int)
+                    .Where(n => n is not null)
+                    .Select(n => n.Value)
+                    .ToList();
         }
 
         foreach (var go in Json.Array(gsm, "gameObjects")) UpsertObject(go);

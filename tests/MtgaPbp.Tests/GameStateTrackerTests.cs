@@ -817,5 +817,28 @@ public class GameStateTrackerTests
 
         Assert.That(t.HandOf(1), Is.EqualTo(new[] { "Plains" }));
     }
+
+    /// <summary>
+    /// Arena's numeric fields arrive as strings often enough that the shared
+    /// <c>Json.Int</c> exists for exactly that (see Json.cs). A membership entry that
+    /// arrives string-encoded still names the card; dropping it would leave a stated
+    /// membership that excludes a card the log described, which is the failure the
+    /// fallback exists to avoid.
+    /// </summary>
+    [Test]
+    public void A_string_encoded_membership_id_still_names_its_card()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff",
+          "zones": [ { "zoneId": 31, "type": "ZoneType_Hand", "ownerSeatId": 1,
+                       "objectInstanceIds": [ "201" ] } ],
+          "gameObjects": [
+            { "instanceId": 201, "grpId": 1, "name": 648, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 } ] }
+        """));
+
+        Assert.That(t.HandOf(1), Is.EqualTo(new[] { "Plains" }));
+    }
 }
 
