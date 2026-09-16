@@ -50,6 +50,15 @@ public sealed record Opening(
     /// the log joined too late to have watched it, and never populated for the opponent:
     /// Arena does not send their hand at all, so fog of war holds by construction.
     /// </summary>
+    /// <remarks>
+    /// After a mulligan this can legitimately hold one card more than
+    /// <see cref="Kept"/> says: in the Bo1 and Brawl formats the on-the-draw
+    /// compensation card is dealt in the same message as the re-dealt hand, and Arena
+    /// never names the card that was bottomed — it simply stops being mentioned, and
+    /// none of the re-dealt ids is ever described back into the library. So the list is
+    /// exactly what the log claims the hand held at turn one, and no cleaner claim than
+    /// that is available.
+    /// </remarks>
     IReadOnlyList<string>? Hand = null)
 {
     /// <summary>

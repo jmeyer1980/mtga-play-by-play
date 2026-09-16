@@ -26,6 +26,18 @@ public class GameStateTrackerTests
     private static GameStateTracker NewTracker() => new(new FakeCardDb());
     private static JsonElement Msg(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
+    /// <summary>A dealt hand: zone 31 restated with its membership, cards described in it.</summary>
+    private const string HandDealt = """
+    { "type": "GameStateType_Diff",
+      "zones": [ { "zoneId": 31, "type": "ZoneType_Hand", "ownerSeatId": 1,
+                   "objectInstanceIds": [ 202, 201 ] } ],
+      "gameObjects": [
+        { "instanceId": 201, "grpId": 1, "name": 648, "type": "GameObjectType_Card",
+          "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 },
+        { "instanceId": 202, "grpId": 1, "name": 648, "type": "GameObjectType_Card",
+          "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 } ] }
+    """;
+
     [Test]
     public void Apply_full_state_records_players_life_and_turn()
     {
@@ -714,4 +726,96 @@ public class GameStateTrackerTests
         Assert.That(CardNames.IsPlaceholder(t.NameOf(491)), Is.False,
             "a card known to be face down is a fact, not a failure to resolve it");
     }
+
+    // ---------- the hand across a mulligan (#236) ----------
+
+    /// <summary>
+    /// Arena's London mulligan re-deal sends a fresh seven under fresh instance ids and
+    /// never re-describes the old ones out of the hand — they simply stop appearing. A
+    /// hand read from object descriptions alone keeps the mulliganed cards forever: the
+    /// transcript of 8436f4bc said "You mulligan to six" and then listed fourteen cards.
+    /// A zone entry's <c>objectInstanceIds</c> is Arena's own statement of who is in the
+    /// zone, and it is restated with every mulligan, so it outranks the stale objects.
+    /// </summary>
+    [Test]
+    public void A_mulligan_redeal_replaces_the_hand_rather_than_growing_it()
+    {
+        var t = NewTracker();
+        t.Apply(Msg(HandDealt));
+        Assert.That(t.HandOf(1), Is.EqualTo(new[] { "Plains", "Plains" }));
+
+        // One mulligan: the whole hand is re-dealt under new ids. The fresh cards are
+        // named so the assertion can tell them from the stale ones.
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff",
+          "zones": [ { "zoneId": 31, "type": "ZoneType_Hand", "ownerSeatId": 1,
+                       "objectInstanceIds": [ 445, 444, 443, 442, 441, 440, 439 ] } ],
+          "gameObjects": [
+            { "instanceId": 439, "grpId": 1, "name": 44198, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 },
+            { "instanceId": 440, "grpId": 1, "name": 44198, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 },
+            { "instanceId": 441, "grpId": 1, "name": 44198, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 },
+            { "instanceId": 442, "grpId": 1, "name": 44198, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 },
+            { "instanceId": 443, "grpId": 1, "name": 44198, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 },
+            { "instanceId": 444, "grpId": 1, "name": 44198, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 },
+            { "instanceId": 445, "grpId": 1, "name": 44198, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 } ] }
+        """));
+
+        Assert.That(t.HandOf(1), Has.Count.EqualTo(7));
+        Assert.That(t.HandOf(1), Is.All.EqualTo("Temple of Plenty"),
+            "the pre-mulligan seven were re-dealt away; only the fresh hand remains");
+    }
+
+    /// <summary>
+    /// The reverse trust problem, and why membership alone would not do: Arena can move
+    /// a card out of a hand into Limbo without restating the hand's membership (object
+    /// 556 of 49db34eb, turn 13). The two surfaces each go stale in the opposite
+    /// direction, so a card is in hand only while both agree it is.
+    /// </summary>
+    [Test]
+    public void A_card_moved_out_without_a_zone_restatement_leaves_the_hand()
+    {
+        var t = NewTracker();
+        t.Apply(Msg(HandDealt));
+
+        // 202 leaves for Limbo. Limbo's membership is restated; the hand's is not.
+        t.Apply(Msg("""
+        { "type": "GameStateType_Diff",
+          "zones": [ { "zoneId": 30, "type": "ZoneType_Limbo",
+                       "objectInstanceIds": [ 202 ] } ],
+          "gameObjects": [
+            { "instanceId": 202, "grpId": 1, "name": 648, "type": "GameObjectType_Card",
+              "zoneId": 30, "ownerSeatId": 1, "controllerSeatId": 1 } ] }
+        """));
+
+        Assert.That(t.HandOf(1), Is.EqualTo(new[] { "Plains" }),
+            "membership still lists 202, but its own description says Limbo");
+    }
+
+    /// <summary>
+    /// A hand zone whose membership Arena has never stated — the pre-deal Full state
+    /// declares zones with no <c>objectInstanceIds</c> at all — still reads from the
+    /// object descriptions, as it always did.
+    /// </summary>
+    [Test]
+    public void A_hand_zone_never_given_a_membership_still_reads_from_the_objects()
+    {
+        var t = NewTracker();
+        t.Apply(Msg("""
+        { "type": "GameStateType_Full",
+          "zones": [ { "zoneId": 31, "type": "ZoneType_Hand", "ownerSeatId": 1 } ],
+          "gameObjects": [
+            { "instanceId": 201, "grpId": 1, "name": 648, "type": "GameObjectType_Card",
+              "zoneId": 31, "ownerSeatId": 1, "controllerSeatId": 1 } ] }
+        """));
+
+        Assert.That(t.HandOf(1), Is.EqualTo(new[] { "Plains" }));
+    }
 }
+
