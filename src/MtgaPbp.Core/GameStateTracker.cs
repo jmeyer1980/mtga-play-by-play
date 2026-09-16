@@ -471,11 +471,12 @@ public sealed class GameStateTracker(ICardDb cards)
             // a card the log did describe.
             if (z.TryGetProperty("objectInstanceIds", out var members) &&
                 members.ValueKind == JsonValueKind.Array)
-                _zoneMembers[zid] = members.EnumerateArray()
-                    .Select(Json.Int)
-                    .Where(n => n is not null)
-                    .Select(n => n.Value)
-                    .ToList();
+            {
+                var ids = new List<int>();
+                foreach (var m in members.EnumerateArray())
+                    if (Json.Int(m) is { } id) ids.Add(id);
+                _zoneMembers[zid] = ids;
+            }
         }
 
         foreach (var go in Json.Array(gsm, "gameObjects")) UpsertObject(go);
