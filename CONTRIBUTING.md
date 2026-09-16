@@ -174,10 +174,21 @@ Rebuilding `dist/` while `watch` is running fails: Windows locks a running execu
 
 ```powershell
 Get-Process mtga-pbp | Stop-Process
+Remove-Item dist/mtga-pbp.exe
 dotnet publish src/MtgaPbp.Cli -c Release -r win-x64 --self-contained `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
 Start-Process dist/mtga-pbp.exe watch
 ```
+
+**That `Remove-Item` is not optional once a release zip has filled `dist/`.** Unzipping
+restores the CI runner's timestamps verbatim — hours ahead of a local clock in a
+behind-UTC timezone — and MSBuild compares timestamps naively. The destination looks
+newer than the build, so the copy is skipped: `publish` **exits 0, prints the output
+path, and leaves the old executable in place.** The symptom is a `watch` still reporting
+the previous release's stamp — the same stale binary `Reporting a bug` below is written
+to catch, reached from the other side. `mtga-pbp --version` and the working-copy stale
+note catch it; the exit code cannot. Publishing into an empty directory is just as safe,
+and for the same reason: it cannot be skipped.
 
 The port answers immediately, serving the previous run's report; the page refreshes
 itself once the startup capture and build finish, which at a large archive can take
