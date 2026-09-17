@@ -317,6 +317,26 @@ public class LiveServerTests
     }
 
     [Test]
+    public void Lan_mode_without_a_key_does_not_construct()
+    {
+        // The CLI checks the key before building the server, but the invariant belongs to
+        // the server too: binding every interface unauthenticated is the one mistake that
+        // must not survive a second caller.
+        Assert.Throws<ArgumentException>(() => new LiveServer(_root, port: 0, lan: true));
+    }
+
+    [Test]
+    public void The_lan_url_is_null_when_no_address_reaches_another_device()
+    {
+        // No fallback to the loopback URL: the caller prints "no address reaches another
+        // device" instead of an address that cannot work.
+        if (LanAccess.LanAddress() is not null)
+            Assert.Ignore("this machine has a LAN address, so the null path cannot be asked");
+        using var lan = NewLanServer(_root);
+        Assert.That(lan.LanUrl, Is.Null);
+    }
+
+    [Test]
     public void The_lan_url_carries_the_key()
     {
         using var lan = NewLanServer(_root);

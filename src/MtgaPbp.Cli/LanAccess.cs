@@ -34,6 +34,12 @@ public static class LanAccess
     /// A short key is refused rather than padded or stretched. Padding would turn "abc"
     /// into something that looks like a secret while staying exactly as guessable as "abc".
     /// </para>
+    /// <para>
+    /// The key is printed into a URL and set as a cookie, so it is held to characters that
+    /// survive both: letters, digits, hyphens and underscores. Anything else — <c>&amp;</c>,
+    /// <c>=</c>, a space, a control character — can truncate the cookie, break the link, or
+    /// worse, so it is refused and a fresh generated key is suggested instead.
+    /// </para>
     /// </remarks>
     public static string? Refusal(string? configuredKey)
     {
@@ -44,6 +50,10 @@ public static class LanAccess
         if (configuredKey.Length < MinKeyLength)
             return $"--lan needs a \"LanKey\" of at least {MinKeyLength} characters, and this " +
                    $"one is {configuredKey.Length}. Try \"LanKey\": \"{NewKey()}\".";
+        if (configuredKey.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not '-' and not '_'))
+            return "--lan needs a \"LanKey\" made only of letters, digits, hyphens and underscores, " +
+                   "because it is printed into a URL and a cookie, and anything else can break " +
+                   $"both. Try \"LanKey\": \"{NewKey()}\".";
         return null;
     }
 
@@ -99,17 +109,6 @@ public static class LanAccess
     /// <summary>Every unicast address this machine currently holds.</summary>
     public static IPAddress[] OwnAddresses() =>
         [.. OwnAddressesWithRoute().Select(a => a.Address)];
-
-    public static IPAddress? PreferredAddress(List<IPAddress> addresses)
-    {
-        foreach (var addr in addresses)
-        {
-            var bytes = addr.GetAddressBytes();
-            if (bytes.Length == 4 && !(bytes[0] == 169 && bytes[1] == 254))
-                return addr;
-        }
-        return addresses.FirstOrDefault();
-    }
 
     /// <summary>True when an address is usable for printing to another device.</summary>
     public static bool IsUsableLanAddress(IPAddress addr)

@@ -55,6 +55,10 @@ public static class Program
         var lan = args.Contains("--lan");
         if (lan && command != "watch")
             Console.Error.WriteLine("warning: --lan only applies to watch; ignoring it");
+        // Normalized here so the refusal below — and everything watch does with it — can
+        // only fire where the flag means something. `build --lan` builds; it does not die
+        // on a key the build would never use.
+        lan = lan && command == "watch";
         if (lan && LanAccess.Refusal(cfg.LanKey) is { } refusal)
         {
             Console.Error.WriteLine($"error: {refusal}");
@@ -167,8 +171,11 @@ public static class Program
             mtga-pbp build --rebuild  rebuild every match, ignoring the build cache
                                       (on `watch`, applies to its first build only)
             mtga-pbp stats            unhandled annotations and unresolved cards
-            mtga-pbp watch [port] [--tray] serve the report and keep it live (default 8787);
-                                      --tray puts it in the notification area
+            mtga-pbp watch [port] [--tray] [--lan]
+                                      serve the report and keep it live (default 8787);
+                                      --tray puts it in the notification area; --lan
+                                      prints an address another device on the network
+                                      can open (needs "LanKey" in mtga-pbp.json)
             mtga-pbp stop [port]      stop a running watch (default 8787)
             mtga-pbp collection <file> import a collection exported from elsewhere
             mtga-pbp why <matchId> [turns] show turns beside the log behind them,

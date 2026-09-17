@@ -5,7 +5,8 @@ using System.Text;
 namespace MtgaPbp.Cli;
 
 /// <summary>
-/// A minimal HTTP server for the live report, bound to loopback only.
+/// A minimal HTTP server for the live report — loopback by default, the whole network
+/// when asked with a key.
 /// </summary>
 /// <remarks>
 /// Hand-rolled on <see cref="TcpListener"/> rather than <c>HttpListener</c>: the
@@ -25,10 +26,15 @@ namespace MtgaPbp.Cli;
 /// The <c>Host</c> and <c>Origin</c> checks in <see cref="Serve"/> are what stand
 /// between those tricks and an archive full of real player names (#116).
 /// </para>
+/// <para>
+/// LAN mode binds <see cref="IPAddress.Any"/> instead, so it demands a key: the
+/// constructor refuses <c>lan: true</c> without a usable one, whatever the caller —
+/// the CLI's own check is a courtesy message, and this is the guarantee.
+/// </para>
 /// </remarks>
 public sealed class LiveServer(string rootDirectory, int port, bool lan = false, string? lanKey = null) : IDisposable
 {
-    private readonly TcpListener _listener = new(lan ? IPAddress.Any : IPAddress.Loopback, port);
+    private readonly TcpListener _listener = new(ValidateLan(lan, lanKey) ? IPAddress.Any : IPAddress.Loopback, port);
     private readonly List<Subscriber> _subscribers = [];
     private readonly CancellationTokenSource _cts = new();
     private readonly string? _key = lanKey;
@@ -42,15 +48,28 @@ public sealed class LiveServer(string rootDirectory, int port, bool lan = false,
 
     public string Url => $"http://127.0.0.1:{Port}/";
 
-    /// <summary>The URL to give another device when in LAN mode, or <see cref="Url"/> when not.</summary>
+    /// <summary>The URL to give another device in LAN mode, or null when this machine
+    /// holds no address another device could reach — the caller says so instead of
+    /// advertising an address that cannot work.</summary>
     /// <remarks>
     /// In LAN mode the key rides along: the bare address is refused, so the URL the
     /// user copies is the one that gets them in on the first navigation — which then
     /// becomes a cookie and a clean address bar.
     /// </remarks>
-    public string LanUrl => lan && LanAccess.LanAddress() is { } addr
-        ? _key is null ? $"http://{addr}:{Port}/" : $"http://{addr}:{Port}/?key={_key}"
-        : Url;
+    public string? LanUrl => lan && LanAccess.LanAddress() is { } addr
+        ? $"http://{addr}:{Port}/?key={_key}"
+        : null;
+
+    /// <summary>True when the listener must bind every interface — and, the price of
+    /// that, only when the key is one <see cref="LanAccess.Refusal"/> will accept.
+    /// Asked from the listener's own initializer so the constructor cannot finish
+    /// without it.</summary>
+    private static bool ValidateLan(bool lan, string? lanKey)
+    {
+        if (lan && LanAccess.Refusal(lanKey) is { } refusal)
+            throw new ArgumentException(refusal, nameof(lanKey));
+        return lan;
+    }
 
     /// <summary>The address the listener bound — Any in LAN mode, Loopback otherwise.</summary>
     public IPAddress BoundAddress => ((IPEndPoint)_listener.LocalEndpoint).Address;

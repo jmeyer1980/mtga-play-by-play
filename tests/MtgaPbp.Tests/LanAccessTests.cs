@@ -40,6 +40,15 @@ public class LanAccessTests
         Assert.That(LanAccess.Refusal(new string('a', LanAccess.MinKeyLength)), Is.Null);
 
     [Test]
+    public void A_key_with_characters_that_cannot_ride_a_url_is_refused()
+    {
+        Assert.That(LanAccess.Refusal("key&with=separators!16"), Is.Not.Null,
+            "the key is printed into a URL and set as a cookie, so it must survive both");
+        Assert.That(LanAccess.Refusal("with-hyphen_and_under15"), Is.Null,
+            "hyphens and underscores are fine");
+    }
+
+    [Test]
     public void An_empty_key_counts_as_no_key_at_all() =>
         Assert.That(LanAccess.Refusal("   "), Is.Not.Null);
 
