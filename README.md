@@ -65,7 +65,7 @@ cd C:\path\to\mtga-pbp
 |---|---|
 | `.\mtga-pbp.exe` | capture new matches, then rebuild the site |
 | `.\mtga-pbp.exe --open` | ... and open the report in your browser |
-| `.\mtga-pbp.exe watch [--tray]` | serve the report and keep it live (see below); `--tray` puts it in the notification area |
+| `.\mtga-pbp.exe watch [--tray] [--lan]` | serve the report and keep it live (see below); `--tray` puts it in the notification area, `--lan` lets a phone or tablet on the network read it |
 | `.\mtga-pbp.exe stop [port]` | stop a running `watch` from any terminal (default 8787) |
 | `.\mtga-pbp.exe capture` | capture only |
 | `.\mtga-pbp.exe build` | re-derive the whole site from the archive |
@@ -94,7 +94,22 @@ the other commands honour.
 Pass a different port if 8787 is taken: `.\mtga-pbp.exe watch 9000`. It listens on
 loopback only, so nothing outside your machine can reach it.
 
-This is also the only mode where the ★ buttons work. Opened from disk the page is
+To read the report on a phone or tablet on the same network, set `"LanKey"` in
+`mtga-pbp.json` to a randomly generated secret of 16–128 ASCII letters, digits,
+hyphens or underscores, and pass `--lan`. Keys in the shipped
+`mtga-pbp.defaults.json` are ignored: the secret must come from your own file.
+
+```powershell
+.\mtga-pbp.exe watch --lan
+```
+
+The address it prints at startup is the one to open over there, and it carries the key
+once — the page remembers it after that, so it is worth bookmarking. Without a `"LanKey"`,
+`--lan` refuses to start rather than serving the archive to everyone on the network. Your
+match history names your opponents, which is why this is off unless you ask for it.
+
+The ★ buttons require `watch` over HTTP, either on loopback or with `--lan`.
+Opened from disk the page is
 static — browsers block `fetch` on `file://`, which is deliberate in the design — so
 the stars show which matches are kept but cannot change them. Use `keep`/`unkeep`
 from the command line, or run `watch`.

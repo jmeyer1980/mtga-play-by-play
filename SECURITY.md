@@ -21,24 +21,32 @@ finding:
 - **Makes no outbound network requests of any kind.** No telemetry, no update check, no
   account, no card-image fetching. Card names are resolved from the local database that
   ships with Arena.
-- **In `watch` mode only**, binds a TCP listener on `127.0.0.1` (default port 8787) to
-  serve the report to your own browser and push refreshes.
+- **In `watch` mode only**, binds a TCP listener on `127.0.0.1` by default (default port
+  8787) to serve the report to your own browser and push refreshes — and, only with
+  `--lan` and a configured `"LanKey"`, on every interface at once.
 
 ## The parts most worth attacking
 
 If you are looking for something real, these are the honest soft spots:
 
 1. **The `watch` HTTP server.** Hand-rolled on `TcpListener`, not a hardened stack. It
-   binds loopback only, but anything reachable by other local processes is worth
-   scrutiny — path traversal out of the output directory, request smuggling, or a
-   malformed request crashing or hanging the listener.
-2. **Log parsing.** Input is a file another program writes. Malformed or hostile JSON
+   binds loopback only by default (`--lan` opens it to the network — see below), but
+   anything reachable by other local processes is worth scrutiny — path traversal out of
+   the output directory, request smuggling, or a malformed request crashing or hanging
+   the listener.
+2. **The LAN mode.** With `--lan` and a configured `"LanKey"`, the server binds every
+   interface, so the report is reachable from the network. The honest limits: anyone who
+   has the key can read the archive; the key travels over plain http, so it keeps the
+   neighbours out rather than defending against a hostile network; and the archive names
+   the people the user played against. This is why `--lan` refuses to start without a key
+   of at least 16 characters, and why the feature is off unless asked for.
+3. **Log parsing.** Input is a file another program writes. Malformed or hostile JSON
    should never do worse than skip a line. Unbounded memory growth on a crafted log
    counts as a bug.
-3. **HTML generation.** Card names, player names and event text come from the log and
+4. **HTML generation.** Card names, player names and event text come from the log and
    are escaped on the way into pages. A name that escapes its context and executes is a
    genuine finding, even though the page is local.
-4. **Path handling.** Match ids become filenames. An id that escaped its directory would
+5. **Path handling.** Match ids become filenames. An id that escaped its directory would
    matter.
 
 ## Out of scope

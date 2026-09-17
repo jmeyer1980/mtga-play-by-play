@@ -251,4 +251,77 @@ public class ConfigTests
         Assert.That(c.LogPaths.Any(p => p.EndsWith("Player.log")), Is.True);
         Assert.That(c.LogPaths.Any(p => p.EndsWith("Player-prev.log")), Is.True);
     }
+
+    /// <summary>
+    /// The LAN key is the secret another device presents. It must be absent by default —
+    /// no LAN access unless it is asked for — and it must come from the user's own file.
+    /// </summary>
+    [Test]
+    public void A_lan_key_is_absent_until_someone_sets_one() =>
+        Assert.That(Config.Load(_dir).LanKey, Is.Null, "no LAN access unless it is asked for");
+
+    [TestCase(null)]
+    [TestCase("{}")]
+    [TestCase("{\"LanKey\":\"\"}")]
+    [TestCase("{\"LanKey\":\"   \"}")]
+    [TestCase("{\"LanKey\":null}")]
+    [TestCase("{ not json")]
+    public void A_shipped_key_cannot_enable_lan_without_a_user_key(string? userJson)
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "LanKey": "public-release-key", "OpenAfterBuild": true }""");
+        if (userJson is not null)
+            File.WriteAllText(Path.Combine(_dir, Config.UserFile), userJson);
+
+        var cfg = Config.Load(_dir);
+        Assert.That(cfg.LanKey, Is.Null);
+        Assert.That(LanAccess.Refusal(cfg.LanKey), Is.Not.Null);
+        Assert.That(cfg.OpenAfterBuild, Is.True, "ordinary shipped settings still apply");
+    }
+
+    [Test]
+    public void A_user_key_wins_even_when_the_shipped_file_contains_a_key()
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "LanKey": "public-release-key" }""");
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile),
+            """{ "LanKey": "private-user-key-123" }""");
+
+        Assert.That(Config.Load(_dir).LanKey, Is.EqualTo("private-user-key-123"));
+    }
+
+
+    [Test]
+    public void The_lan_key_is_read_from_the_users_own_file()
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile),
+            """{ "LanKey": "a-stable-key-for-the-tablet" }""");
+        Assert.That(Config.Load(_dir).LanKey, Is.EqualTo("a-stable-key-for-the-tablet"));
+    }
+
+    /// <summary>
+    /// An empty string in a config file is not a key. Accepting it would turn
+    /// `--lan` into a refusal with no way to see why.
+    /// </summary>
+    [Test]
+    public void An_empty_lan_key_is_not_a_key()
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile),
+            """{ "LanKey": "" }""");
+        Assert.That(Config.Load(_dir).LanKey, Is.Null, "blank is treated as absent");
+    }
+
+    /// <summary>
+    /// The user's key survives an upgrade that rewrites only the shipped layer.
+    /// </summary>
+    [Test]
+    public void An_upgrade_leaves_a_configured_lan_key_alone()
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile),
+            """{ "LanKey": "kept-across-upgrade" }""");
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "OpenAfterBuild": true }""");
+
+        Assert.That(Config.Load(_dir).LanKey, Is.EqualTo("kept-across-upgrade"));
+    }
 }

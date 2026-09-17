@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using MtgaPbp.Cli;
@@ -287,4 +288,288 @@ public class LiveServerTests
                 "a page nobody closed still gets its notifications");
         }
     }
+
+    /// <summary>This machine's routable LAN address, or a skip when it has none —
+    /// a CI runner or an offline laptop cannot test the LAN path, and that is not
+    /// a failure of the code.</summary>
+    private static IPAddress LanAddressOrIgnore()
+    {
+        var address = LanAccess.LanAddress();
+        if (address is null) Assert.Ignore("no routable LAN address on this machine");
+        return address;
+    }
+
+    private static LiveServer NewLanServer(string root, string key = "testkey1234567890ab")
+    {
+        var lan = new LiveServer(root, port: 0, lan: true, lanKey: key);
+        lan.Start();
+        return lan;
+    }
+
+    [Test]
+    public void Lan_mode_binds_every_interface()
+    {
+        using var lan = NewLanServer(_root);
+        Assert.That(lan.BoundAddress, Is.EqualTo(IPAddress.Any));
+        Assert.That(_server.BoundAddress, Is.EqualTo(IPAddress.Loopback),
+            "the default binding stays loopback");
+    }
+
+    [Test]
+    public void Lan_mode_without_a_key_does_not_construct()
+    {
+        // The CLI checks the key before building the server, but the invariant belongs to
+        // the server too: binding every interface unauthenticated is the one mistake that
+        // must not survive a second caller.
+        Assert.Throws<ArgumentException>(() => new LiveServer(_root, port: 0, lan: true));
+    }
+
+    [Test]
+    public void The_lan_url_is_null_when_no_address_reaches_another_device()
+    {
+        // No fallback to the loopback URL: the caller prints "no address reaches another
+        // device" instead of an address that cannot work.
+        if (LanAccess.LanAddress() is not null)
+            Assert.Ignore("this machine has a LAN address, so the null path cannot be asked");
+        using var lan = NewLanServer(_root);
+        Assert.That(lan.LanUrl, Is.Null);
+    }
+
+    [Test]
+    public void The_lan_url_carries_the_key()
+    {
+        using var lan = NewLanServer(_root);
+        Assert.That(lan.Url, Does.StartWith("http://127.0.0.1:"),
+            "the console line stays local even in LAN mode");
+        LanAddressOrIgnore();
+        Assert.That(lan.LanUrl, Does.Contain("?key=testkey1234567890ab"),
+            "the copied URL is the one that gets a first navigation in");
+    }
+
+    [Test]
+    public void Loopback_needs_no_key_even_in_lan_mode()
+    {
+        using var lan = NewLanServer(_root);
+        var self = new SendHelper(lan);
+        Assert.That(self.Get("/"), Does.Contain("200 OK"));
+    }
+
+    [Test]
+    public void A_no_key_request_from_the_lan_is_refused()
+    {
+        using var lan = NewLanServer(_root);
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            $"GET / HTTP/1.1\r\nHost: {address}:{lan.Port}\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("401"));
+    }
+
+    [Test]
+    public void The_key_gives_a_cookie_and_a_clean_url()
+    {
+        using var lan = NewLanServer(_root);
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            $"GET /?key=testkey1234567890ab HTTP/1.1\r\nHost: {address}:{lan.Port}\r\n" +
+            "Connection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("302"));
+        Assert.That(response, Does.Contain("Location: /"));
+        Assert.That(response, Does.Contain("Set-Cookie: pbp_key=testkey1234567890ab"));
+    }
+
+    [Test]
+    public void The_cookie_stands_in_for_the_key()
+    {
+        using var lan = NewLanServer(_root);
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            $"GET / HTTP/1.1\r\nHost: {address}:{lan.Port}\r\n" +
+            "Cookie: pbp_key=testkey1234567890ab\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("200 OK"));
+        Assert.That(response, Does.Contain("the report"));
+    }
+
+    [Test]
+    public void The_key_is_stripped_from_the_url_even_with_a_valid_cookie()
+    {
+        // The redirect exists to get the key out of the address bar, the history, and
+        // the Referer of whatever is navigated to next — so it fires whenever a query
+        // key arrives on a document navigation, cookie or no cookie (found in review).
+        using var lan = NewLanServer(_root);
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            "GET /?key=testkey1234567890ab HTTP/1.1\r\n" +
+            $"Host: {address}:{lan.Port}\r\n" +
+            "Cookie: pbp_key=testkey1234567890ab\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("302"));
+        Assert.That(response, Does.Contain("Location: /"));
+        Assert.That(response, Does.Contain("Set-Cookie: pbp_key=testkey1234567890ab"),
+            "the cookie is re-affirmed, not just the redirect");
+    }
+
+    [Test]
+    public void A_query_keyed_api_call_is_executed_even_with_a_valid_cookie()
+    {
+        // The stripping rule is for document navigations only: the page's own fetch
+        // may carry the key in its URL, and it must be executed, not bounced — a 302
+        // here would be followed without the method's body and break the call. The
+        // key rides in the query, as the page would send it.
+        using var lan = NewLanServer(_root);
+        lan.OnFavorite = (_, _) => true;
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            "POST /api/favorite/m1?key=testkey1234567890ab HTTP/1.1\r\n" +
+            $"Host: {address}:{lan.Port}\r\n" +
+            $"Origin: http://{address}:{lan.Port}\r\n" +
+            "Content-Length: 0\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("200 OK"),
+            "admitted by the query key, executed in place — never redirected");
+    }
+
+    [Test]
+    public void A_wrong_key_is_refused()
+    {
+        using var lan = NewLanServer(_root);
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            $"GET /?key=wrongkey12345678 HTTP/1.1\r\nHost: {address}:{lan.Port}\r\n" +
+            "Connection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("401"));
+    }
+
+    [Test]
+    public void A_head_whose_terminator_arrives_with_the_body_is_still_parsed()
+    {
+        // The blank line may not end the segment a browser happens to read first: a
+        // POST that carries its body in the same bytes as its head used to leave the
+        // parser waiting for a second terminator that would never come, until the
+        // timeout silently dropped a valid request (found in review).
+        using var lan = NewLanServer(_root);
+        lan.OnFavorite = (_, _) => true;
+        var address = LanAddressOrIgnore();
+        var headAndBody =
+            $"POST /api/favorite/m1 HTTP/1.1\r\nHost: {address}:{lan.Port}\r\n" +
+            $"Origin: http://{address}:{lan.Port}\r\n" +
+            "Cookie: pbp_key=testkey1234567890ab\r\n" +
+            "Content-Length: 5\r\nConnection: close\r\n\r\nhello";
+        Assert.That(new SendHelper(lan).SendTo(address.ToString(), headAndBody),
+                    Does.Contain("200 OK"), "the head was read; the body rides along unused");
+    }
+
+    [Test]
+    public void The_cookie_redirect_never_leaves_this_server()
+    {
+        // `//attacker.example/...` resolves as a network-path redirect — the request
+        // line is attacker-typed, so the Location is forced onto this origin (found
+        // in review).
+        using var lan = NewLanServer(_root);
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            "GET //attacker.example/path?key=testkey1234567890ab HTTP/1.1\r\n" +
+            $"Host: {address}:{lan.Port}\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("302"));
+        Assert.That(response, Does.Contain("Location: /attacker.example/path"),
+            "the leading slashes are normalized onto this origin");
+    }
+
+    [Test]
+    public void The_cookie_redirect_treats_a_backslash_as_a_slash()
+    {
+        // Browsers treat `\` as `/` in URLs, so `/\attacker.example/...` was the
+        // `//` trick wearing a leading slash (found in review).
+        using var lan = NewLanServer(_root);
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            "GET /\\attacker.example/path?key=testkey1234567890ab HTTP/1.1\r\n" +
+            $"Host: {address}:{lan.Port}\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("Location: /attacker.example/path"),
+            "a backslash is a slash to a browser, so it is normalized the same way");
+    }
+
+    [Test]
+    public void A_query_keyed_api_post_is_executed_not_redirected()
+    {
+        // A client that authenticates every call with ?key= — the supported form —
+        // must get its favorite action performed: the 302 is for document
+        // navigations, and a POST bounced with one silently loses the side effect
+        // (found in review).
+        using var lan = NewLanServer(_root);
+        string? favorited = null;
+        lan.OnFavorite = (id, _) => { favorited = id; return true; };
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            $"POST /api/favorite/m1?on=false&key=testkey1234567890ab HTTP/1.1\r\n" +
+            $"Host: {address}:{lan.Port}\r\n" +
+            $"Origin: http://{address}:{lan.Port}\r\n" +
+            "Content-Length: 0\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("200 OK"), "the action ran");
+        Assert.That(favorited, Is.EqualTo("m1"), "OnFavorite was invoked");
+        Assert.That(response, Does.Not.Contain("Set-Cookie"));
+    }
+
+    [Test]
+    public void A_configured_key_does_not_change_a_loopback_watch()
+    {
+        // Program always passes cfg.LanKey, so a key sitting in mtga-pbp.json used
+        // to arm the admission path on a watch that never asked for --lan — a
+        // ?key= URL then got a cookie instead of the page (found in review). The
+        // key must be inert until --lan says otherwise.
+        using var loopback = new LiveServer(_root, port: 0, lan: false, lanKey: "testkey1234567890ab");
+        loopback.Start();
+        var response = new SendHelper(loopback).Get("/?key=testkey1234567890ab");
+        Assert.That(response, Does.Contain("200 OK"),
+            "the page is served to the loopback browser as always");
+        Assert.That(response, Does.Not.Contain("Set-Cookie"),
+            "and no cookie session is started for a key nobody asked for");
+    }
+
+    [Test]
+    public void A_page_served_over_the_lan_may_still_keep_a_match()
+    {
+        using var lan = NewLanServer(_root);
+        lan.OnFavorite = (_, _) => true;
+        var address = LanAddressOrIgnore();
+        var self = new SendHelper(lan);
+
+        var own = self.SendTo(address.ToString(),
+            $"POST /api/favorite/m1 HTTP/1.1\r\nHost: {address}:{lan.Port}\r\n" +
+            $"Origin: http://{address}:{lan.Port}\r\n" +
+            "Cookie: pbp_key=testkey1234567890ab\r\n" +
+            "Content-Length: 0\r\nConnection: close\r\n\r\n");
+        Assert.That(own, Does.Contain("200 OK"));
+
+        var hostile = self.SendTo(address.ToString(),
+            $"POST /api/favorite/m1 HTTP/1.1\r\nHost: {address}:{lan.Port}\r\n" +
+            "Origin: http://attacker.example\r\n" +
+            "Cookie: pbp_key=testkey1234567890ab\r\n" +
+            "Content-Length: 0\r\nConnection: close\r\n\r\n");
+        Assert.That(hostile, Does.Contain("403"));
+    }
+}
+
+/// <summary>
+/// Sends raw HTTP requests to a specific server, for tests that run their own instance.
+/// </summary>
+file class SendHelper(LiveServer server)
+{
+    public string Send(string request) => SendTo("127.0.0.1", request);
+
+    /// <summary>Connects to <paramref name="host"/> itself, so the request arrives
+    /// from that address — the LAN path, where the peer is not loopback.</summary>
+    public string SendTo(string host, string request)
+    {
+        using var client = new TcpClient();
+        client.Connect(host, server.Port);
+        client.ReceiveTimeout = 5000;
+        using var stream = client.GetStream();
+        var bytes = Encoding.UTF8.GetBytes(request);
+        stream.Write(bytes, 0, bytes.Length);
+        using var ms = new MemoryStream();
+        try { stream.CopyTo(ms); } catch (IOException) { /* server closed or timed out */ }
+        return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
+    public string Get(string path, string? host = null) => Send(
+        $"GET {path} HTTP/1.1\r\nHost: {host ?? $"127.0.0.1:{server.Port}"}\r\n" +
+        "Connection: close\r\n\r\n");
 }

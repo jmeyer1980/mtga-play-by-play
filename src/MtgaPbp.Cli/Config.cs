@@ -61,6 +61,15 @@ public sealed class Config
     /// </summary>
     public int MaxArchivedMatches { get; set; }
 
+    /// <summary>
+    /// The key another device presents to read the report over the network.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately a setting rather than a per-run secret, so a bookmark can survive:
+    /// `--lan` is what decides whether anything acts on it at all.
+    /// </remarks>
+    public string? LanKey { get; set; }
+
     public static Config Default()
     {
         var low = Path.Combine(
@@ -103,8 +112,8 @@ public sealed class Config
     public static Config Load(string exeDir)
     {
         var cfg = Default();
-        Apply(cfg, Path.Combine(exeDir, ShippedFile));
-        Apply(cfg, Path.Combine(exeDir, UserFile));
+        Apply(cfg, Path.Combine(exeDir, ShippedFile), userLayer: false);
+        Apply(cfg, Path.Combine(exeDir, UserFile), userLayer: true);
         return cfg;
     }
 
@@ -120,7 +129,7 @@ public sealed class Config
     /// unset state, so a user file that never mentions it deserializes to false, and
     /// applying that would switch off a setting the shipped layer had turned on.
     /// </remarks>
-    private static void Apply(Config cfg, string path)
+    private static void Apply(Config cfg, string path, bool userLayer)
     {
         if (!File.Exists(path)) return;
 
@@ -151,6 +160,11 @@ public sealed class Config
             // number of matches to keep, it is not a number of matches at all, so it
             // is ignored rather than clamped to something it did not ask for.
             if (loaded.MaxArchivedMatches is { } max && max >= 0) cfg.MaxArchivedMatches = max;
+
+            // A release must never supply a shared secret. Only the user's file may
+            // establish the key; missing or blank values leave LAN startup refused.
+            if (userLayer)
+                cfg.LanKey = string.IsNullOrWhiteSpace(loaded.LanKey) ? null : loaded.LanKey;
         }
         catch (JsonException)
         {
@@ -178,5 +192,6 @@ public sealed class Config
         public bool? SuggestDeckRotation { get; set; }
         public bool? WhyFiles { get; set; }
         public int? MaxArchivedMatches { get; set; }
+        public string? LanKey { get; set; }
     }
 }

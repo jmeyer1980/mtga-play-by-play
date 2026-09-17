@@ -43,7 +43,7 @@ public class UnknownOptionTests
 
     [Test]
     public void Every_recognised_option_passes() =>
-        Assert.That(Program.UnknownOptions(["build", "--open", "--rebuild", "--prune", "--tray"]), Is.Empty);
+        Assert.That(Program.UnknownOptions(["build", "--open", "--rebuild", "--prune", "--tray", "--lan"]), Is.Empty);
 
     [Test]
     public void Three_dashes_before_a_command_are_a_typo_not_a_command() =>
