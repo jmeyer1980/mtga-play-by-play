@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -143,39 +144,62 @@ public static class LanAccess
 
     private static List<AddressWithRoute> OwnAddressesWithRoute()
     {
-        var addressesByNic = NetworkInterface.GetAllNetworkInterfaces()
+        var best = BestInterfaceIndex();
+
+        return NetworkInterface.GetAllNetworkInterfaces()
             .Where(nic => nic.OperationalStatus == OperationalStatus.Up &&
                           nic.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-            .Select(nic => (Nic: nic, Addresses: nic.GetIPProperties().UnicastAddresses
+            .SelectMany(nic => nic.GetIPProperties().UnicastAddresses
                 .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork)
-                .Select(a => a.Address).ToList()))
-            .Where(entry => entry.Addresses.Count > 0)
+                .Select(a => new AddressWithRoute(a.Address, best is { } index && nic.IPv4Index() == index)))
             .ToList();
+    }
 
-        var routedIndex = addressesByNic.FirstOrDefault(entry => entry.Nic.GetIPProperties()
-            .GatewayAddresses.Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork)).Nic?.Id;
+    /// <summary>The interface the OS itself would route through to reach the internet, or
+    /// null when it does not know — a machine with no default route, say.</summary>
+    /// <remarks>
+    /// Asking the routing table rather than guessing from gateways: a VPN client, a
+    /// Hyper-V switch or a WSL adapter all carry a gateway of their own, and enumeration
+    /// order is whatever the stack felt like that morning, so "the first adapter with a
+    /// gateway" used to be able to name an address no tablet can reach (found in review).
+    /// <c>GetBestInterface</c> consults the table only — it never sends a packet — and the
+    /// destination it is asked about is TEST-NET-3 (RFC 5737), documentation space that
+    /// carries no real traffic. Windows-only by declaration: the project publishes win-x64.
+    /// </remarks>
+    private static uint? BestInterfaceIndex()
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        return GetBestInterface(0x017100CB /* 203.0.113.1, network byte order */, out var index) == 0
+            ? index
+            : null;
+    }
 
-        return addressesByNic
-            .SelectMany(entry => entry.Addresses,
-                (entry, address) => new AddressWithRoute(address, routedIndex != null && entry.Nic.Id == routedIndex))
-            .ToList();
+    [DllImport("iphlpapi.dll")]
+    private static extern uint GetBestInterface(uint destAddress, out uint bestIfIndex);
+
+    /// <summary>The interface's IPv4 index, or null when the stack declines to say.</summary>
+    private static uint? IPv4Index(this NetworkInterface nic)
+    {
+        try { return (uint?)nic.GetIPProperties().GetIPv4Properties()?.Index; }
+        catch (NetworkInformationException) { return null; }
     }
 
     /// <summary>The address to print for another device, or null when this machine has none.</summary>
     /// <remarks>
     /// The interface carrying the default route is what "this machine's address" means to
-    /// someone else on the network. Asking for it that way rather than taking the first
-    /// private address is what keeps a VPN, a Hyper-V switch or a WSL adapter — all of
-    /// which hold addresses no tablet can reach — from being the one printed.
+    /// someone else on the network — it is the one the OS itself would use to reach them.
+    /// The fallback this used to have, any active address when no interface matched, has
+    /// been deliberately left out (found in review): a machine whose only up adapter is
+    /// virtual or isolated would then be told an address nobody can open. Null — and the
+    /// "no address" line it produces — is the honest answer there.
     /// </remarks>
     public static IPAddress? LanAddress()
     {
-        var usable = OwnAddressesWithRoute()
-            .Where(a => IsUsableLanAddress(a.Address))
+        var routed = OwnAddressesWithRoute()
+            .Where(a => a.Routed && IsUsableLanAddress(a.Address))
+            .Select(a => a.Address)
             .ToList();
-        if (usable.Count == 0) return null;
-        var routed = usable.Where(a => a.Routed).Select(a => a.Address).ToList();
-        return PreferredAddress(routed.Count > 0 ? routed : [.. usable.Select(a => a.Address)]);
+        return routed.Count > 0 ? PreferredAddress(routed) : null;
     }
 
     /// <summary>True when a Host header names this server and no other.</summary>

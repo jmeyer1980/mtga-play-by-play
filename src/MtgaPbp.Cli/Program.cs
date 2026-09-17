@@ -679,7 +679,7 @@ public static class Program
         if (lease.Active && OperatingSystem.IsWindows() &&
             ConsoleOwnership.ShouldDetach(ConsoleOwnership.AttachedProcesses()))
         {
-            lease.Balloon("mtga-pbp", TrayTip.Detached(server.LanUrl ?? server.Url, unknown));
+            lease.Balloon("mtga-pbp", TrayTip.Detached(server.Lan ? server.LanUrl : server.Url, unknown));
             ConsoleOwnership.Detach();
         }
 

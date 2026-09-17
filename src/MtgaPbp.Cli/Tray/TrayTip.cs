@@ -40,9 +40,12 @@ public static class TrayTip
     /// message box was the other candidate and is not used: it is modal, and a watch
     /// started at logon would wait behind it, not serving, until someone clicked.
     /// </remarks>
-    public static string Detached(string url, IReadOnlyList<string> ignored)
+    public static string Detached(string? url, IReadOnlyList<string> ignored)
     {
-        var text = $"Watching. The report is at {url} — right-click this icon to quit.";
+        var text = url is { } address
+            ? $"Watching. The report is at {address} — right-click this icon to quit."
+            : "Watching. No address on this machine reaches another device, so the report " +
+              "is only readable here — right-click this icon to quit.";
         if (ignored.Count > 0)
             text += $" Ignoring unknown option{(ignored.Count == 1 ? "" : "s")} " +
                     $"{string.Join(", ", ignored)}.";

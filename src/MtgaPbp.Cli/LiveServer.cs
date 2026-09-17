@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -210,6 +211,47 @@ public sealed class LiveServer(string rootDirectory, int port, bool lan = false,
         }
     }
 
+    /// <summary>The most of a request head this parser will ever take: 8 KiB in total,
+    /// and ten seconds on the clock, whichever runs out first.</summary>
+    /// <remarks>
+    /// LAN mode hands this parser to strangers, so both limits are load-bearing. The
+    /// socket's per-read timeout only bounds a read that returns nothing — a peer that
+    /// drips one byte per keepalive used to hold a pool thread forever inside a
+    /// <c>ReadLine</c> that never ended, and a single line of unbounded length was an
+    /// allocation sized by whoever connected, all before the key check could have said
+    /// no (found in review). A head that trips either limit gets a hangup, not a
+    /// response; there is nothing worth saying to a peer doing that.
+    /// </remarks>
+    private static List<string>? ReadRequestHead(Stream stream)
+    {
+        const int maxHeadBytes = 8 * 1024;
+        var clock = Stopwatch.StartNew();
+        var head = new MemoryStream();
+        var chunk = new byte[1024];
+        int read;
+        while (!EndsAtBlankLine(head))
+        {
+            if (clock.Elapsed > TimeSpan.FromSeconds(10)) return null;
+            var budget = maxHeadBytes + 1 - (int)head.Length;
+            if (budget <= 0) return null;
+            if ((read = stream.Read(chunk, 0, Math.Min(chunk.Length, budget))) <= 0) break;
+            head.Write(chunk, 0, read);
+        }
+        if (head.Length == 0) return null;
+        return [.. Encoding.UTF8.GetString(head.ToArray()).Split('\n').Select(l => l.TrimEnd('\r'))];
+    }
+
+    /// <summary>True when the bytes so far end in a blank line — the HTTP head's
+    /// terminator, be it a well-behaved client's CRLF CRLF or a lazy one's LF LF.</summary>
+    private static bool EndsAtBlankLine(MemoryStream head)
+    {
+        var b = head.GetBuffer();
+        var n = (int)head.Length;
+        return n >= 2 && b[n - 1] == (byte)'\n' &&
+               (b[n - 2] == (byte)'\n' ||
+                n >= 4 && b[n - 2] == (byte)'\r' && b[n - 3] == (byte)'\n' && b[n - 4] == (byte)'\r');
+    }
+
     private async Task AcceptLoop()
     {
         while (!_cts.IsCancellationRequested)
@@ -234,13 +276,12 @@ public sealed class LiveServer(string rootDirectory, int port, bool lan = false,
             client.SendTimeout = 5000;
 
             var stream = client.GetStream();
-            var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
             var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = false };
 
-            var requestLine = reader.ReadLine();
-            if (string.IsNullOrWhiteSpace(requestLine)) { client.Dispose(); return; }
+            var head = ReadRequestHead(stream);
+            if (head is null || string.IsNullOrWhiteSpace(head[0])) { client.Dispose(); return; }
 
-            var parts = requestLine.Split(' ');
+            var parts = head[0].Split(' ');
             if (parts.Length < 2) { client.Dispose(); return; }
             var (method, target) = (parts[0], parts[1]);
 
@@ -251,8 +292,9 @@ public sealed class LiveServer(string rootDirectory, int port, bool lan = false,
             string? host = null, origin = null;
             var headerLines = new List<string>();
             var headers = 0;
-            while (reader.ReadLine() is { Length: > 0 } header)
+            foreach (var header in head.Skip(1))
             {
+                if (header.Length == 0) break;
                 if (++headers > 100) { client.Dispose(); return; }
                 var colon = header.IndexOf(':');
                 if (colon < 1) continue;

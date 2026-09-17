@@ -48,6 +48,12 @@ public class TrayTipTests
                     Is.EqualTo("Watching. The report is at http://127.0.0.1:8799/ — right-click this icon to quit."));
 
     [Test]
+    public void A_detach_with_no_reachable_address_says_so_instead_of_loopback() =>
+        Assert.That(TrayTip.Detached(null, []),
+                    Does.StartWith("Watching. No address on this machine reaches another device")
+                        .And.EndsWith("right-click this icon to quit."));
+
+    [Test]
     public void A_flag_nothing_acted_on_is_repeated_in_the_balloon() =>
         Assert.That(TrayTip.Detached("http://127.0.0.1:8799/", ["---open"]),
                     Does.EndWith("to quit. Ignoring unknown option ---open."));
