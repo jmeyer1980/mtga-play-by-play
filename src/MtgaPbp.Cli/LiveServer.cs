@@ -26,17 +26,34 @@ namespace MtgaPbp.Cli;
 /// between those tricks and an archive full of real player names (#116).
 /// </para>
 /// </remarks>
-public sealed class LiveServer(string rootDirectory, int port) : IDisposable
+public sealed class LiveServer(string rootDirectory, int port, bool lan = false, string? lanKey = null) : IDisposable
 {
-    private readonly TcpListener _listener = new(IPAddress.Loopback, port);
+    private readonly TcpListener _listener = new(lan ? IPAddress.Any : IPAddress.Loopback, port);
     private readonly List<Subscriber> _subscribers = [];
     private readonly CancellationTokenSource _cts = new();
+    private readonly string? _key = lanKey;
+
+    /// <summary>Whether the server is in LAN mode (bound to all interfaces).</summary>
+    public bool Lan => lan;
 
     /// <summary>The port actually bound — asked of the listener because a requested
     /// port of 0 means the OS picks one, which is how the tests avoid collisions.</summary>
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
     public string Url => $"http://127.0.0.1:{Port}/";
+
+    /// <summary>The URL to give another device when in LAN mode, or <see cref="Url"/> when not.</summary>
+    /// <remarks>
+    /// In LAN mode the key rides along: the bare address is refused, so the URL the
+    /// user copies is the one that gets them in on the first navigation — which then
+    /// becomes a cookie and a clean address bar.
+    /// </remarks>
+    public string LanUrl => lan && LanAccess.LanAddress() is { } addr
+        ? _key is null ? $"http://{addr}:{Port}/" : $"http://{addr}:{Port}/?key={_key}"
+        : Url;
+
+    /// <summary>The address the listener bound — Any in LAN mode, Loopback otherwise.</summary>
+    public IPAddress BoundAddress => ((IPEndPoint)_listener.LocalEndpoint).Address;
 
     /// <summary>Invoked when the page asks to keep or unkeep a match.</summary>
     public Func<string, bool, bool>? OnFavorite { get; set; }
@@ -213,6 +230,7 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
             // at 127.0.0.1 and become same-origin with this server, and the header
             // carrying that hostname is the only place the trick shows.
             string? host = null, origin = null;
+            var headerLines = new List<string>();
             var headers = 0;
             while (reader.ReadLine() is { Length: > 0 } header)
             {
@@ -223,9 +241,13 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
                 var value = header[(colon + 1)..].Trim();
                 if (name.Equals("Host", StringComparison.OrdinalIgnoreCase)) host = value;
                 else if (name.Equals("Origin", StringComparison.OrdinalIgnoreCase)) origin = value;
+                headerLines.Add(header);
             }
 
-            if (!IsLoopbackHost(host))
+            // The rebinding check: a Host that does not name this server — any name
+            // but loopback and this machine's own addresses — is refused outright,
+            // in loopback mode and in LAN mode alike (#116).
+            if (!LanAccess.IsOwnHost(host, Port, LanAccess.OwnAddresses()))
             {
                 Respond(writer, "404 Not Found", "text/plain", "not found"u8.ToArray());
                 client.Dispose();
@@ -235,6 +257,45 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
             var path = target.Split('?')[0];
             var query = target.Contains('?') ? target[(target.IndexOf('?') + 1)..] : "";
 
+            // Admission, in LAN mode. The machine's own browser is vouched for by its
+            // loopback socket and never needs a key; anything from off this machine
+            // must present the configured key — as ?key= on a first navigation or as
+            // the pbp_key cookie afterwards, which is what lets EventSource and the
+            // page's own fetch authenticate without the key in every URL.
+            if (_key is not null)
+            {
+                var cookieHeader = string.Empty;
+                foreach (var h in headerLines)
+                {
+                    if (h.StartsWith("Cookie:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cookieHeader = h["Cookie:".Length..].Trim();
+                        break;
+                    }
+                }
+
+                var fromLoopback = LanAccess.IsLoopbackPeer(
+                    (client.Client.RemoteEndPoint as IPEndPoint)?.Address);
+                var hasKeyInQuery = LanAccess.KeyMatches(LanAccess.KeyFromQuery(target), _key);
+                var hasValidCookie = LanAccess.KeyMatches(LanAccess.KeyFromCookie(cookieHeader), _key);
+
+                if (!fromLoopback && !hasKeyInQuery && !hasValidCookie)
+                {
+                    Respond(writer, "401 Unauthorized", "text/plain", "unauthorized"u8.ToArray());
+                    client.Dispose();
+                    return;
+                }
+
+                // The key never has to appear twice: a URL that carried it is answered
+                // with a 302 to the clean path and the cookie that remembers it.
+                if (hasKeyInQuery && !hasValidCookie)
+                {
+                    RespondCookieRedirect(writer, path);
+                    client.Dispose();
+                    return;
+                }
+            }
+
             if (path == "/api/events") { Subscribe(client, writer); return; }
 
             if (method == "POST" && path.StartsWith("/api/favorite/", StringComparison.Ordinal))
@@ -243,7 +304,7 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
                 // fetch lands its side effect even though the response is opaque —
                 // so a foreign Origin is refused outright. No Origin at all means a
                 // non-browser caller, which the loopback binding already vouches for.
-                if (origin is not null && !IsOwnOrigin(origin))
+                if (origin is not null && !LanAccess.IsOwnOrigin(origin, Port, LanAccess.OwnAddresses()))
                 {
                     Respond(writer, "403 Forbidden", "text/plain", "forbidden"u8.ToArray());
                     client.Dispose();
@@ -263,46 +324,23 @@ public sealed class LiveServer(string rootDirectory, int port) : IDisposable
         }
         catch
         {
-            // A dropped connection is normal; never let it take the server down.
+            // Client hung up or errored — nothing to send back.
             try { client.Dispose(); } catch { /* already gone */ }
         }
     }
 
-    /// <summary>True when a Host header names this server and no other.</summary>
-    /// <remarks>
-    /// A stated port must be this server's own — <c>127.0.0.1:1234</c> aimed at a
-    /// listener on 8787 is nothing a browser pointed here would send. A bare
-    /// loopback name states no port and so names no other server; it stays
-    /// accepted for plain non-browser clients.
-    /// </remarks>
-    private bool IsLoopbackHost(string? host)
+    /// <summary>Writes the 302 that turns a key-carrying URL into a cookie session.</summary>
+    private void RespondCookieRedirect(StreamWriter writer, string path)
     {
-        if (string.IsNullOrEmpty(host)) return false;
-        var colon = host.LastIndexOf(':');
-        var name = (colon < 0 ? host : host[..colon]).Trim();
-        if (name is not "127.0.0.1" &&
-            !name.Equals("localhost", StringComparison.OrdinalIgnoreCase))
-            return false;
-        return colon < 0 || host[(colon + 1)..].Trim() == Port.ToString();
-    }
-
-    /// <summary>True when an Origin header is this server's own page, exactly.</summary>
-    /// <remarks>
-    /// Same-origin includes the port: a page served by some other local application
-    /// is another site, however local it is. An opaque <c>Origin: null</c>
-    /// (sandboxed frames, some redirects) fails on purpose — it proves nothing
-    /// about who is asking.
-    /// </remarks>
-    private bool IsOwnOrigin(string origin)
-    {
-        if (!origin.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) return false;
-        var rest = origin["http://".Length..].TrimEnd('/');
-        var colon = rest.LastIndexOf(':');
-        var name = colon < 0 ? rest : rest[..colon];
-        var port = colon < 0 ? "80" : rest[(colon + 1)..];
-        return (name is "127.0.0.1" ||
-                name.Equals("localhost", StringComparison.OrdinalIgnoreCase))
-            && port == Port.ToString();
+        lock (writer)
+        {
+            writer.Write("HTTP/1.1 302 Found\r\n");
+            writer.Write($"Location: {path}\r\n");
+            writer.Write($"Set-Cookie: {LanAccess.CookieName}={_key}; Path=/; HttpOnly; SameSite=Strict\r\n");
+            writer.Write("Cache-Control: no-store\r\n");
+            writer.Write("Connection: close\r\n\r\n");
+            writer.Flush();
+        }
     }
 
     /// <summary>Holds the connection open and streams change events to the page.</summary>

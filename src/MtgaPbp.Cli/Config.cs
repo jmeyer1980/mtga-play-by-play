@@ -61,6 +61,15 @@ public sealed class Config
     /// </summary>
     public int MaxArchivedMatches { get; set; }
 
+    /// <summary>
+    /// The key another device presents to read the report over the network.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately a setting rather than a per-run secret, so a bookmark can survive:
+    /// `--lan` is what decides whether anything acts on it at all.
+    /// </remarks>
+    public string? LanKey { get; set; }
+
     public static Config Default()
     {
         var low = Path.Combine(
@@ -151,6 +160,11 @@ public sealed class Config
             // number of matches to keep, it is not a number of matches at all, so it
             // is ignored rather than clamped to something it did not ask for.
             if (loaded.MaxArchivedMatches is { } max && max >= 0) cfg.MaxArchivedMatches = max;
+
+            // A secret, so it is taken only when it says something. An empty string in a
+            // layer is not a key, and accepting it as one would turn --lan into a refusal
+            // with no way to see why.
+            if (!string.IsNullOrWhiteSpace(loaded.LanKey)) cfg.LanKey = loaded.LanKey;
         }
         catch (JsonException)
         {
@@ -178,5 +192,6 @@ public sealed class Config
         public bool? SuggestDeckRotation { get; set; }
         public bool? WhyFiles { get; set; }
         public int? MaxArchivedMatches { get; set; }
+        public string? LanKey { get; set; }
     }
 }

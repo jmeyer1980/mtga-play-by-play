@@ -48,6 +48,18 @@ public static class Program
         var tray = args.Contains("--tray");
         if (tray && command != "watch")
             Console.Error.WriteLine("warning: --tray only applies to watch; ignoring it");
+        // Put the report on the network for this run. A flag rather than a config key,
+        // and more emphatically so than --tray: the README recommends starting a watch from
+        // a Startup-folder shortcut, so a setting that bound wider would publish the archive
+        // every morning on a machine nobody was watching.
+        var lan = args.Contains("--lan");
+        if (lan && command != "watch")
+            Console.Error.WriteLine("warning: --lan only applies to watch; ignoring it");
+        if (lan && LanAccess.Refusal(cfg.LanKey) is { } refusal)
+        {
+            Console.Error.WriteLine($"error: {refusal}");
+            return 2;
+        }
 
         // Identity first, on every command that a person reads.
         if (command is not ("keep" or "unkeep" or "stop")) Banner.Write(command);
@@ -59,7 +71,7 @@ public static class Program
                 "capture" => Capture(cfg, prune),
                 "build" => Build(cfg, open, rebuild: rebuild),
                 "stats" => Stats(cfg),
-                "watch" => Watch(cfg, operands, open, prune, rebuild, tray, unknown),
+                "watch" => Watch(cfg, operands, open, prune, rebuild, tray, lan, unknown),
                 "stop" => StopCommand.Run(operands.FirstOrDefault(), TimeSpan.FromSeconds(10),
                                           Console.Out, Console.Error),
                 "collection" => ImportCollection(cfg, operands.FirstOrDefault()),
@@ -80,7 +92,7 @@ public static class Program
     private static readonly string[] Commands =
         ["capture", "build", "stats", "watch", "stop", "keep", "unkeep", "collection", "why"];
 
-    private static readonly string[] Options = ["--open", "--rebuild", "--prune", "--tray"];
+    private static readonly string[] Options = ["--open", "--rebuild", "--prune", "--tray", "--lan"];
 
     /// <summary>
     /// The dashed arguments nothing will act on: not an option, and not a command in
@@ -506,7 +518,7 @@ public static class Program
     /// shortcut, the warning line that named them closes with that window.
     /// </param>
     private static int Watch(
-        Config cfg, string[] operands, bool open, bool prune, bool rebuild, bool tray,
+        Config cfg, string[] operands, bool open, bool prune, bool rebuild, bool tray, bool lan,
         string[] unknown)
     {
         var port = int.TryParse(operands.FirstOrDefault(), out var p) ? p : 8787;
@@ -529,7 +541,7 @@ public static class Program
         // change stream once the fresh build lands, so nobody reads stale rows for
         // longer than the build takes — which is exactly what happens on every later
         // capture too.
-        using var server = new LiveServer(cfg.OutputDir, port);
+        using var server = new LiveServer(cfg.OutputDir, port, lan, cfg.LanKey);
         var rebuilds = new RebuildGate();
         server.OnFavorite = (id, on) =>
         {
@@ -584,6 +596,14 @@ public static class Program
         // it can be reached. That silence did not matter while a browser always opened
         // on top of it; it is the whole experience for anyone who has turned that off.
         Console.WriteLine($"serving  {server.Url}");
+
+        // The address another device uses, on its own line because it is long and because
+        // the scoreboard's footer has no room for it. The key is in mtga-pbp.json, so losing
+        // this line to the scrollback costs nothing but scrolling back.
+        if (server.Lan)
+            Console.WriteLine(server.LanUrl is { } lanUrl
+                ? $"lan      {lanUrl}   (for another device on this network)"
+                : "lan      no address on this machine reaches another device");
 
         // One signal, three senders: Ctrl+C here, `mtga-pbp stop` from any other
         // terminal, and — under --tray — the icon's Quit. Named after the port, so a
@@ -652,7 +672,7 @@ public static class Program
         if (lease.Active && OperatingSystem.IsWindows() &&
             ConsoleOwnership.ShouldDetach(ConsoleOwnership.AttachedProcesses()))
         {
-            lease.Balloon("mtga-pbp", TrayTip.Detached(server.Url, unknown));
+            lease.Balloon("mtga-pbp", TrayTip.Detached(server.LanUrl ?? server.Url, unknown));
             ConsoleOwnership.Detach();
         }
 
