@@ -229,27 +229,42 @@ public sealed class LiveServer(string rootDirectory, int port, bool lan = false,
         var head = new MemoryStream();
         var chunk = new byte[1024];
         int read;
-        while (!EndsAtBlankLine(head))
+        var complete = false;
+        while (!complete)
         {
             if (clock.Elapsed > TimeSpan.FromSeconds(10)) return null;
             var budget = maxHeadBytes + 1 - (int)head.Length;
             if (budget <= 0) return null;
             if ((read = stream.Read(chunk, 0, Math.Min(chunk.Length, budget))) <= 0) break;
             head.Write(chunk, 0, read);
+            // The head's terminator may land mid-read: a POST can carry its body in
+            // the same segment the head ends in, so the delimiter is not necessarily
+            // at the end of the bytes (found in review). The first one wins; whatever
+            // follows it is body, and goes away with the connection.
+            if (FirstBlankLine(head) is { } end)
+            {
+                head.SetLength(end + 1);
+                complete = true;
+            }
         }
         if (head.Length == 0) return null;
+        if (!complete) return null;   // never saw the terminator — hangup, not a guess
         return [.. Encoding.UTF8.GetString(head.ToArray()).Split('\n').Select(l => l.TrimEnd('\r'))];
     }
 
-    /// <summary>True when the bytes so far end in a blank line — the HTTP head's
-    /// terminator, be it a well-behaved client's CRLF CRLF or a lazy one's LF LF.</summary>
-    private static bool EndsAtBlankLine(MemoryStream head)
+    /// <summary>The index of the <c>'\n'</c> that closes the first blank line anywhere
+    /// in the buffer — the head's terminator, be it a well-behaved client's
+    /// CRLF CRLF or a lazy one's LF LF — or null when it is not there yet.</summary>
+    private static int? FirstBlankLine(MemoryStream head)
     {
         var b = head.GetBuffer();
         var n = (int)head.Length;
-        return n >= 2 && b[n - 1] == (byte)'\n' &&
-               (b[n - 2] == (byte)'\n' ||
-                n >= 4 && b[n - 2] == (byte)'\r' && b[n - 3] == (byte)'\n' && b[n - 4] == (byte)'\r');
+        for (var i = 1; i < n; i++)
+            if (b[i] == (byte)'\n' &&
+                (b[i - 1] == (byte)'\n' ||
+                 i >= 3 && b[i - 1] == (byte)'\r' && b[i - 2] == (byte)'\n' && b[i - 3] == (byte)'\r'))
+                return i;
+        return null;
     }
 
     private async Task AcceptLoop()
@@ -395,8 +410,12 @@ public sealed class LiveServer(string rootDirectory, int port, bool lan = false,
     {
         lock (writer)
         {
+            // The path came off the request line, which is attacker-typed. A leading
+            // `//host/...` resolves as a network-path redirect to that host, so the
+            // redirect is forced back onto this server no matter what it said (found
+            // in review).
             writer.Write("HTTP/1.1 302 Found\r\n");
-            writer.Write($"Location: {path}\r\n");
+            writer.Write($"Location: /{path.TrimStart('/')}\r\n");
             writer.Write($"Set-Cookie: {LanAccess.CookieName}={_key}; Path=/; HttpOnly; SameSite=Strict\r\n");
             writer.Write("Cache-Control: no-store\r\n");
             writer.Write("Connection: close\r\n\r\n");

@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Text.RegularExpressions;
 using MtgaPbp.Cli;
 using NUnit.Framework;
 
@@ -399,6 +398,43 @@ public class LiveServerTests
             $"GET /?key=wrongkey12345678 HTTP/1.1\r\nHost: {address}:{lan.Port}\r\n" +
             "Connection: close\r\n\r\n");
         Assert.That(response, Does.Contain("401"));
+    }
+
+    [Test]
+    public void A_head_whose_terminator_arrives_with_the_body_is_still_parsed()
+    {
+        // The blank line may not end the segment a browser happens to read first: a
+        // POST that carries its body in the same bytes as its head used to leave the
+        // parser waiting for a second terminator that would never come, until the
+        // timeout silently dropped a valid request (found in review).
+        using var lan = NewLanServer(_root);
+        lan.OnFavorite = (_, _) => true;
+        var address = LanAddressOrIgnore();
+        var headAndBody =
+            $"POST /api/favorite/m1 HTTP/1.1\r\nHost: {address}:{lan.Port}\r\n" +
+            $"Origin: http://{address}:{lan.Port}\r\n" +
+            "Cookie: pbp_key=testkey1234567890ab\r\n" +
+            "Content-Length: 5\r\nConnection: close\r\n\r\nhello";
+        Assert.That(new SendHelper(lan).SendTo(address.ToString(), headAndBody),
+                    Does.Contain("200 OK"), "the head was read; the body rides along unused");
+    }
+
+    [Test]
+    public void The_cookie_redirect_never_leaves_this_server()
+    {
+        // `//attacker.example/...` resolves as a network-path redirect — the request
+        // line is attacker-typed, so the Location is forced onto this origin (found
+        // in review).
+        using var lan = NewLanServer(_root);
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            "GET //attacker.example/path?key=testkey1234567890ab HTTP/1.1\r\n" +
+            $"Host: {address}:{lan.Port}\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("302"));
+        Assert.That(response, Does.Contain("Location: /attacker.example/path"),
+            "the leading slashes are normalized onto this origin");
+        Assert.That(response, Does.Not.Contain("Location: //"),
+            "no network-path redirect ever leaves this server");
     }
 
     [Test]
