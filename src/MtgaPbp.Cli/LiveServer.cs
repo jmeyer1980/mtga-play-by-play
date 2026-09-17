@@ -366,12 +366,15 @@ public sealed class LiveServer(string rootDirectory, int port, bool lan = false,
                     return;
                 }
 
-                // The key never has to appear twice: a URL that carried it is answered
-                // with a 302 to the clean path and the cookie that remembers it. Only
-                // a document navigation gets the redirect — a query-keyed API call
-                // must be executed, not bounced (found in review), and /api/events
-                // never re-navigates.
-                if (hasKeyInQuery && !hasValidCookie &&
+                // The key never has to appear twice — and never should: a URL that
+                // carries it is answered with a 302 to the clean path and the cookie
+                // that remembers it, even when a valid cookie is already present,
+                // because the point is to get the key out of the address bar, the
+                // history, and the Referer of whatever is navigated to next — not
+                // merely to admit the first navigation. Only a document navigation
+                // gets the redirect: a query-keyed API call must be executed, not
+                // bounced (found in review), and /api/events never re-navigates.
+                if (hasKeyInQuery &&
                     method is "GET" or "HEAD" &&
                     !path.StartsWith("/api/", StringComparison.Ordinal))
                 {

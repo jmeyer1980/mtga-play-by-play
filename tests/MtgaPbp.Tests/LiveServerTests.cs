@@ -390,6 +390,42 @@ public class LiveServerTests
     }
 
     [Test]
+    public void The_key_is_stripped_from_the_url_even_with_a_valid_cookie()
+    {
+        // The redirect exists to get the key out of the address bar, the history, and
+        // the Referer of whatever is navigated to next — so it fires whenever a query
+        // key arrives on a document navigation, cookie or no cookie (found in review).
+        using var lan = NewLanServer(_root);
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            "GET /?key=testkey1234567890ab HTTP/1.1\r\n" +
+            $"Host: {address}:{lan.Port}\r\n" +
+            "Cookie: pbp_key=testkey1234567890ab\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("302"));
+        Assert.That(response, Does.Contain("Location: /"));
+        Assert.That(response, Does.Contain("Set-Cookie: pbp_key=testkey1234567890ab"),
+            "the cookie is re-affirmed, not just the redirect");
+    }
+
+    [Test]
+    public void A_query_keyed_api_call_is_executed_even_with_a_valid_cookie()
+    {
+        // The stripping rule is for document navigations only: the page's own fetch
+        // may carry the key in its URL, and it must be executed, not bounced — a 302
+        // here would be followed without the method's body and break the call.
+        using var lan = NewLanServer(_root);
+        lan.OnFavorite = (_, _) => true;
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            "POST /api/favorite/m1?on=false HTTP/1.1\r\n" +
+            $"Host: {address}:{lan.Port}\r\n" +
+            $"Origin: http://{address}:{lan.Port}\r\n" +
+            "Cookie: pbp_key=testkey1234567890ab\r\n" +
+            "Content-Length: 0\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("200 OK"));
+    }
+
+    [Test]
     public void A_wrong_key_is_refused()
     {
         using var lan = NewLanServer(_root);
