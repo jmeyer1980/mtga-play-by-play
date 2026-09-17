@@ -420,12 +420,17 @@ public sealed class LiveServer(string rootDirectory, int port, bool lan = false,
         lock (writer)
         {
             // The path came off the request line, which is attacker-typed. A leading
-            // `//host/...` resolves as a network-path redirect to that host, so the
-            // redirect is forced back onto this server no matter what it said (found
-            // in review).
+            // `//host/...` resolves as a network-path redirect, and browsers treat
+            // `\` as `/` in URLs, so `/\host/...` was the same trick wearing a leading
+            // slash — both are normalized onto this server, and control characters
+            // (which the head's line-splitting already keeps out of the CRLF sense,
+            // but never say never) are dropped outright (found in review).
+            var safe = new string(path.Replace('\\', '/')
+                .Where(c => c > (char)0x1F && c != (char)0x7F).ToArray()).TrimStart('/');
             writer.Write("HTTP/1.1 302 Found\r\n");
-            writer.Write($"Location: /{path.TrimStart('/')}\r\n");
-            writer.Write($"Set-Cookie: {LanAccess.CookieName}={_key}; Path=/; HttpOnly; SameSite=Strict\r\n");
+            writer.Write($"Location: /{safe}\r\n");
+            writer.Write($"Set-Cookie: {LanAccess.CookieName}={_key}; " +
+                         $"Max-Age={LanAccess.CookieMaxAgeSeconds}; Path=/; HttpOnly; SameSite=Strict\r\n");
             writer.Write("Cache-Control: no-store\r\n");
             writer.Write("Connection: close\r\n\r\n");
             writer.Flush();

@@ -40,6 +40,25 @@ public class LanAccessTests
         Assert.That(LanAccess.Refusal(new string('a', LanAccess.MinKeyLength)), Is.Null);
 
     [Test]
+    public void A_key_longer_than_the_maximum_is_refused() =>
+        Assert.That(LanAccess.Refusal(new string('a', LanAccess.MaxKeyLength + 1)), Is.Not.Null,
+            "an unbounded key is a memory question a config file should not get to ask");
+
+    [Test]
+    public void The_address_cache_expires_and_then_is_remembered_again()
+    {
+        var then = DateTimeOffset.UtcNow;
+        var now = then.Add(LanAccess.AddressCacheLifetime);
+
+        Assert.That(LanAccess.AddressCacheIsFresh([IPAddress.Loopback], then, now), Is.False,
+            "at the lifetime's end the snapshot is stale");
+        Assert.That(LanAccess.AddressCacheIsFresh([IPAddress.Loopback], now, now), Is.True,
+            "a just-taken snapshot is fresh");
+        Assert.That(LanAccess.AddressCacheIsFresh(null, now, now), Is.False,
+            "there is nothing fresh about never having asked");
+    }
+
+    [Test]
     public void A_key_with_characters_that_cannot_ride_a_url_is_refused()
     {
         Assert.That(LanAccess.Refusal("key&with=separators!16"), Is.Not.Null,

@@ -433,8 +433,20 @@ public class LiveServerTests
         Assert.That(response, Does.Contain("302"));
         Assert.That(response, Does.Contain("Location: /attacker.example/path"),
             "the leading slashes are normalized onto this origin");
-        Assert.That(response, Does.Not.Contain("Location: //"),
-            "no network-path redirect ever leaves this server");
+    }
+
+    [Test]
+    public void The_cookie_redirect_treats_a_backslash_as_a_slash()
+    {
+        // Browsers treat `\` as `/` in URLs, so `/\attacker.example/...` was the
+        // `//` trick wearing a leading slash (found in review).
+        using var lan = NewLanServer(_root);
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            "GET /\\attacker.example/path?key=testkey1234567890ab HTTP/1.1\r\n" +
+            $"Host: {address}:{lan.Port}\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("Location: /attacker.example/path"),
+            "a backslash is a slash to a browser, so it is normalized the same way");
     }
 
     [Test]

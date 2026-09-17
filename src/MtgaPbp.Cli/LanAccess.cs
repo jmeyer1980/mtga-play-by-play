@@ -25,6 +25,24 @@ public static class LanAccess
     /// <summary>The shortest key <c>--lan</c> will start with.</summary>
     public const int MinKeyLength = 16;
 
+    /// <summary>The longest key <c>--lan</c> will start with.</summary>
+    /// <remarks>
+    /// An upper bound, because the key has to survive a round trip through the request
+    /// line on the way in and the <c>Cookie</c> header afterwards, and both are read
+    /// under an 8 KiB request-head budget: a key long enough to outgrow that parses
+    /// never, so the advertised URL would never authenticate (found in review).
+    /// </remarks>
+    public const int MaxKeyLength = 128;
+
+    /// <summary>How long the key cookie lives, in seconds.</summary>
+    /// <remarks>
+    /// Deliberately not a session cookie: the README promises the cleaned-up address is
+    /// bookmarkable, and a session cookie would forget the key at every browser restart
+    /// and turn that bookmark into a 401 (found in review). 180 days, then a fresh
+    /// navigation with the printed URL re-establishes it.
+    /// </remarks>
+    public const int CookieMaxAgeSeconds = 180 * 24 * 60 * 60;
+
     /// <summary>Why <c>--lan</c> cannot start, or null when it can.</summary>
     /// <remarks>
     /// The message names the file to fix and hands over a key, because the alternative —
@@ -51,6 +69,11 @@ public static class LanAccess
         if (configuredKey.Length < MinKeyLength)
             return $"--lan needs a \"LanKey\" of at least {MinKeyLength} characters, and this " +
                    $"one is {configuredKey.Length}. Try \"LanKey\": \"{NewKey()}\".";
+        if (configuredKey.Length > MaxKeyLength)
+            return $"--lan needs a \"LanKey\" of at most {MaxKeyLength} characters, and this " +
+                   $"one is {configuredKey.Length}: long enough to exceed the request-line and " +
+                   $"cookie budget the server reads keys through, so it could never be presented. " +
+                   $"Try \"LanKey\": \"{NewKey()}\".";
         if (configuredKey.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not '-' and not '_'))
             return "--lan needs a \"LanKey\" made only of letters, digits, hyphens and underscores, " +
                    "because it is printed into a URL and a cookie, and anything else can break " +
@@ -108,8 +131,37 @@ public static class LanAccess
         peer is not null && IPAddress.IsLoopback(peer);
 
     /// <summary>Every unicast address this machine currently holds.</summary>
-    public static IPAddress[] OwnAddresses() =>
-        [.. OwnAddressesWithRoute().Select(a => a.Address)];
+    /// <remarks>
+    /// Re-asked of the OS at most once per <see cref="AddressCacheLifetime"/>. The
+    /// server asks on every request — the Host check and the Origin check both — and
+    /// enumeration is a synchronous walk of every adapter, so an unauthenticated LAN
+    /// peer could otherwise make the server pay that cost on demand, as often as it
+    /// liked (found in review).
+    /// </remarks>
+    public static IPAddress[] OwnAddresses() => OwnAddresses(DateTimeOffset.UtcNow);
+
+    /// <summary>How long a snapshot of this machine's addresses stays trusted.</summary>
+    public static readonly TimeSpan AddressCacheLifetime = TimeSpan.FromSeconds(30);
+
+    private static readonly object CacheGate = new();
+    private static IPAddress[]? _cachedAddresses;
+    private static DateTimeOffset _cacheStamp;
+
+    private static IPAddress[] OwnAddresses(DateTimeOffset now)
+    {
+        lock (CacheGate)
+        {
+            if (AddressCacheIsFresh(_cachedAddresses, _cacheStamp, now)) return _cachedAddresses!;
+            _cachedAddresses = [.. OwnAddressesWithRoute().Select(a => a.Address)];
+            _cacheStamp = now;
+            return _cachedAddresses;
+        }
+    }
+
+    /// <summary>True when a cached address snapshot may still be used — the expiry
+    /// question, asked directly so the boundary can be tested without the OS.</summary>
+    public static bool AddressCacheIsFresh(IPAddress[]? cached, DateTimeOffset stamp, DateTimeOffset now) =>
+        cached is not null && now - stamp < AddressCacheLifetime;
 
     /// <summary>True when an address is usable for printing to another device.</summary>
     public static bool IsUsableLanAddress(IPAddress addr)
@@ -144,16 +196,33 @@ public static class LanAccess
 
     private static List<AddressWithRoute> OwnAddressesWithRoute()
     {
-        var best = BestInterfaceIndex();
-
-        return NetworkInterface.GetAllNetworkInterfaces()
+        var nics = NetworkInterface.GetAllNetworkInterfaces()
             .Where(nic => nic.OperationalStatus == OperationalStatus.Up &&
                           nic.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-            .SelectMany(nic => nic.GetIPProperties().UnicastAddresses
-                .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork)
-                .Select(a => new AddressWithRoute(a.Address, best is { } index && nic.IPv4Index() == index)))
             .ToList();
+        var best = BestInterfaceIndex();
+
+        // A full-tunnel VPN is the best route to everywhere, so GetBestInterface can
+        // name the tunnel adapter itself — and the address it carries is one no tablet
+        // on the local network can open (found in review). When it does, the question
+        // is re-asked the enumeration way: the non-tunnel adapters that hold a real
+        // gateway, which is every path off this machine a local network could use.
+        var bestNic = nics.FirstOrDefault(n => n.IPv4Index() == best);
+        List<uint?> routed = bestNic is { } nic && nic.NetworkInterfaceType != NetworkInterfaceType.Tunnel
+            ? [best]
+            : [.. nics.Where(n => n.NetworkInterfaceType != NetworkInterfaceType.Tunnel && n.HasIpv4Gateway())
+                      .Select(n => n.IPv4Index())];
+
+        return [.. nics.SelectMany(nic => nic.GetIPProperties().UnicastAddresses
+                .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork)
+                .Select(a => new AddressWithRoute(a.Address, routed.Contains(nic.IPv4Index()))))];
     }
+
+    /// <summary>True when the adapter's gateway list holds an IPv4 one — a real path
+    /// off this machine, not an on-host virtual switch's stub.</summary>
+    private static bool HasIpv4Gateway(this NetworkInterface nic) =>
+        nic.GetIPProperties().GatewayAddresses
+            .Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork);
 
     /// <summary>The interface the OS itself would route through to reach the internet, or
     /// null when it does not know — a machine with no default route, say.</summary>
