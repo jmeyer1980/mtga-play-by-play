@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Text.RegularExpressions;
 using MtgaPbp.Cli;
 using NUnit.Framework;
@@ -19,6 +20,14 @@ namespace MtgaPbp.Tests;
 public class LanAccessTests
 {
     private static readonly IPAddress[] Own = [IPAddress.Parse("192.168.1.50")];
+
+    [TestCase(NetworkInterfaceType.Tunnel, true)]
+    [TestCase(NetworkInterfaceType.Ppp, true)]
+    [TestCase(NetworkInterfaceType.Ethernet, false)]
+    [TestCase(NetworkInterfaceType.Wireless80211, false)]
+    public void Tunnel_and_ppp_types_are_excluded_from_lan_advertisement(
+        NetworkInterfaceType type, bool excluded) =>
+        Assert.That(LanAccess.IsTunneled(type), Is.EqualTo(excluded));
 
     [Test]
     public void A_key_is_suggested_when_lan_is_asked_for_without_one()

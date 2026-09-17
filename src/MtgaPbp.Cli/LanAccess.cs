@@ -208,9 +208,9 @@ public static class LanAccess
         // is re-asked the enumeration way: the non-tunnel adapters that hold a real
         // gateway, which is every path off this machine a local network could use.
         var bestNic = nics.FirstOrDefault(n => n.IPv4Index() == best);
-        List<uint?> routed = bestNic is { } nic && nic.NetworkInterfaceType != NetworkInterfaceType.Tunnel
+        List<uint?> routed = bestNic is { } nic && !IsTunneled(nic.NetworkInterfaceType)
             ? [best]
-            : [.. nics.Where(n => n.NetworkInterfaceType != NetworkInterfaceType.Tunnel && n.HasIpv4Gateway())
+            : [.. nics.Where(n => !IsTunneled(n.NetworkInterfaceType) && n.HasIpv4Gateway())
                       .Select(n => n.IPv4Index())];
 
         return [.. nics.SelectMany(nic => nic.GetIPProperties().UnicastAddresses
@@ -223,6 +223,12 @@ public static class LanAccess
     private static bool HasIpv4Gateway(this NetworkInterface nic) =>
         nic.GetIPProperties().GatewayAddresses
             .Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork);
+
+    /// <summary>Adapter types excluded from LAN address advertisement. PPP includes
+    /// common VPN connections; this is a selection heuristic, not a guarantee that
+    /// every VPN or virtual adapter can be identified by its reported type.</summary>
+    public static bool IsTunneled(NetworkInterfaceType type) =>
+        type is NetworkInterfaceType.Tunnel or NetworkInterfaceType.Ppp;
 
     /// <summary>The interface the OS itself would route through to reach the internet, or
     /// null when it does not know — a machine with no default route, say.</summary>

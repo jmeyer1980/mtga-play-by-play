@@ -407,7 +407,7 @@ if (server.Lan)
   the console is gone, and the balloon is the only place the address is said:
 
 ```csharp
-lease.Balloon(server.LanUrl ?? server.Url, unknown);
+lease.Balloon("mtga-pbp", TrayTip.Detached(server.Lan ? server.LanUrl : server.Url, unknown));
 ```
 
 - [ ] **Step 5: Usage.**

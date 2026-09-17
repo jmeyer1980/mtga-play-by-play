@@ -99,10 +99,13 @@ truncated or hashed into something that only looks strong.
 
 **3. The key arrives as a query string, and stays as a cookie.** A first navigation to
 `http://<lan>:8799/?key=<key>` is answered with `302` to the same path without the query and
-a `Set-Cookie: pbp_key=<key>; Path=/; SameSite=Strict` session cookie. Everything the page
+a `Set-Cookie: pbp_key=<key>; Max-Age=…; Path=/; HttpOnly; SameSite=Strict` cookie — a
+persistent credential the browser remembers, not a session cookie, so a tablet that slept
+overnight stays admitted when it wakes. Everything the page
 does afterwards — the three requests above, and every link the reader clicks — carries the
 cookie, which is what a query string alone cannot do. The redirect exists so the key does
-not sit in the address bar or in history; the page still works if a reader opens a keyed URL
+not sit in the address bar or in history; it fires on every keyed document navigation,
+cookie or no cookie, and the page still works if a reader opens a keyed URL
 twice.
 
 **4. Loopback peers are exempt, and nothing about today's behaviour changes.** A browser on

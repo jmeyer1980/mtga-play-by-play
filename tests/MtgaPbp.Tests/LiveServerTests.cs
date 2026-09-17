@@ -412,17 +412,18 @@ public class LiveServerTests
     {
         // The stripping rule is for document navigations only: the page's own fetch
         // may carry the key in its URL, and it must be executed, not bounced — a 302
-        // here would be followed without the method's body and break the call.
+        // here would be followed without the method's body and break the call. The
+        // key rides in the query, as the page would send it.
         using var lan = NewLanServer(_root);
         lan.OnFavorite = (_, _) => true;
         var address = LanAddressOrIgnore();
         var response = new SendHelper(lan).SendTo(address.ToString(),
-            "POST /api/favorite/m1?on=false HTTP/1.1\r\n" +
+            "POST /api/favorite/m1?key=testkey1234567890ab HTTP/1.1\r\n" +
             $"Host: {address}:{lan.Port}\r\n" +
             $"Origin: http://{address}:{lan.Port}\r\n" +
-            "Cookie: pbp_key=testkey1234567890ab\r\n" +
             "Content-Length: 0\r\nConnection: close\r\n\r\n");
-        Assert.That(response, Does.Contain("200 OK"));
+        Assert.That(response, Does.Contain("200 OK"),
+            "admitted by the query key, executed in place — never redirected");
     }
 
     [Test]
