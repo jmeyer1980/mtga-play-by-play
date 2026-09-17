@@ -260,6 +260,37 @@ public class ConfigTests
     public void A_lan_key_is_absent_until_someone_sets_one() =>
         Assert.That(Config.Load(_dir).LanKey, Is.Null, "no LAN access unless it is asked for");
 
+    [TestCase(null)]
+    [TestCase("{}")]
+    [TestCase("{\"LanKey\":\"\"}")]
+    [TestCase("{\"LanKey\":\"   \"}")]
+    [TestCase("{\"LanKey\":null}")]
+    [TestCase("{ not json")]
+    public void A_shipped_key_cannot_enable_lan_without_a_user_key(string? userJson)
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "LanKey": "public-release-key", "OpenAfterBuild": true }""");
+        if (userJson is not null)
+            File.WriteAllText(Path.Combine(_dir, Config.UserFile), userJson);
+
+        var cfg = Config.Load(_dir);
+        Assert.That(cfg.LanKey, Is.Null);
+        Assert.That(LanAccess.Refusal(cfg.LanKey), Is.Not.Null);
+        Assert.That(cfg.OpenAfterBuild, Is.True, "ordinary shipped settings still apply");
+    }
+
+    [Test]
+    public void A_user_key_wins_even_when_the_shipped_file_contains_a_key()
+    {
+        File.WriteAllText(Path.Combine(_dir, Config.ShippedFile),
+            """{ "LanKey": "public-release-key" }""");
+        File.WriteAllText(Path.Combine(_dir, Config.UserFile),
+            """{ "LanKey": "private-user-key-123" }""");
+
+        Assert.That(Config.Load(_dir).LanKey, Is.EqualTo("private-user-key-123"));
+    }
+
+
     [Test]
     public void The_lan_key_is_read_from_the_users_own_file()
     {
