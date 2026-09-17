@@ -438,6 +438,43 @@ public class LiveServerTests
     }
 
     [Test]
+    public void A_query_keyed_api_post_is_executed_not_redirected()
+    {
+        // A client that authenticates every call with ?key= — the supported form —
+        // must get its favorite action performed: the 302 is for document
+        // navigations, and a POST bounced with one silently loses the side effect
+        // (found in review).
+        using var lan = NewLanServer(_root);
+        string? favorited = null;
+        lan.OnFavorite = (id, _) => { favorited = id; return true; };
+        var address = LanAddressOrIgnore();
+        var response = new SendHelper(lan).SendTo(address.ToString(),
+            $"POST /api/favorite/m1?on=false&key=testkey1234567890ab HTTP/1.1\r\n" +
+            $"Host: {address}:{lan.Port}\r\n" +
+            $"Origin: http://{address}:{lan.Port}\r\n" +
+            "Content-Length: 0\r\nConnection: close\r\n\r\n");
+        Assert.That(response, Does.Contain("200 OK"), "the action ran");
+        Assert.That(favorited, Is.EqualTo("m1"), "OnFavorite was invoked");
+        Assert.That(response, Does.Not.Contain("Set-Cookie"));
+    }
+
+    [Test]
+    public void A_configured_key_does_not_change_a_loopback_watch()
+    {
+        // Program always passes cfg.LanKey, so a key sitting in mtga-pbp.json used
+        // to arm the admission path on a watch that never asked for --lan — a
+        // ?key= URL then got a cookie instead of the page (found in review). The
+        // key must be inert until --lan says otherwise.
+        using var loopback = new LiveServer(_root, port: 0, lan: false, lanKey: "testkey1234567890ab");
+        loopback.Start();
+        var response = new SendHelper(loopback).Get("/?key=testkey1234567890ab");
+        Assert.That(response, Does.Contain("200 OK"),
+            "the page is served to the loopback browser as always");
+        Assert.That(response, Does.Not.Contain("Set-Cookie"),
+            "and no cookie session is started for a key nobody asked for");
+    }
+
+    [Test]
     public void A_page_served_over_the_lan_may_still_keep_a_match()
     {
         using var lan = NewLanServer(_root);

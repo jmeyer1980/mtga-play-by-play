@@ -38,7 +38,11 @@ public sealed class LiveServer(string rootDirectory, int port, bool lan = false,
     private readonly TcpListener _listener = new(ValidateLan(lan, lanKey) ? IPAddress.Any : IPAddress.Loopback, port);
     private readonly List<Subscriber> _subscribers = [];
     private readonly CancellationTokenSource _cts = new();
-    private readonly string? _key = lanKey;
+    // The key is inert outside LAN mode, whatever was configured: Program always
+    // passes cfg.LanKey, and a key sitting in mtga-pbp.json must not change the
+    // behavior of the loopback-only watch that never asked for it (found in
+    // review). --lan is what arms the key, and nothing else.
+    private readonly string? _key = lan ? lanKey : null;
 
     /// <summary>Whether the server is in LAN mode (bound to all interfaces).</summary>
     public bool Lan => lan;
@@ -363,8 +367,13 @@ public sealed class LiveServer(string rootDirectory, int port, bool lan = false,
                 }
 
                 // The key never has to appear twice: a URL that carried it is answered
-                // with a 302 to the clean path and the cookie that remembers it.
-                if (hasKeyInQuery && !hasValidCookie)
+                // with a 302 to the clean path and the cookie that remembers it. Only
+                // a document navigation gets the redirect — a query-keyed API call
+                // must be executed, not bounced (found in review), and /api/events
+                // never re-navigates.
+                if (hasKeyInQuery && !hasValidCookie &&
+                    method is "GET" or "HEAD" &&
+                    !path.StartsWith("/api/", StringComparison.Ordinal))
                 {
                     RespondCookieRedirect(writer, path);
                     client.Dispose();
