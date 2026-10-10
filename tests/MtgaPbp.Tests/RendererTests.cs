@@ -1240,7 +1240,7 @@ public class RendererTests
     // ---------- Issue 40: the breakdowns fold away ----------
 
     /// <summary>
-    /// The two breakdowns sit behind a disclosure and the overall record does not.
+    /// The breakdowns sit behind disclosures and the overall record does not.
     /// </summary>
     /// <remarks>
     /// The panel used to put 37 table rows above 529 matches, and the deck table grows
@@ -1264,6 +1264,19 @@ public class RendererTests
         var folded = disclosure.Descendants("table").ToList();
         Assert.That(folded.Select(t => t.Descendants("caption").First().Value),
             Is.EquivalentTo(new[] { "By format", "By deck", "By session" }));
+        foreach (var table in folded)
+        {
+            var tableDisclosure = table.Ancestors("details")
+                .Single(d => d.Attribute("class")?.Value == "breakdown-table");
+            Assert.That(tableDisclosure.Attribute("open"), Is.Null,
+                $"{table.Attribute("id")?.Value} starts collapsed");
+            Assert.That(tableDisclosure.Attribute("data-disclosure")?.Value,
+                Is.EqualTo(table.Attribute("id")?.Value));
+            Assert.That(table.Ancestors("div")
+                .Any(d => d.Attribute("class")?.Value == "scroller"), Is.True);
+        }
+        Assert.That(IndexHtml(deck: true),
+            Does.Contain("#breakdowns .scroller{height:min(20rem,60vh);overflow:auto}"));
 
         // The record is still on the page without opening anything.
         var loose = stats.Descendants("table")
@@ -1319,7 +1332,10 @@ public class RendererTests
     [Test]
     public void The_summary_says_what_is_behind_it()
     {
-        var summary = Markup.Parse(IndexHtml(deck: true)).Descendants("summary").Single();
+        var root = Markup.Parse(IndexHtml(deck: true));
+        var summary = root.Descendants("details")
+            .Single(d => d.Attribute("id")?.Value == "breakdowns")
+            .Elements("summary").Single();
 
         Assert.That(summary.Value, Does.Contain("1 format"));
         Assert.That(summary.Value, Does.Contain("1 deck"));
@@ -1396,6 +1412,9 @@ public class RendererTests
 
         Assert.That(html, Does.Contain("var open = was ? was.open : false;"));
         Assert.That(html, Does.Contain("now.open = open;"));
+        Assert.That(html, Does.Contain("disclosureStates[detail.getAttribute('data-disclosure')] = detail.open;"));
+        Assert.That(html, Does.Contain("detail.open = disclosureStates[key];"));
+        Assert.That(html, Does.Contain("if (summary) summary.focus();"));
     }
 
     /// <summary>

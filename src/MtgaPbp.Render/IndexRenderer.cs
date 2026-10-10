@@ -613,9 +613,12 @@ public static class IndexRenderer
     /// </remarks>
     private static string Breakdowns(IndexStats s)
     {
-        var format = Breakdown("By format", "Format", s.ByFormat, decks: false, id: "by-format");
-        var deck = Breakdown("By deck", "Deck", s.ByDeck, decks: true, id: "by-deck");
-        var against = Breakdown("Against", "Their deck", s.ByOpponentDeck, decks: false, id: "against");
+        var format = Breakdown("By format", "Format", s.ByFormat, decks: false,
+            countNoun: "format", id: "by-format");
+        var deck = Breakdown("By deck", "Deck", s.ByDeck, decks: true,
+            countNoun: "deck", id: "by-deck");
+        var against = Breakdown("Against", "Their deck", s.ByOpponentDeck, decks: false,
+            countNoun: "deck", id: "against");
         var theirs = TheirCards(s);
         if (format.Length == 0 && deck.Length == 0 && against.Length == 0 && theirs.Length == 0) return "";
 
@@ -701,6 +704,8 @@ public static class IndexRenderer
 
         var sb = new StringBuilder();
         sb.Append($"""
+            <details class="breakdown-table" data-disclosure="{id}">
+            <summary>{E(title)} — {Count(rows.Count, "card")}</summary>
             <div class="scroller"><table class="stats" id="{id}"><caption>{E(title)}</caption>
             <thead><tr>{Col("Card", Text)}{Col("Played", Num)}
             {Col("Record", Num)}{Col("Win rate", Num)}{Col("Vs par", Num)}</tr></thead><tbody>
@@ -716,7 +721,7 @@ public static class IndexRenderer
                 """);
         }
 
-        sb.Append("</tbody></table></div>");
+        sb.Append("</tbody></table></div></details>");
         return sb.ToString();
     }
 
@@ -876,6 +881,8 @@ public static class IndexRenderer
         sb.Append($"""
             <p class="note" id="session-note">A session is a run of matches with no break
             longer than {(int)Sessions.Gap.TotalHours} hours.</p>
+            <details class="breakdown-table" data-disclosure="by-session">
+            <summary>By session — {Count(s.Sessions.Count, "session")}</summary>
             <div class="scroller"><table class="stats" id="by-session">
             <caption>By session</caption>
             <thead><tr>{Col("Session", Text)}{Col("Games", Num)}
@@ -905,7 +912,7 @@ public static class IndexRenderer
                 """);
         }
 
-        sb.Append("</tbody></table></div>");
+        sb.Append("</tbody></table></div></details>");
         return sb.ToString();
     }
 
@@ -975,7 +982,8 @@ public static class IndexRenderer
             var versions = deck.OrderBy(v => v.Number).ToList();
 
             sb.Append($"""
-                <details class="versions"><summary>{E(name)} — {versions.Count} versions</summary>
+                <details class="versions" data-disclosure="version:{E(deck.Key)}">
+                <summary>{E(name)} — {versions.Count} versions</summary>
                 <div class="scroller"><table class="stats">
                 <caption>{E(name)} — oldest first</caption>
                 <thead><tr><th scope="col">Version</th><th scope="col">Played</th>
@@ -1015,12 +1023,15 @@ public static class IndexRenderer
         return string.Join(" · ", parts);
     }
 
-    private static string Breakdown(string title, string what, IReadOnlyList<StatRow> rows, bool decks, string id)
+    private static string Breakdown(string title, string what, IReadOnlyList<StatRow> rows,
+        bool decks, string countNoun, string id)
     {
         if (rows.Count == 0) return "";
 
         var sb = new StringBuilder();
         sb.Append($"""
+            <details class="breakdown-table" data-disclosure="{id}">
+            <summary>{E(title)} — {Count(rows.Count, countNoun)}</summary>
             <div class="scroller"><table class="stats" id="{id}"><caption>{E(title)}</caption>
             <thead><tr>{Col(what, Text)}{Col("Played", Num)}
             {Col("Record", Num)}{Col("Win rate", Num)}
@@ -1057,7 +1068,7 @@ public static class IndexRenderer
             sb.Append("</tr>");
         }
 
-        sb.Append("</tbody></table></div>");
+        sb.Append("</tbody></table></div></details>");
         return sb.ToString();
     }
 
@@ -1299,6 +1310,12 @@ public static class IndexRenderer
         #breakdowns>summary{cursor:pointer;padding:.4rem 0;min-height:1.75rem;
                             border-radius:.3rem;font-size:.95rem}
         #breakdowns[open]>summary{margin-bottom:.4rem}
+        #breakdowns details.breakdown-table{margin:0 0 .6rem}
+        #breakdowns details.breakdown-table>summary{cursor:pointer;padding:.3rem 0;
+                                                     min-height:1.75rem}
+        #breakdowns details.breakdown-table[open]>summary{margin-bottom:.3rem}
+        /* Each breakdown gets the same bounded viewport; long tables scroll inside it. */
+        #breakdowns .scroller{height:min(20rem,60vh);overflow:auto}
         table.stats{width:auto;margin:0 0 1rem;font-size:.95rem}
         table.stats caption{font-weight:600;padding:.3rem 0;opacity:.8}
         table.stats th,table.stats td{padding:.3rem .8rem .3rem 0}
@@ -1892,6 +1909,13 @@ public static class IndexRenderer
             var onSummary = !!(active && active.tagName === 'SUMMARY' &&
                                active.parentElement && active.parentElement.id === 'breakdowns');
 
+            // Nested breakdown disclosures are replaced with the panel too. Their
+            // stable keys carry both their open state and the focused summary through.
+            var onDisclosureSummary = !!(active && active.tagName === 'SUMMARY' &&
+              active.parentElement && active.parentElement.hasAttribute('data-disclosure'));
+            var focusedDisclosure = onDisclosureSummary
+              ? active.parentElement.getAttribute('data-disclosure') : null;
+
             // A sort control in the panel is destroyed by that swap too. It has no id of
             // its own either, but which table and which column is enough to find it
             // again — and that is the same pair the sort itself is remembered by.
@@ -1927,10 +1951,27 @@ public static class IndexRenderer
                   // finished — which is exactly when they are watching this page.
                   var was = document.getElementById('breakdowns');
                   var open = was ? was.open : false;
+                  var disclosureStates = {};
+                  if (was) {
+                    Array.prototype.forEach.call(
+                      was.querySelectorAll('details[data-disclosure]'), function (detail) {
+                        disclosureStates[detail.getAttribute('data-disclosure')] = detail.open;
+                      });
+                  }
                   panel.innerHTML = freshPanel.innerHTML;
                   var now = document.getElementById('breakdowns');
                   if (now) {
                     now.open = open;
+                    Array.prototype.forEach.call(
+                      now.querySelectorAll('details[data-disclosure]'), function (detail) {
+                        var key = detail.getAttribute('data-disclosure');
+                        if (Object.prototype.hasOwnProperty.call(disclosureStates, key))
+                          detail.open = disclosureStates[key];
+                        if (onDisclosureSummary && key === focusedDisclosure) {
+                          var summary = detail.querySelector('summary');
+                          if (summary) summary.focus();
+                        }
+                      });
                     // Put the reader back on the control they were on, for the same
                     // reason the rows below do it: a match finishing is not a reason to
                     // send somebody navigating by keyboard back to the top of the page.
